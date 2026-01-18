@@ -389,21 +389,21 @@ function App() {
   });
   const totalCalls = claudeCashStatsTokens.length;
 
-  const currentMultiple = (token) => {
+  const athMultiple = (token) => {
     const initial = statsInitialCap(token);
-    const current = parseMetric(token.latest_mcap);
-    if (!initial || !current) return null;
-    return current / initial;
+    const ath = statsAthCap(token);
+    if (!initial || !ath) return null;
+    return ath / initial;
   };
 
-  const currentMultiples = claudeCashStatsTokens
-    .map(currentMultiple)
+  const athMultiples = claudeCashStatsTokens
+    .map(athMultiple)
     .filter((value) => Number.isFinite(value) && value > 0);
-  const successfulCalls = currentMultiples.filter((value) => value >= 1).length;
-  const successRate = totalCalls > 0 ? (successfulCalls / totalCalls) * 100 : 0;
+  const successfulCalls = athMultiples.filter((value) => value >= 1).length;
+  const successRate = athMultiples.length > 0 ? (successfulCalls / athMultiples.length) * 100 : 0;
   const averageCurrentX =
-    currentMultiples.length > 0
-      ? currentMultiples.reduce((sum, value) => sum + value, 0) / currentMultiples.length
+    athMultiples.length > 0
+      ? athMultiples.reduce((sum, value) => sum + value, 0) / athMultiples.length
       : 0;
 
   return (
