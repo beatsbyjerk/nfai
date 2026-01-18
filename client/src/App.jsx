@@ -143,6 +143,21 @@ function App() {
                 setHighlighted(prev => ({ ...prev, print_scan: token.address }));
               }
             }
+
+            // Trigger the ClaudeCash sound immediately on new print_scan tokens.
+            if (activeTabRef.current === 'claudecash' && soundEnabledRef.current) {
+              const printToken = newIncoming.find((token) => {
+                const sources = (token?.sources || token?.source || '')
+                  .split(',')
+                  .map(s => s.trim())
+                  .filter(Boolean);
+                return sources.includes('print_scan');
+              });
+              if (printToken && printToken.address !== lastSoundTokenRef.current) {
+                lastSoundTokenRef.current = printToken.address;
+                audioRef.current?.play().catch(() => {});
+              }
+            }
             break;
 
           case 'token_update':
@@ -223,18 +238,6 @@ function App() {
       return bTime - aTime;
     }).slice(0, 200);
   }, [tokens, getTokenTimeBySource]);
-
-  useEffect(() => {
-    if (activeTabRef.current !== 'claudecash') return;
-    if (!soundEnabledRef.current) return;
-    if (!highlighted.print_scan) return;
-    if (highlighted.print_scan === lastSoundTokenRef.current) return;
-    const currentList = getClaudeCashTokens();
-    const isVisible = currentList.some(t => t.address === highlighted.print_scan);
-    if (!isVisible) return;
-    lastSoundTokenRef.current = highlighted.print_scan;
-    audioRef.current?.play().catch(() => {});
-  }, [highlighted.print_scan, getClaudeCashTokens]);
 
   const formatActivity = (entry) => {
     if (!entry) return '';
