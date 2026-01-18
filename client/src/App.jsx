@@ -34,6 +34,7 @@ function App() {
   const tokensRef = useRef(tokens);
   const activeTabRef = useRef(activeTab);
   const soundEnabledRef = useRef(soundEnabled);
+  const claudeCashSeenRef = useRef(new Set());
   const lastSoundTokenRef = useRef(null);
 
   useEffect(() => {
@@ -99,7 +100,7 @@ function App() {
           case 'init':
           case 'refresh':
             setTokens(message.data.tokens || []);
-            hydrateClaudeCashSeen(message.data.tokens || []);
+            claudeCashSeenRef.current = hydrateClaudeCashSeen(message.data.tokens || []);
             if (message.data.trading?.activityLog) {
               setActivity(message.data.trading.activityLog);
             }
@@ -162,14 +163,20 @@ function App() {
                   return bTime - aTime;
                 })
                 .slice(0, pageSize);
+              const nextClaudeCashSet = new Set(nextClaudeCash.map(t => t.address));
+              const seenClaudeCash = claudeCashSeenRef.current;
               const match = newIncoming.find((token) =>
-                token.isNew &&
-                nextClaudeCash.some(t => t.address === token.address)
+                hasPrintScanSource(token) &&
+                nextClaudeCashSet.has(token.address) &&
+                !seenClaudeCash.has(token.address)
               );
               if (match && match.address !== lastSoundTokenRef.current) {
                 lastSoundTokenRef.current = match.address;
                 audioRef.current?.play().catch(() => {});
               }
+              nextClaudeCash.forEach((token) => {
+                if (token?.address) seenClaudeCash.add(token.address);
+              });
             }
             break;
 
