@@ -54,25 +54,6 @@ function App() {
     soundEnabledRef.current = soundEnabled;
   }, [soundEnabled]);
 
-  useEffect(() => {
-    const currentClaudeCash = getClaudeCashTokens();
-    const seenClaudeCash = claudeCashSeenRef.current;
-    const newClaudeCash = currentClaudeCash.filter((token) => token?.address && !seenClaudeCash.has(token.address));
-
-    currentClaudeCash.forEach((token) => {
-      if (token?.address) seenClaudeCash.add(token.address);
-    });
-
-    if (newClaudeCash.length === 0) return;
-    if (activeTabRef.current !== 'claudecash' || !soundEnabledRef.current) return;
-
-    const newest = newClaudeCash[0];
-    if (newest?.address && newest.address !== lastSoundTokenRef.current) {
-      lastSoundTokenRef.current = newest.address;
-      audioRef.current?.play().catch(() => {});
-    }
-  }, [tokens, getClaudeCashTokens]);
-
   const hasPrintScanSource = useCallback((token) => {
     const sources = (token?.sources || token?.source || '')
       .split(',')
@@ -277,6 +258,25 @@ function App() {
       return bTime - aTime;
     }).slice(0, 200);
   }, [tokens, getTokenTimeBySource]);
+
+  useEffect(() => {
+    const currentClaudeCash = getClaudeCashTokens();
+    const seenClaudeCash = claudeCashSeenRef.current;
+    const newClaudeCash = currentClaudeCash.filter((token) => token?.address && !seenClaudeCash.has(token.address));
+
+    currentClaudeCash.forEach((token) => {
+      if (token?.address) seenClaudeCash.add(token.address);
+    });
+
+    if (newClaudeCash.length === 0) return;
+    if (activeTabRef.current !== 'claudecash' || !soundEnabledRef.current) return;
+
+    const newest = newClaudeCash[0];
+    if (newest?.address && newest.address !== lastSoundTokenRef.current) {
+      lastSoundTokenRef.current = newest.address;
+      audioRef.current?.play().catch(() => {});
+    }
+  }, [tokens, getClaudeCashTokens]);
 
   const initialCap = (token) => token.initial_mcap || token.initial_market_cap || token.initial_mc || token.first_called_mcap;
   const athCap = (token) => token.ath_mcap || token.ath_market_cap || token.ath_mc || token.ath;
