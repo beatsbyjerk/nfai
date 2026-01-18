@@ -175,10 +175,24 @@ wss.on('connection', async (ws) => {
   
   // Send current state on connect (always)
   await refreshVisibleTokens();
+  const refreshTokens = tokenStore.getAllTokens();
+  const tokensWithRealtimeMcap = await Promise.all(
+    refreshTokens.map(async (token) => {
+      const mint = token?.address || token?.mint || token?.token_address;
+      if (!mint || !tradingEngine?.getRealtimeMcap) return token;
+      try {
+        const realtimeMcap = await tradingEngine.getRealtimeMcap(mint);
+        if (!Number.isFinite(realtimeMcap) || realtimeMcap <= 0) return token;
+        return { ...token, latest_mcap: realtimeMcap };
+      } catch {
+        return token;
+      }
+    })
+  );
   const snapshot = {
     type: 'refresh',
     data: {
-      tokens: tokenStore.getAllTokens(),
+      tokens: tokensWithRealtimeMcap,
       stats: tokenStore.getStats(),
       trading: {
         ...tradingEngine.getState(),
@@ -408,10 +422,24 @@ async function pollStalkFun() {
     // On first run, push a full refresh without highlighting
     if (!initialized) {
       await refreshVisibleTokens();
+      const refreshTokens = tokenStore.getAllTokens();
+      const tokensWithRealtimeMcap = await Promise.all(
+        refreshTokens.map(async (token) => {
+          const mint = token?.address || token?.mint || token?.token_address;
+          if (!mint || !tradingEngine?.getRealtimeMcap) return token;
+          try {
+            const realtimeMcap = await tradingEngine.getRealtimeMcap(mint);
+            if (!Number.isFinite(realtimeMcap) || realtimeMcap <= 0) return token;
+            return { ...token, latest_mcap: realtimeMcap };
+          } catch {
+            return token;
+          }
+        })
+      );
       broadcast({
         type: 'refresh',
         data: {
-          tokens: tokenStore.getAllTokens(),
+          tokens: tokensWithRealtimeMcap,
           stats: tokenStore.getStats(),
           trading: tradingEngine.getState()
         }
