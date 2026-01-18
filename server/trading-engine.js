@@ -362,6 +362,12 @@ export class TradingEngine extends EventEmitter {
       const mint = token.mint || token.token_address || token.address;
       if (!mint || !this.positions.has(mint)) continue;
 
+      // When realtime monitoring is enabled, only use realtime updates
+      // to avoid poll-based pre-exits with stale or partial metrics.
+      if (this.realtimeMcapEnabled && source !== 'realtime') {
+        continue;
+      }
+
       const position = this.positions.get(mint);
       const currentMcap = parseFloat(token.latest_mcap || token.initial_mcap || 0);
       if (!currentMcap) continue;
