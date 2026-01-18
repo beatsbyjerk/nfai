@@ -215,29 +215,21 @@ export class TradingEngine extends EventEmitter {
       return cached.value;
     }
 
-    // Try DexScreener first (most reliable for pump.fun tokens)
-    const dexMcap = await this.helius.getDexScreenerMcap(mint);
-    if (Number.isFinite(dexMcap) && dexMcap > 0) {
-      this.mcapCache.set(mint, { value: dexMcap, ts: now });
-      return dexMcap;
-    }
+    // Use Helius getAsset for price and supply
+    const asset = await this.helius.getAsset(mint);
+    const tokenInfo = asset?.token_info;
+    const priceInfo = tokenInfo?.price_info;
 
-    // Fallback to Helius price × supply calculation
-    const tokenRecord = this.getTokenRecord(mint);
-    const isMigrating = this.isTokenMigrating(tokenRecord);
-    let price = null;
+    const price = priceInfo?.price_per_token;
+    if (!Number.isFinite(price) || price <= 0) return null;
 
-    if (!price) {
-      price = await this.helius.getTokenPrice(mint);
-    }
+    const rawSupply = tokenInfo?.supply;
+    const decimals = tokenInfo?.decimals ?? 6;
+    if (!Number.isFinite(rawSupply) || rawSupply <= 0) return null;
 
-    if (!price) return null;
-
-    const supply = await this.helius.getTokenSupply(mint);
-    if (!supply?.uiAmount) return null;
-
-    const mcap = price * supply.uiAmount;
-    if (!Number.isFinite(mcap)) return null;
+    const supplyUi = rawSupply / Math.pow(10, decimals);
+    const mcap = price * supplyUi;
+    if (!Number.isFinite(mcap) || mcap <= 0) return null;
 
     this.mcapCache.set(mint, { value: mcap, ts: now });
     return mcap;
