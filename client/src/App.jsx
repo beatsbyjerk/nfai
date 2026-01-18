@@ -87,31 +87,6 @@ function App() {
     }
     const isDev = window.location.port === '5173';
     const wsUrl = isDev ? 'ws://localhost:3001' : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`;
-    const mergeRefreshTokens = (incoming) => {
-      const live = tokensRef.current || [];
-      const liveMap = new Map(live.map(token => [token.address, token]));
-      return (incoming || []).map(token => {
-        const existing = liveMap.get(token.address);
-        if (!existing) return token;
-        const merged = { ...token };
-        const candidateMcap = token.latest_mcap ?? token.marketcap ?? token.current_mc;
-        const parsed = Number(candidateMcap);
-        if (!Number.isFinite(parsed)) {
-          if (existing.latest_mcap != null) merged.latest_mcap = existing.latest_mcap;
-          if (existing.marketcap != null) merged.marketcap = existing.marketcap;
-          if (existing.current_mc != null) merged.current_mc = existing.current_mc;
-        }
-        const candidateAth = token.ath_mcap ?? token.ath_market_cap ?? token.ath_mc ?? token.ath;
-        const athParsed = Number(candidateAth);
-        if (!Number.isFinite(athParsed)) {
-          if (existing.ath_mcap != null) merged.ath_mcap = existing.ath_mcap;
-          if (existing.ath_market_cap != null) merged.ath_market_cap = existing.ath_market_cap;
-          if (existing.ath_mc != null) merged.ath_mc = existing.ath_mc;
-          if (existing.ath != null) merged.ath = existing.ath;
-        }
-        return merged;
-      });
-    };
     
     const ws = new WebSocket(wsUrl);
     
@@ -125,9 +100,8 @@ function App() {
         switch (message.type) {
           case 'init':
           case 'refresh':
-            const refreshedTokens = mergeRefreshTokens(message.data.tokens || []);
-            setTokens(refreshedTokens);
-            claudeCashSeenRef.current = hydrateClaudeCashSeen(refreshedTokens);
+            setTokens(message.data.tokens || []);
+            claudeCashSeenRef.current = hydrateClaudeCashSeen(message.data.tokens || []);
             if (message.data.trading?.activityLog) {
               setActivity(message.data.trading.activityLog);
             }
