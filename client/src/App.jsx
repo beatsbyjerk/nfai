@@ -36,6 +36,7 @@ function App() {
   const soundEnabledRef = useRef(soundEnabled);
   const claudeCashSeenRef = useRef(new Set());
   const lastSoundTokenRef = useRef(null);
+  const lastActivitySoundRef = useRef(null);
 
   useEffect(() => {
     audioRef.current = new Audio('/mixkit-retro-game-notification-212.mp3');
@@ -149,35 +150,6 @@ function App() {
               }
             }
 
-            // Trigger ClaudeCash sound only for truly new tokens.
-            if (activeTabRef.current === 'claudecash' && soundEnabledRef.current) {
-              const pageSize = 15;
-              const nextClaudeCash = nextTokens
-                .filter(t => {
-                  const sources = (t.sources || t.source || '').split(',').map(s => s.trim());
-                  return sources.includes('print_scan');
-                })
-                .sort((a, b) => {
-                  const aTime = new Date(getTokenTimeBySource(a, 'print_scan') || 0).getTime();
-                  const bTime = new Date(getTokenTimeBySource(b, 'print_scan') || 0).getTime();
-                  return bTime - aTime;
-                })
-                .slice(0, pageSize);
-              const nextClaudeCashSet = new Set(nextClaudeCash.map(t => t.address));
-              const seenClaudeCash = claudeCashSeenRef.current;
-              const match = newIncoming.find((token) =>
-                hasPrintScanSource(token) &&
-                nextClaudeCashSet.has(token.address) &&
-                !seenClaudeCash.has(token.address)
-              );
-              if (match && match.address !== lastSoundTokenRef.current) {
-                lastSoundTokenRef.current = match.address;
-                audioRef.current?.play().catch(() => {});
-              }
-              nextClaudeCash.forEach((token) => {
-                if (token?.address) seenClaudeCash.add(token.address);
-              });
-            }
             break;
 
           case 'token_update':
@@ -188,6 +160,17 @@ function App() {
             break;
 
           case 'activity':
+            if (activeTabRef.current === 'claudecash' && soundEnabledRef.current) {
+              const activityType = (message.data?.type || '').toLowerCase();
+              const shouldNotify = activityType === 'signal' || activityType === 'trade';
+              if (shouldNotify) {
+                const activityStamp = message.data?.timestamp || Date.now();
+                if (activityStamp !== lastActivitySoundRef.current) {
+                  lastActivitySoundRef.current = activityStamp;
+                  audioRef.current?.play().catch(() => {});
+                }
+              }
+            }
             setActivity(prev => [message.data, ...prev].slice(0, 200));
             break;
 
@@ -258,25 +241,6 @@ function App() {
       return bTime - aTime;
     }).slice(0, 200);
   }, [tokens, getTokenTimeBySource]);
-
-  useEffect(() => {
-    const currentClaudeCash = getClaudeCashTokens();
-    const seenClaudeCash = claudeCashSeenRef.current;
-    const newClaudeCash = currentClaudeCash.filter((token) => token?.address && !seenClaudeCash.has(token.address));
-
-    currentClaudeCash.forEach((token) => {
-      if (token?.address) seenClaudeCash.add(token.address);
-    });
-
-    if (newClaudeCash.length === 0) return;
-    if (activeTabRef.current !== 'claudecash' || !soundEnabledRef.current) return;
-
-    const newest = newClaudeCash[0];
-    if (newest?.address && newest.address !== lastSoundTokenRef.current) {
-      lastSoundTokenRef.current = newest.address;
-      audioRef.current?.play().catch(() => {});
-    }
-  }, [tokens, getClaudeCashTokens]);
 
   const initialCap = (token) => token.initial_mcap || token.initial_market_cap || token.initial_mc || token.first_called_mcap;
   const athCap = (token) => token.ath_mcap || token.ath_market_cap || token.ath_mc || token.ath;
