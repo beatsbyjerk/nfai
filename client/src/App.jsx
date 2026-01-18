@@ -31,6 +31,7 @@ function App() {
   const wsRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
   const audioRef = useRef(null);
+  const tokensRef = useRef(tokens);
   const activeTabRef = useRef(activeTab);
   const soundEnabledRef = useRef(soundEnabled);
   const lastSoundTokenRef = useRef(null);
@@ -43,6 +44,10 @@ function App() {
   useEffect(() => {
     activeTabRef.current = activeTab;
   }, [activeTab]);
+
+  useEffect(() => {
+    tokensRef.current = tokens;
+  }, [tokens]);
 
   useEffect(() => {
     soundEnabledRef.current = soundEnabled;
@@ -123,16 +128,15 @@ function App() {
             
           case 'new_tokens':
             const newIncoming = message.data.map(t => ({ ...t, receivedAt: Date.now() }));
-            setTokens(prev => {
-              const combined = [...newIncoming, ...prev];
-              // Unique by address
-              const seen = new Set();
-              return combined.filter(t => {
-                if (seen.has(t.address)) return false;
-                seen.add(t.address);
-                return true;
-              }).slice(0, 500); // Keep last 500
-            });
+            const combined = [...newIncoming, ...(tokensRef.current || [])];
+            // Unique by address
+            const seen = new Set();
+            const nextTokens = combined.filter(t => {
+              if (seen.has(t.address)) return false;
+              seen.add(t.address);
+              return true;
+            }).slice(0, 500); // Keep last 500
+            setTokens(nextTokens);
 
             // Replace highlight per source
             for (const token of newIncoming) {
@@ -144,17 +148,24 @@ function App() {
               }
             }
 
-            // Trigger the ClaudeCash sound immediately on new print_scan tokens.
+            // Trigger ClaudeCash sound only if the token would appear in the ClaudeCash feed.
             if (activeTabRef.current === 'claudecash' && soundEnabledRef.current) {
-              const printToken = newIncoming.find((token) => {
-                const sources = (token?.sources || token?.source || '')
-                  .split(',')
-                  .map(s => s.trim())
-                  .filter(Boolean);
-                return sources.includes('print_scan');
-              });
-              if (printToken && printToken.address !== lastSoundTokenRef.current) {
-                lastSoundTokenRef.current = printToken.address;
+              const nextClaudeCash = nextTokens
+                .filter(t => {
+                  const sources = (t.sources || t.source || '').split(',').map(s => s.trim());
+                  return sources.includes('print_scan');
+                })
+                .sort((a, b) => {
+                  const aTime = new Date(getTokenTimeBySource(a, 'print_scan') || 0).getTime();
+                  const bTime = new Date(getTokenTimeBySource(b, 'print_scan') || 0).getTime();
+                  return bTime - aTime;
+                })
+                .slice(0, 200);
+              const match = newIncoming.find((token) =>
+                nextClaudeCash.some(t => t.address === token.address)
+              );
+              if (match && match.address !== lastSoundTokenRef.current) {
+                lastSoundTokenRef.current = match.address;
                 audioRef.current?.play().catch(() => {});
               }
             }
