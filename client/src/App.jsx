@@ -242,7 +242,23 @@ function App() {
     }).slice(0, 200);
   }, [tokens, getTokenTimeBySource]);
 
-  const initialCap = (token) => token.initial_mcap || token.initial_market_cap || token.initial_mc || token.first_called_mcap;
+  const initialCap = (token) => {
+    if (token?.raw_data) {
+      try {
+        const rawData = typeof token.raw_data === 'string' ? JSON.parse(token.raw_data) : token.raw_data;
+        const raw =
+          rawData?.initial_mcap ??
+          rawData?.initial_market_cap ??
+          rawData?.initial_mc ??
+          rawData?.first_called_mcap;
+        const parsed = Number(raw);
+        if (Number.isFinite(parsed)) return parsed;
+      } catch {
+        // fall through to stored fields
+      }
+    }
+    return token.initial_mcap || token.initial_market_cap || token.initial_mc || token.first_called_mcap;
+  };
   const athCap = (token) => token.ath_mcap || token.ath_market_cap || token.ath_mc || token.ath;
   const athMultiple = (token) => {
     const initial = initialCap(token);

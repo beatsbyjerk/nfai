@@ -1,5 +1,19 @@
 export function TokenDetail({ token, onClose }) {
   const initialCap = (data) => {
+    if (data?.raw_data) {
+      try {
+        const rawData = typeof data.raw_data === 'string' ? JSON.parse(data.raw_data) : data.raw_data;
+        const raw =
+          rawData?.initial_mcap ??
+          rawData?.initial_market_cap ??
+          rawData?.initial_mc ??
+          rawData?.first_called_mcap;
+        const parsed = Number(raw);
+        if (Number.isFinite(parsed)) return parsed;
+      } catch {
+        // fall through to stored fields
+      }
+    }
     const raw =
       data?.initial_mcap ??
       data?.initial_market_cap ??

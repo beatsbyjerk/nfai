@@ -29,7 +29,25 @@ export function TokenStream({ tokens, onSelect, selectedId, highlightedId, label
     }
     return token.first_called || token.first_seen || token.first_seen_local || token.created_at;
   };
-  const initialCap = (token) => token.initial_mcap || token.initial_market_cap || token.initial_mc || token.first_called_mcap;
+  const rawInitialCap = (token) => {
+    if (!token?.raw_data) return null;
+    try {
+      const raw = typeof token.raw_data === 'string' ? JSON.parse(token.raw_data) : token.raw_data;
+      const value = raw?.initial_mcap ?? raw?.initial_market_cap ?? raw?.initial_mc ?? raw?.first_called_mcap;
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const initialCap = (token) => {
+    if (timeSource === 'print_scan') {
+      const fromRaw = rawInitialCap(token);
+      if (fromRaw !== null) return fromRaw;
+    }
+    return token.initial_mcap || token.initial_market_cap || token.initial_mc || token.first_called_mcap;
+  };
   const currentCap = (token) => token.latest_mcap || token.marketcap || token.current_mc;
   const athCap = (token) => token.ath_mcap || token.ath_market_cap || token.ath_mc;
   const isAthAboveInitial = (token) => {
