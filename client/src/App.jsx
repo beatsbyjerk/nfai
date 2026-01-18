@@ -148,8 +148,9 @@ function App() {
               }
             }
 
-            // Trigger ClaudeCash sound only if the token would appear in the ClaudeCash feed.
+            // Trigger ClaudeCash sound only if the token would appear on the visible ClaudeCash page.
             if (activeTabRef.current === 'claudecash' && soundEnabledRef.current) {
+              const pageSize = 15;
               const nextClaudeCash = nextTokens
                 .filter(t => {
                   const sources = (t.sources || t.source || '').split(',').map(s => s.trim());
@@ -160,7 +161,7 @@ function App() {
                   const bTime = new Date(getTokenTimeBySource(b, 'print_scan') || 0).getTime();
                   return bTime - aTime;
                 })
-                .slice(0, 200);
+                .slice(0, pageSize);
               const match = newIncoming.find((token) =>
                 nextClaudeCash.some(t => t.address === token.address)
               );
@@ -252,8 +253,7 @@ function App() {
 
   const initialCap = (token) => token.initial_mcap || token.initial_market_cap || token.initial_mc || token.first_called_mcap;
   const athCap = (token) => token.ath_mcap || token.ath_market_cap || token.ath_mc || token.ath;
-  const highestMultiple = (token) => {
-    if (Number.isFinite(token.highest_multiplier)) return token.highest_multiplier;
+  const athMultiple = (token) => {
     const initial = initialCap(token);
     const ath = athCap(token);
     if (!initial || !ath) return null;
@@ -320,14 +320,14 @@ function App() {
 
   const claudeCashTokens = getClaudeCashTokens();
   const totalCalls = claudeCashTokens.length;
-  const highestMultiples = claudeCashTokens
-    .map(highestMultiple)
+  const athMultiples = claudeCashTokens
+    .map(athMultiple)
     .filter((value) => Number.isFinite(value) && value > 0);
-  const successfulCalls = highestMultiples.filter((value) => value > 1).length;
+  const successfulCalls = athMultiples.filter((value) => value > 1).length;
   const successRate = totalCalls > 0 ? (successfulCalls / totalCalls) * 100 : 0;
-  const averageHighestX =
-    highestMultiples.length > 0
-      ? highestMultiples.reduce((sum, value) => sum + value, 0) / highestMultiples.length
+  const averageAthX =
+    athMultiples.length > 0
+      ? athMultiples.reduce((sum, value) => sum + value, 0) / athMultiples.length
       : 0;
 
   return (
@@ -440,8 +440,8 @@ function App() {
                   <strong>{successRate.toFixed(1)}%</strong>
                 </div>
                 <div className="ops-stat">
-                  <span>Average highest X</span>
-                  <strong>{averageHighestX.toFixed(1)}x</strong>
+                  <span>Average ATH X</span>
+                  <strong>{averageAthX.toFixed(1)}x</strong>
                 </div>
               </div>
             </div>
