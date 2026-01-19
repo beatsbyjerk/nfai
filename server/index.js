@@ -302,10 +302,37 @@ const attachRealtimeMcapField = async (tokens, { limit = 30, forceRefresh = fals
 
 // Track connected WebSocket clients
 const clients = new Set();
+const publicClients = new Set();
+
+// Delayed token queue for public broadcast (5 minute delay)
+const delayedTokenQueue = [];
+const DELAY_MS = 5 * 60 * 1000; // 5 minutes
+const MAX_QUEUE_SIZE = 100;
 
 wss.on('connection', async (ws, req) => {
   try {
     const requestUrl = new URL(req.url || '', `http://${req.headers.host || 'localhost'}`);
+    
+    // Check if this is a public connection (no authentication required)
+    if (requestUrl.pathname === '/public' || requestUrl.searchParams.get('public') === 'true') {
+      publicClients.add(ws);
+      console.log(`Public client connected. Total: ${publicClients.size}`);
+      
+      // Send recent delayed tokens (last 10 that have been shown publicly)
+      const recentPublic = getRecentPublicTokens(10);
+      ws.send(JSON.stringify({
+        type: 'public_init',
+        data: { tokens: recentPublic }
+      }));
+      
+      ws.on('close', () => {
+        publicClients.delete(ws);
+        console.log(`Public client disconnected. Total: ${publicClients.size}`);
+      });
+      return;
+    }
+
+    // Authenticated connection flow
     const sessionToken = requestUrl.searchParams.get('token');
     const deviceId = requestUrl.searchParams.get('deviceId');
     const authResult = await authService.validateSession({ sessionToken, deviceId });
@@ -360,6 +387,49 @@ function broadcast(message) {
       client.send(data);
     }
   });
+}
+
+function broadcastToPublic(message) {
+  const data = JSON.stringify(message);
+  publicClients.forEach(client => {
+    if (client.readyState === 1) {
+      client.send(data);
+    }
+  });
+}
+
+function getRecentPublicTokens(limit = 10) {
+  const now = Date.now();
+  const tokens = tokenStore.getAllTokens()
+    .filter(t => {
+      const sources = (t.sources || t.source || '').split(',').map(s => s.trim());
+      if (!sources.includes('print_scan')) return false;
+      
+      const callTime = new Date(t.first_seen_print_scan || t.first_seen_local).getTime();
+      const age = now - callTime;
+      return age >= DELAY_MS; // Only show tokens 5+ minutes old
+    })
+    .sort((a, b) => {
+      const aTime = new Date(a.first_seen_print_scan || a.first_seen_local).getTime();
+      const bTime = new Date(b.first_seen_print_scan || b.first_seen_local).getTime();
+      return bTime - aTime;
+    })
+    .slice(0, limit);
+  
+  return tokens.map(t => ({
+    ...t,
+    original_call_time: t.first_seen_print_scan || t.first_seen_local,
+    delay_shown: true
+  }));
+}
+
+function isPublicEligible(token) {
+  const sources = (token.sources || token.source || '').split(',').map(s => s.trim());
+  if (!sources.includes('print_scan')) return false;
+  
+  const callTime = new Date(token.first_seen_print_scan || token.first_seen_local).getTime();
+  const age = Date.now() - callTime;
+  return age >= DELAY_MS;
 }
 
 // API Routes
@@ -537,6 +607,18 @@ async function pollStalkFun() {
               const flagged = { ...record, isNew: true };
               newTokens.push(flagged);
               newPrintTokens.push(flagged);
+              
+              // Add to delayed queue for public broadcast (5 minute delay)
+              delayedTokenQueue.push({
+                token: record,
+                callTime: Date.now(),
+                broadcastTime: Date.now() + DELAY_MS
+              });
+              
+              // Keep queue size limited
+              if (delayedTokenQueue.length > MAX_QUEUE_SIZE) {
+                delayedTokenQueue.shift();
+              }
             } else {
               updatedTokens.push(record);
             }
@@ -630,6 +712,59 @@ async function pollStalkFun() {
   }
 }
 
+// Broadcast delayed tokens to public clients
+async function broadcastPublicFeed() {
+  if (publicClients.size === 0) return;
+  
+  const now = Date.now();
+  const ready = [];
+  
+  // Find tokens ready to broadcast (broadcast time has passed)
+  for (let i = delayedTokenQueue.length - 1; i >= 0; i--) {
+    const item = delayedTokenQueue[i];
+    if (item.broadcastTime <= now) {
+      ready.push(item);
+      delayedTokenQueue.splice(i, 1);
+    }
+  }
+  
+  if (ready.length === 0) return;
+  
+  // Get current mcap for each token
+  const tokensWithCurrentData = await Promise.all(
+    ready.map(async ({ token, callTime }) => {
+      let currentMcap = null;
+      try {
+        if (tradingEngine?.getRealtimeMcap) {
+          currentMcap = await tradingEngine.getRealtimeMcap(token.address);
+        }
+      } catch (e) {
+        console.warn('Failed to get realtime mcap for public feed:', e.message);
+      }
+      
+      return {
+        address: token.address,
+        symbol: token.symbol,
+        name: token.name,
+        image: token.image,
+        initial_mcap: token.initial_mcap,
+        latest_mcap: token.latest_mcap,
+        realtime_mcap: currentMcap && Number.isFinite(currentMcap) ? currentMcap : token.latest_mcap,
+        original_call_time: callTime,
+        delay_shown: true,
+        sources: token.sources || token.source
+      };
+    })
+  );
+  
+  // Broadcast to public clients only
+  console.log(`Broadcasting ${tokensWithCurrentData.length} delayed tokens to ${publicClients.size} public clients`);
+  broadcastToPublic({
+    type: 'public_new_tokens',
+    data: tokensWithCurrentData
+  });
+}
+
 // Stream realtime market caps periodically (Helius) without forcing full feed resets.
 const lastRealtimeBroadcast = new Map(); // mint -> last mcap
 async function broadcastRealtimeMcaps() {
@@ -682,14 +817,27 @@ async function broadcastRealtimeMcaps() {
     if (data.address && data.realtime_mcap) {
       tokenStore.updateAthIfHigher(data.address, data.realtime_mcap);
     }
+    
+    // Send to authenticated clients
     broadcast({ type: 'token_update', data });
+    
+    // Also send to public clients if token is 5+ minutes old
+    if (publicClients.size > 0) {
+      const token = tokenStore.getToken(data.address);
+      if (token && isPublicEligible(token)) {
+        broadcastToPublic({ type: 'token_update', data });
+      }
+    }
   });
 }
 
 // Start polling
 const POLL_INTERVAL = 5000; // 5 seconds
+const PUBLIC_BROADCAST_INTERVAL = 15000; // Check every 15 seconds for delayed tokens
+
 setInterval(pollStalkFun, POLL_INTERVAL);
 setInterval(broadcastRealtimeMcaps, REALTIME_MCAP_BROADCAST_INTERVAL_MS);
+setInterval(broadcastPublicFeed, PUBLIC_BROADCAST_INTERVAL);
 
 // Initial poll
 setTimeout(pollStalkFun, 1000);

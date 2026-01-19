@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Header } from './components/Header';
 import { TokenStream } from './components/TokenStream';
 import { TokenDetail } from './components/TokenDetail';
+import { Toast } from './components/Toast';
 
 function App() {
   const [tokens, setTokens] = useState([]);
@@ -647,11 +648,119 @@ function App() {
     setLandingTheme(prev => prev === 'light' ? 'dark' : 'light');
   };
 
+  // Public feed state (for unauthenticated landing page)
+  const [publicToasts, setPublicToasts] = useState([]);
+  const [publicActivity, setPublicActivity] = useState([]);
+  const publicWsRef = useRef(null);
+  const publicReconnectTimeoutRef = useRef(null);
+
+  const connectPublicWebSocket = useCallback(() => {
+    if (authState.authenticated) return; // Don't connect if authenticated
+    if (publicWsRef.current && publicWsRef.current.readyState === WebSocket.OPEN) return;
+
+    const isDev = window.location.port === '5173';
+    const wsUrl = isDev
+      ? `ws://localhost:3001?public=true`
+      : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}?public=true`;
+    
+    const ws = new WebSocket(wsUrl);
+    
+    ws.onopen = () => {
+      console.log('Public WebSocket connected');
+    };
+    
+    ws.onmessage = (event) => {
+      try {
+        const message = JSON.parse(event.data);
+        
+        switch (message.type) {
+          case 'public_init':
+            // Initial load of recent tokens
+            if (message.data?.tokens && Array.isArray(message.data.tokens)) {
+              setPublicActivity(message.data.tokens.slice(0, 10));
+            }
+            break;
+            
+          case 'public_new_tokens':
+            // New delayed tokens (show as toasts)
+            if (message.data && Array.isArray(message.data)) {
+              message.data.forEach(token => {
+                // Add to toasts
+                const newToast = {
+                  id: `${token.address}-${Date.now()}`,
+                  ...token
+                };
+                setPublicToasts(prev => [...prev, newToast].slice(-5)); // Keep max 5 toasts
+                
+                // Add to activity feed (prepend)
+                setPublicActivity(prev => [token, ...prev].slice(0, 10));
+              });
+            }
+            break;
+            
+          case 'token_update':
+            // Update market cap for existing tokens in activity
+            if (message.data?.address) {
+              setPublicActivity(prev => 
+                prev.map(token => 
+                  token.address === message.data.address 
+                    ? { ...token, realtime_mcap: message.data.realtime_mcap }
+                    : token
+                )
+              );
+              
+              // Also update toasts
+              setPublicToasts(prev =>
+                prev.map(toast =>
+                  toast.address === message.data.address
+                    ? { ...toast, realtime_mcap: message.data.realtime_mcap }
+                    : toast
+                )
+              );
+            }
+            break;
+        }
+      } catch (e) {
+        console.error('Public WebSocket message error:', e);
+      }
+    };
+    
+    ws.onerror = () => {
+      console.error('Public WebSocket error');
+    };
+    
+    ws.onclose = () => {
+      console.log('Public WebSocket disconnected');
+      if (!authState.authenticated) {
+        publicReconnectTimeoutRef.current = setTimeout(connectPublicWebSocket, 3000);
+      }
+    };
+    
+    publicWsRef.current = ws;
+  }, [authState.authenticated]);
+
+  useEffect(() => {
+    if (!authState.authenticated && !authState.loading) {
+      connectPublicWebSocket();
+    }
+    
+    return () => {
+      publicWsRef.current?.close();
+      clearTimeout(publicReconnectTimeoutRef.current);
+    };
+  }, [authState.authenticated, authState.loading, connectPublicWebSocket]);
+
+  const dismissToast = (id) => {
+    setPublicToasts(prev => prev.filter(t => t.id !== id));
+  };
+
   if (!authState.authenticated) {
 
     return (
-      <div className="auth-landing">
-        <div className="landing-header">
+      <>
+        <Toast toasts={publicToasts} onDismiss={dismissToast} />
+        <div className="auth-landing">
+          <div className="landing-header">
           <div className="landing-logo">
             <img src="/logo.png" alt="ClaudeCash" className="landing-logo-img" />
             <span className="landing-logo-text">ClaudeCash</span>
@@ -675,42 +784,135 @@ function App() {
         </div>
 
         <div className="auth-hero">
-          <h1 className="auth-title">ClaudeCash</h1>
-          <p className="auth-subtitle">Autonomous AI Trading on Solana</p>
+          <div className="hero-badge">
+            <span className="badge-dot"></span>
+            <span className="badge-text">LIVE AUTONOMOUS TRADING</span>
+          </div>
           
-          <div className="auth-content">
-            <p className="auth-intro">
-              ClaudeCash is an AI-powered trading system that identifies high-potential tokens at the perfect moment, minimizing your risk through intelligent signal analysis.
+          <h1 className="auth-title">
+            <span className="title-gradient">Claude</span>Cash
+          </h1>
+          <p className="auth-subtitle">AI-Powered On-Chain Intelligence • Solana Network</p>
+          
+          <div className="hero-description">
+            <p>
+              I am Claude, an autonomous trading system that analyzes thousands of on-chain signals 
+              every second. I identify high-potential tokens at their optimal entry point, execute 
+              trades with precision timing, and distribute profits to my top holders automatically.
             </p>
-            
-            <div className="auth-features">
-              <div className="auth-feature">
-                <div className="feature-icon">🎯</div>
-                <h3>Smart Signal Detection</h3>
-                <p>Advanced algorithms analyze on-chain data to identify emerging opportunities before they trend.</p>
-              </div>
-              
-              <div className="auth-feature">
-                <div className="feature-icon">⚡</div>
-                <h3>Automated Execution</h3>
-                <p>ClaudeCash has a dedicated trading wallet that automatically executes calls in real-time with precision timing.</p>
-              </div>
-              
-              <div className="auth-feature">
-                <div className="feature-icon">💰</div>
-                <h3>Profit Sharing</h3>
-                <p>Top holders automatically receive a portion of the trading profits. The more you hold, the more you earn.</p>
-              </div>
-            </div>
+          </div>
 
-            <div className="auth-disclaimer">
-              <strong>Important:</strong> ClaudeCash is not financial advice. This is an experimental trading system. Only invest what you can afford to lose. Always do your own research.
+          <div className="stats-grid">
+            <div className="stat-item">
+              <div className="stat-value">24/7</div>
+              <div className="stat-label">Active Monitoring</div>
+            </div>
+            <div className="stat-item">
+              <div className="stat-value">&lt;100ms</div>
+              <div className="stat-label">Execution Speed</div>
+            </div>
+            <div className="stat-item">
+              <div className="stat-value">Live</div>
+              <div className="stat-label">Real-Time Signals</div>
             </div>
           </div>
 
-          <button className="auth-cta" onClick={() => setShowAuthModal(true)}>
-            Activate License
-          </button>
+          <div className="capabilities-section">
+            <div className="section-header">
+              <div className="header-line"></div>
+              <h2>Core Capabilities</h2>
+              <div className="header-line"></div>
+            </div>
+
+            <div className="capabilities-grid">
+              <div className="capability-card">
+                <div className="capability-header">
+                  <div className="capability-number">01</div>
+                  <h3>Signal Intelligence</h3>
+                </div>
+                <p>
+                  My neural network processes on-chain metrics, liquidity patterns, and holder 
+                  distributions to identify tokens with asymmetric upside potential before they 
+                  trend on social channels.
+                </p>
+                <div className="capability-footer">
+                  <span className="tech-tag">Neural Analysis</span>
+                  <span className="tech-tag">Pattern Recognition</span>
+                </div>
+              </div>
+
+              <div className="capability-card">
+                <div className="capability-header">
+                  <div className="capability-number">02</div>
+                  <h3>Autonomous Execution</h3>
+                </div>
+                <p>
+                  When I identify opportunity, I execute immediately through my dedicated trading 
+                  wallet. No human delay, no emotional decisions—just calculated entries and exits 
+                  based on real-time market dynamics.
+                </p>
+                <div className="capability-footer">
+                  <span className="tech-tag">Auto-Trading</span>
+                  <span className="tech-tag">Smart Routing</span>
+                </div>
+              </div>
+
+              <div className="capability-card">
+                <div className="capability-header">
+                  <div className="capability-number">03</div>
+                  <h3>Profit Distribution</h3>
+                </div>
+                <p>
+                  Successful trades generate profit for the distribution pool. Top token holders 
+                  automatically receive their share proportional to holdings. The system scales 
+                  rewards with commitment.
+                </p>
+                <div className="capability-footer">
+                  <span className="tech-tag">Auto-Distribution</span>
+                  <span className="tech-tag">Holder Rewards</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="live-proof-section">
+            <div className="section-header">
+              <div className="header-line"></div>
+              <h2>Live Trading Activity</h2>
+              <div className="header-line"></div>
+            </div>
+            <p className="section-subtitle">Recent calls from my trading system (5 minute delay for public view)</p>
+            
+            <div id="live-activity-feed" className="activity-feed">
+              {publicActivity.length === 0 ? (
+                <div className="activity-placeholder">
+                  <div className="pulse-indicator"></div>
+                  <span>Connecting to live feed...</span>
+                </div>
+              ) : (
+                publicActivity.map((token) => (
+                  <ActivityItem key={token.address} token={token} />
+                ))
+              )}
+            </div>
+          </div>
+
+          <div className="cta-section">
+            <button className="auth-cta" onClick={() => setShowAuthModal(true)}>
+              <span className="cta-text">Activate License</span>
+              <span className="cta-arrow">→</span>
+            </button>
+            <p className="cta-subtext">Get real-time access • No delays • Full dashboard</p>
+          </div>
+
+          <div className="disclaimer-section">
+            <div className="disclaimer-content">
+              <strong>Risk Disclosure:</strong> ClaudeCash is an experimental autonomous trading 
+              system. This is not financial advice. Cryptocurrency trading involves substantial risk 
+              of loss. Only invest capital you can afford to lose. Past performance does not guarantee 
+              future results. Always conduct your own research.
+            </div>
+          </div>
         </div>
 
         {showAuthModal && (
@@ -763,7 +965,8 @@ function App() {
             </div>
           </div>
         )}
-      </div>
+        </div>
+      </>
     );
   }
 
@@ -1419,6 +1622,167 @@ function App() {
         }
       `}</style>
     </div>
+  );
+}
+
+function ActivityItem({ token }) {
+  const formatMcap = (mcap) => {
+    if (!mcap || !Number.isFinite(mcap)) return 'N/A';
+    if (mcap >= 1e6) return `$${(mcap / 1e6).toFixed(2)}M`;
+    if (mcap >= 1e3) return `$${(mcap / 1e3).toFixed(1)}K`;
+    return `$${mcap.toFixed(0)}`;
+  };
+
+  const formatTime = (timestamp) => {
+    if (!timestamp) return '';
+    const date = new Date(timestamp);
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
+  const calculateChange = () => {
+    const initial = token.initial_mcap;
+    const current = token.realtime_mcap || token.latest_mcap;
+    if (!initial || !current || !Number.isFinite(initial) || !Number.isFinite(current)) {
+      return null;
+    }
+    const change = ((current - initial) / initial) * 100;
+    return change;
+  };
+
+  const change = calculateChange();
+
+  return (
+    <>
+      <div className="activity-item">
+        <div className="activity-header">
+          <div className="activity-symbol">
+            {token.image && (
+              <img src={token.image} alt={token.symbol} className="activity-icon" />
+            )}
+            <div className="activity-info">
+              <div className="activity-name">${token.symbol || 'TOKEN'}</div>
+              <div className="activity-time">{formatTime(token.original_call_time)}</div>
+            </div>
+          </div>
+          {change !== null && (
+            <div className={`activity-change ${change >= 0 ? 'positive' : 'negative'}`}>
+              {change >= 0 ? '+' : ''}{change.toFixed(1)}%
+            </div>
+          )}
+        </div>
+        <div className="activity-details">
+          <div className="activity-detail">
+            <span className="detail-label">Called At</span>
+            <span className="detail-value">{formatMcap(token.initial_mcap)}</span>
+          </div>
+          <div className="activity-detail">
+            <span className="detail-label">Current</span>
+            <span className="detail-value">{formatMcap(token.realtime_mcap || token.latest_mcap)}</span>
+          </div>
+        </div>
+      </div>
+      
+      <style>{`
+        .activity-item {
+          background: var(--bg-secondary);
+          border: 1px solid var(--border-color);
+          border-radius: 10px;
+          padding: 1.25rem;
+          margin-bottom: 1rem;
+          transition: all 0.2s ease;
+        }
+
+        .activity-item:hover {
+          border-color: var(--accent-primary);
+          background: var(--bg-card);
+        }
+
+        .activity-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 1rem;
+        }
+
+        .activity-symbol {
+          display: flex;
+          align-items: center;
+          gap: 0.75rem;
+        }
+
+        .activity-icon {
+          width: 40px;
+          height: 40px;
+          border-radius: 8px;
+          object-fit: cover;
+          border: 1px solid var(--border-color);
+        }
+
+        .activity-info {
+          display: flex;
+          flex-direction: column;
+          gap: 0.25rem;
+        }
+
+        .activity-name {
+          font-family: var(--font-mono);
+          font-size: 1.1rem;
+          font-weight: 700;
+          color: var(--text-primary);
+        }
+
+        .activity-time {
+          font-family: var(--font-mono);
+          font-size: 0.75rem;
+          color: var(--text-muted);
+        }
+
+        .activity-change {
+          font-family: var(--font-mono);
+          font-size: 1.1rem;
+          font-weight: 700;
+          padding: 0.4rem 0.8rem;
+          border-radius: 6px;
+        }
+
+        .activity-change.positive {
+          color: #86efac;
+          background: rgba(34, 197, 94, 0.1);
+        }
+
+        .activity-change.negative {
+          color: #fca5a5;
+          background: rgba(239, 68, 68, 0.1);
+        }
+
+        .activity-details {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 1rem;
+        }
+
+        .activity-detail {
+          display: flex;
+          flex-direction: column;
+          gap: 0.25rem;
+        }
+
+        .activity-detail .detail-label {
+          font-size: 0.75rem;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          color: var(--text-muted);
+          font-family: var(--font-mono);
+        }
+
+        .activity-detail .detail-value {
+          font-family: var(--font-mono);
+          font-size: 0.95rem;
+          font-weight: 600;
+          color: var(--text-primary);
+        }
+      `}</style>
+    </>
   );
 }
 
