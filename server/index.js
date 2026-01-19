@@ -62,10 +62,10 @@ if (backfilled > 0) {
 }
 
 const VISIBLE_REFRESH_LIMIT = Number.parseInt(process.env.VISIBLE_REFRESH_LIMIT || '15', 10);
-const REALTIME_MCAP_BROADCAST_INTERVAL_MS = Number.parseInt(process.env.REALTIME_MCAP_BROADCAST_INTERVAL_MS || '4000', 10);
+const REALTIME_MCAP_BROADCAST_INTERVAL_MS = Number.parseInt(process.env.REALTIME_MCAP_BROADCAST_INTERVAL_MS || '2000', 10); // 2s for faster updates
 const REALTIME_MCAP_BROADCAST_LIMIT = Number.parseInt(process.env.REALTIME_MCAP_BROADCAST_LIMIT || '60', 10);
-const REALTIME_MCAP_BROADCAST_CONCURRENCY = Number.parseInt(process.env.REALTIME_MCAP_BROADCAST_CONCURRENCY || '4', 10);
-const REALTIME_MCAP_BROADCAST_MIN_PCT_CHANGE = Number.parseFloat(process.env.REALTIME_MCAP_BROADCAST_MIN_PCT_CHANGE || '0.1'); // %
+const REALTIME_MCAP_BROADCAST_CONCURRENCY = Number.parseInt(process.env.REALTIME_MCAP_BROADCAST_CONCURRENCY || '5', 10); // Higher concurrency
+const REALTIME_MCAP_BROADCAST_MIN_PCT_CHANGE = Number.parseFloat(process.env.REALTIME_MCAP_BROADCAST_MIN_PCT_CHANGE || '0.05'); // 0.05% for more frequent updates
 
 const pumpPortalWs = new PumpPortalWebSocket({
   url: process.env.PUMP_PORTAL_WS_URL || 'wss://pumpportal.fun/api/data',
@@ -220,10 +220,17 @@ wss.on('connection', async (ws) => {
   clients.add(ws);
   console.log(`Client connected. Total: ${clients.size}`);
   
+  // Clear caches on new connection to force fresh data
+  if (tradingEngine?.mcapCache) {
+    tradingEngine.mcapCache.clear();
+  }
+  if (tradingEngine?.helius?.dexScreenerCache) {
+    tradingEngine.helius.dexScreenerCache.clear();
+  }
+  
   // Send current state on connect (always)
   await refreshVisibleTokens();
-  // Never compute realtime mcap for the entire DB on connect (rate limits + inconsistent mixes).
-  // We can still send the full snapshot; realtime mcap will only be attached for top-N and then streamed.
+  // Force fresh mcap fetch for visible tokens on refresh
   const refreshTokens = tokenStore.getAllTokens();
   const tokensWithRealtimeMcap = await attachRealtimeMcapField(refreshTokens, { limit: REALTIME_MCAP_BROADCAST_LIMIT });
   const snapshot = {
@@ -479,15 +486,26 @@ async function pollStalkFun() {
     }
 
     // Broadcast updates for existing tokens so UIs stay live
-    // Attach realtime_mcap from DexScreener cache (longer TTL than trading engine cache)
+    // Attach realtime_mcap from multiple cache sources (prefer freshest)
     if (updatedTokens.length > 0) {
       for (const token of updatedTokens.filter(Boolean)) {
         const mint = token?.address || token?.mint;
-        if (mint && tradingEngine?.helius?.dexScreenerCache) {
-          const cached = tradingEngine.helius.dexScreenerCache.get(mint);
-          if (cached?.mcap && Date.now() - cached.ts < 15000) {
-            token.realtime_mcap = cached.mcap;
-            token.realtime_mcap_ts = cached.ts;
+        if (mint) {
+          // Check PumpPortal WebSocket cache first (freshest for bonding curve)
+          if (tradingEngine?.pumpPortalWs) {
+            const pumpMcap = tradingEngine.pumpPortalWs.getMarketCap(mint);
+            if (pumpMcap) {
+              token.realtime_mcap = pumpMcap;
+              token.realtime_mcap_ts = Date.now();
+            }
+          }
+          // Fall back to DexScreener cache if no PumpPortal data
+          if (!token.realtime_mcap && tradingEngine?.helius?.dexScreenerCache) {
+            const cached = tradingEngine.helius.dexScreenerCache.get(mint);
+            if (cached?.mcap && Date.now() - cached.ts < 5000) {
+              token.realtime_mcap = cached.mcap;
+              token.realtime_mcap_ts = cached.ts;
+            }
           }
         }
         broadcast({ type: 'token_update', data: token });

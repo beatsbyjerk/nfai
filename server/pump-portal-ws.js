@@ -13,7 +13,7 @@ export class PumpPortalWebSocket extends EventEmitter {
     this.reconnectDelayMs = 5000;
     this.shouldReconnect = true;
     this.mcapCache = new Map(); // mint -> { mcap, ts }
-    this.mcapCacheTtl = 10000; // 10 seconds
+    this.mcapCacheTtl = 5000; // 5 seconds for bonding curve data
   }
 
   start() {

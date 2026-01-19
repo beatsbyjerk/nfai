@@ -12,7 +12,7 @@ export class HeliusService {
     this.rpcUrl = apiKey ? `https://mainnet.helius-rpc.com/?api-key=${apiKey}` : null;
     this.solPriceCache = { value: null, ts: 0 };
     this.dexScreenerCache = new Map(); // mint -> { mcap, price, ts }
-    this.dexScreenerTtlMs = 10000; // 10 seconds
+    this.dexScreenerTtlMs = 3000; // 3 seconds for faster updates
   }
 
   async getSolBalance(address) {
