@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 
-export function Header({ connected, soundEnabled, onToggleSound }) {
+export function Header({ connected, soundEnabled, onToggleSound, authWallet, licenseExpiresAt, onLogout }) {
   const [theme, setTheme] = useState(() => {
     try {
       return localStorage.getItem('theme') || 'light';
@@ -41,6 +41,21 @@ export function Header({ connected, soundEnabled, onToggleSound }) {
         </div>
         
         <div className="header-right">
+          {authWallet && (
+            <div className="license-status">
+              <div className="license-wallet">{authWallet.slice(0, 4)}…{authWallet.slice(-4)}</div>
+              {licenseExpiresAt && (
+                <div className="license-expiry">
+                  {formatTimeRemaining(new Date(licenseExpiresAt).getTime() - Date.now())}
+                </div>
+              )}
+              {onLogout && (
+                <button className="license-logout" onClick={onLogout}>
+                  Logout
+                </button>
+              )}
+            </div>
+          )}
           <button className="theme-toggle" onClick={toggleTheme} title="Toggle Theme">
             {theme === 'light' ? '🌙' : '☀️'}
           </button>
@@ -107,6 +122,36 @@ export function Header({ connected, soundEnabled, onToggleSound }) {
           display: flex;
           align-items: center;
           gap: 1rem;
+        }
+
+        .license-status {
+          display: flex;
+          align-items: center;
+          gap: 0.75rem;
+          padding: 0.4rem 0.6rem;
+          border: 1px solid var(--border-color);
+          border-radius: 8px;
+          background: var(--bg-secondary);
+          font-size: 0.85rem;
+        }
+
+        .license-wallet {
+          color: var(--text-primary);
+          font-weight: 600;
+        }
+
+        .license-expiry {
+          color: var(--text-secondary);
+        }
+
+        .license-logout {
+          border: none;
+          background: var(--accent-primary);
+          color: #fff;
+          padding: 0.3rem 0.6rem;
+          border-radius: 6px;
+          cursor: pointer;
+          font-size: 0.8rem;
         }
         
         .theme-toggle {

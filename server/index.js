@@ -9,6 +9,7 @@ import { StalkFunAPI } from './stalkfun-api.js';
 import { TokenStore } from './token-store.js';
 import { TradingEngine } from './trading-engine.js';
 import { PumpPortalWebSocket } from './pump-portal-ws.js';
+import { AuthService } from './auth-service.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -45,6 +46,91 @@ const wss = new WebSocketServer({ server });
 
 app.use(cors());
 app.use(express.json());
+
+const authService = new AuthService();
+
+const extractSession = (req) => {
+  const authHeader = req.headers.authorization || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  return token || req.body?.sessionToken || req.query?.sessionToken || null;
+};
+
+app.post('/api/auth/activate', async (req, res) => {
+  const { wallet, plan, deviceId } = req.body || {};
+  const result = await authService.activateLicense({ wallet, plan, deviceId });
+  if (!result.ok) {
+    return res.status(401).json({ error: result.error });
+  }
+  return res.json(result);
+});
+
+app.post('/api/auth/payment/start', async (req, res) => {
+  const { wallet, plan } = req.body || {};
+  const result = await authService.startPayment({ wallet, plan });
+  if (!result.ok) {
+    return res.status(400).json({ error: result.error });
+  }
+  return res.json(result);
+});
+
+app.post('/api/auth/payment/confirm', async (req, res) => {
+  const { wallet, plan, deviceId } = req.body || {};
+  const timeoutMs = Number.parseInt(req.body?.timeoutMs || '60000', 10);
+  const result = await authService.confirmPaymentAndActivateRealtime({ wallet, plan, deviceId, timeoutMs });
+  if (!result.ok) {
+    return res.status(400).json({ error: result.error });
+  }
+  return res.json(result);
+});
+
+app.post('/api/admin/revoke', async (req, res) => {
+  const adminKey = process.env.ADMIN_API_KEY || '';
+  const authHeader = req.headers.authorization || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+  if (!adminKey || token !== adminKey) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  const { wallet, action } = req.body || {};
+  if (!wallet) return res.status(400).json({ error: 'Missing wallet' });
+
+  try {
+    if (action === 'logout') {
+      await authService.client
+        .from('licenses')
+        .update({ session_token: null, device_id: null })
+        .eq('wallet', wallet);
+    } else {
+      // revoke = expire now + clear session
+      await authService.client
+        .from('licenses')
+        .update({ session_token: null, device_id: null, expires_at: new Date().toISOString() })
+        .eq('wallet', wallet);
+    }
+    return res.json({ ok: true });
+  } catch (error) {
+    return res.status(500).json({ error: error.message || 'Server error' });
+  }
+});
+
+app.post('/api/auth/validate', async (req, res) => {
+  const sessionToken = extractSession(req);
+  const deviceId = req.body?.deviceId || req.query?.deviceId || null;
+  const result = await authService.validateSession({ sessionToken, deviceId });
+  if (!result.ok) {
+    return res.status(401).json({ error: result.error });
+  }
+  return res.json(result);
+});
+
+app.post('/api/auth/logout', async (req, res) => {
+  const sessionToken = extractSession(req);
+  const deviceId = req.body?.deviceId || req.query?.deviceId || null;
+  const result = await authService.logout({ sessionToken, deviceId });
+  if (!result.ok) {
+    return res.status(401).json({ error: result.error });
+  }
+  return res.json({ ok: true });
+});
 
 // Serve static files from client build
 const clientDist = join(__dirname, '..', 'client', 'dist');
@@ -216,11 +302,21 @@ const attachRealtimeMcapField = async (tokens, { limit = 30, forceRefresh = fals
 // Track connected WebSocket clients
 const clients = new Set();
 
-wss.on('connection', async (ws) => {
-  clients.add(ws);
-  console.log(`Client connected. Total: ${clients.size}`);
-  
+wss.on('connection', async (ws, req) => {
   try {
+    const requestUrl = new URL(req.url || '', `http://${req.headers.host || 'localhost'}`);
+    const sessionToken = requestUrl.searchParams.get('token');
+    const deviceId = requestUrl.searchParams.get('deviceId');
+    const authResult = await authService.validateSession({ sessionToken, deviceId });
+    if (!authResult.ok) {
+      ws.close(1008, 'unauthorized');
+      return;
+    }
+    ws.auth = authResult;
+
+    clients.add(ws);
+    console.log(`Client connected. Total: ${clients.size}`);
+
     // Send current state on connect - fetch fresh data BEFORE sending
     await refreshVisibleTokens();
     const refreshTokens = tokenStore.getAllTokens();
@@ -246,8 +342,10 @@ wss.on('connection', async (ws) => {
     ws.send(JSON.stringify(snapshot));
   } catch (error) {
     console.error('Error sending initial snapshot:', error);
+    ws.close(1011, 'server_error');
+    return;
   }
-  
+
   ws.on('close', () => {
     clients.delete(ws);
     console.log(`Client disconnected. Total: ${clients.size}`);

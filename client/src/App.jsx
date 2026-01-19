@@ -34,6 +34,21 @@ function App() {
       return false;
     }
   });
+  const [authState, setAuthState] = useState({
+    loading: true,
+    authenticated: false,
+    wallet: null,
+    plan: null,
+    expiresAt: null,
+    sessionToken: null,
+  });
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [licenseKey, setLicenseKey] = useState('');
+  const [licensePlan, setLicensePlan] = useState('week');
+  const [authError, setAuthError] = useState('');
+  const [paymentInfo, setPaymentInfo] = useState(null);
+  const [checkingPayment, setCheckingPayment] = useState(false);
+  const deviceIdRef = useRef(null);
   const wsRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
   const audioRef = useRef(null);
@@ -60,6 +75,172 @@ function App() {
   useEffect(() => {
     soundEnabledRef.current = soundEnabled;
   }, [soundEnabled]);
+
+  const getOrCreateDeviceId = useCallback(() => {
+    try {
+      const existing = localStorage.getItem('deviceId');
+      if (existing) return existing;
+      const created = window.crypto?.randomUUID?.() || `dev_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+      localStorage.setItem('deviceId', created);
+      return created;
+    } catch {
+      return `dev_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    }
+  }, []);
+
+  const validateSession = useCallback(async () => {
+    const sessionToken = localStorage.getItem('sessionToken');
+    if (!sessionToken) {
+      setAuthState({
+        loading: false,
+        authenticated: false,
+        wallet: null,
+        plan: null,
+        expiresAt: null,
+        sessionToken: null,
+      });
+      return;
+    }
+    const deviceId = deviceIdRef.current || getOrCreateDeviceId();
+    try {
+      const res = await fetch('/api/auth/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionToken, deviceId }),
+      });
+      if (!res.ok) throw new Error('Invalid session');
+      const data = await res.json();
+      setAuthState({
+        loading: false,
+        authenticated: true,
+        wallet: data.wallet,
+        plan: data.plan,
+        expiresAt: data.expiresAt,
+        sessionToken,
+      });
+    } catch {
+      localStorage.removeItem('sessionToken');
+      setAuthState({
+        loading: false,
+        authenticated: false,
+        wallet: null,
+        plan: null,
+        expiresAt: null,
+        sessionToken: null,
+      });
+    }
+  }, [getOrCreateDeviceId]);
+
+  useEffect(() => {
+    deviceIdRef.current = getOrCreateDeviceId();
+    validateSession();
+  }, [getOrCreateDeviceId, validateSession]);
+
+  useEffect(() => {
+    if (!authState.authenticated || !authState.sessionToken) return;
+    const interval = setInterval(() => {
+      validateSession();
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [authState.authenticated, authState.sessionToken, validateSession]);
+
+  const handleActivate = async () => {
+    setAuthError('');
+    const deviceId = deviceIdRef.current || getOrCreateDeviceId();
+    try {
+      const res = await fetch('/api/auth/activate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ wallet: licenseKey.trim(), plan: licensePlan, deviceId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Activation failed');
+      localStorage.setItem('sessionToken', data.sessionToken);
+      setAuthState({
+        loading: false,
+        authenticated: true,
+        wallet: data.wallet,
+        plan: data.plan,
+        expiresAt: data.expiresAt,
+        sessionToken: data.sessionToken,
+      });
+      setShowAuthModal(false);
+      setLicenseKey('');
+    } catch (error) {
+      setAuthError(error.message || 'Activation failed');
+    }
+  };
+
+  const handleStartPayment = async () => {
+    setAuthError('');
+    setPaymentInfo(null);
+    try {
+      const res = await fetch('/api/auth/payment/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ wallet: licenseKey.trim(), plan: licensePlan }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Unable to start payment');
+      setPaymentInfo(data);
+    } catch (error) {
+      setAuthError(error.message || 'Unable to start payment');
+    }
+  };
+
+  const handleConfirmPayment = async () => {
+    setAuthError('');
+    setCheckingPayment(true);
+    const deviceId = deviceIdRef.current || getOrCreateDeviceId();
+    try {
+      const res = await fetch('/api/auth/payment/confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ wallet: licenseKey.trim(), plan: licensePlan, deviceId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Payment not found');
+      localStorage.setItem('sessionToken', data.sessionToken);
+      setAuthState({
+        loading: false,
+        authenticated: true,
+        wallet: data.wallet,
+        plan: data.plan,
+        expiresAt: data.expiresAt,
+        sessionToken: data.sessionToken,
+      });
+      setShowAuthModal(false);
+      setLicenseKey('');
+      setPaymentInfo(null);
+    } catch (error) {
+      setAuthError(error.message || 'Payment not found');
+    } finally {
+      setCheckingPayment(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    const sessionToken = localStorage.getItem('sessionToken');
+    const deviceId = deviceIdRef.current || getOrCreateDeviceId();
+    try {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionToken, deviceId }),
+      });
+    } catch {
+      // ignore
+    }
+    localStorage.removeItem('sessionToken');
+    setAuthState({
+      loading: false,
+      authenticated: false,
+      wallet: null,
+      plan: null,
+      expiresAt: null,
+      sessionToken: null,
+    });
+  };
 
   const hasPrintScanSource = useCallback((token) => {
     const sources = (token?.sources || token?.source || '')
@@ -88,11 +269,16 @@ function App() {
   }, [soundEnabled]);
 
   const connectWebSocket = useCallback(() => {
+    if (!authState.authenticated || !authState.sessionToken) return;
     if (wsRef.current && (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)) {
       return;
     }
     const isDev = window.location.port === '5173';
-    const wsUrl = isDev ? 'ws://localhost:3001' : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`;
+    const deviceId = deviceIdRef.current || getOrCreateDeviceId();
+    const qs = `?token=${encodeURIComponent(authState.sessionToken)}&deviceId=${encodeURIComponent(deviceId)}`;
+    const wsUrl = isDev
+      ? `ws://localhost:3001${qs}`
+      : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}${qs}`;
     
     const ws = new WebSocket(wsUrl);
     
@@ -218,6 +404,12 @@ function App() {
       clearTimeout(reconnectTimeoutRef.current);
     };
   }, [connectWebSocket]);
+
+  useEffect(() => {
+    if (authState.authenticated) return;
+    wsRef.current?.close();
+    setConnected(false);
+  }, [authState.authenticated]);
 
   const getTokenTimeBySource = (token, source) => {
     if (source === 'print_scan') {
@@ -424,12 +616,95 @@ function App() {
       ? athMultiples.reduce((sum, value) => sum + value, 0) / athMultiples.length
       : 0;
 
+  if (authState.loading) {
+    return (
+      <div className="auth-loading">
+        <div className="auth-loading-card">
+          <div className="auth-loading-title">ClaudeCash</div>
+          <div className="auth-loading-text">Checking license…</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!authState.authenticated) {
+    return (
+      <div className="auth-landing">
+        <div className="auth-hero">
+          <div className="auth-logo">ClaudeCash</div>
+          <div className="auth-tagline">Real-time on-chain signal intelligence with live trade execution.</div>
+          <div className="auth-description">
+            Track emerging tokens, monitor market caps in real time, and automate execution with
+            industrial-grade reliability. Activate your license key to continue.
+          </div>
+          <button className="auth-cta" onClick={() => setShowAuthModal(true)}>
+            Activate License
+          </button>
+        </div>
+
+        {showAuthModal && (
+          <div className="auth-modal-backdrop">
+            <div className="auth-modal">
+              <div className="auth-modal-title">Activate / Login</div>
+              <label className="auth-label">License key (wallet address)</label>
+              <input
+                className="auth-input"
+                value={licenseKey}
+                onChange={(e) => setLicenseKey(e.target.value)}
+                placeholder="Paste wallet address"
+              />
+              <label className="auth-label">Plan</label>
+              <select
+                className="auth-select"
+                value={licensePlan}
+                onChange={(e) => setLicensePlan(e.target.value)}
+              >
+                <option value="week">Weekly</option>
+                <option value="month">Monthly</option>
+              </select>
+              <div className="auth-payment">
+                <div className="auth-payment-title">Payment</div>
+                <div className="auth-payment-text">
+                  Weekly: 0.25 SOL · Monthly: 0.5 SOL
+                </div>
+                {paymentInfo && (
+                  <div className="auth-payment-details">
+                    <div>Send {paymentInfo.amountSol} SOL to:</div>
+                    <div className="auth-payment-wallet">{paymentInfo.tradingWallet}</div>
+                  </div>
+                )}
+              </div>
+              {authError && <div className="auth-error">{authError}</div>}
+              <div className="auth-actions">
+                <button className="auth-secondary" onClick={() => setShowAuthModal(false)}>
+                  Cancel
+                </button>
+                {!paymentInfo ? (
+                  <button className="auth-primary" onClick={handleStartPayment}>
+                    Start Payment
+                  </button>
+                ) : (
+                  <button className="auth-primary" onClick={handleConfirmPayment} disabled={checkingPayment}>
+                    {checkingPayment ? 'Checking…' : 'I Paid'}
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="app">
       <Header
         connected={connected}
         soundEnabled={soundEnabled}
         onToggleSound={() => setSoundEnabled(prev => !prev)}
+        authWallet={authState.wallet}
+        licenseExpiresAt={authState.expiresAt}
+        onLogout={handleLogout}
       />
       
       <main className="main-content">
