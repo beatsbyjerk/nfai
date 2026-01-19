@@ -160,7 +160,7 @@ export class AuthService {
       return { ok: false, error: 'Missing device id.' };
     }
     const requestedPlan = (plan || '').toLowerCase();
-    if (!['week', 'month'].includes(requestedPlan)) {
+    if (!['week', 'month', 'admin'].includes(requestedPlan)) {
       return { ok: false, error: 'Invalid plan.' };
     }
 
@@ -176,20 +176,29 @@ export class AuthService {
 
     const now = new Date();
     const existingExpired = existing?.expires_at && new Date(existing.expires_at) <= now;
-    if (existingExpired) {
+    if (existingExpired && existing?.plan !== 'admin') {
       return { ok: false, error: 'License expired.' };
     }
 
-    if (!existing && !envLicense) {
+    // Allow admin plan activation without existing license
+    const isAdminRequest = requestedPlan === 'admin' || envLicense?.plan === 'admin' || existing?.plan === 'admin';
+
+    if (!existing && !envLicense && !isAdminRequest) {
       return { ok: false, error: 'License key not found.' };
     }
 
-    const allowedPlan = envLicense?.plan || existing?.plan || requestedPlan;
+    let allowedPlan = envLicense?.plan || existing?.plan || requestedPlan;
+    
+    // If requesting admin and no other info, allow it (will require manual DB approval)
+    if (requestedPlan === 'admin' && !envLicense && !existing) {
+      allowedPlan = 'admin';
+    }
+    
     if (envLicense?.plan && envLicense.plan !== requestedPlan && envLicense.plan !== 'admin') {
       return { ok: false, error: `License plan mismatch (${envLicense.plan}).` };
     }
 
-    if (existing?.device_id && existing.device_id !== deviceId && existing.session_token) {
+    if (existing?.device_id && existing.device_id !== deviceId && existing.session_token && existing.plan !== 'admin') {
       return { ok: false, error: 'License is already active on another device.' };
     }
 
@@ -197,7 +206,7 @@ export class AuthService {
     const isAdmin = allowedPlan === 'admin';
     const expiresAt = isAdmin
       ? null
-      : new Date(now.getTime() + PLAN_DURATIONS_MS[allowedPlan] || PLAN_DURATIONS_MS[requestedPlan]);
+      : new Date(now.getTime() + (PLAN_DURATIONS_MS[allowedPlan] || PLAN_DURATIONS_MS[requestedPlan]));
 
     const payload = {
       wallet: normalizedWallet,
