@@ -49,6 +49,8 @@ function App() {
   const [authError, setAuthError] = useState('');
   const [paymentInfo, setPaymentInfo] = useState(null);
   const [checkingPayment, setCheckingPayment] = useState(false);
+  const [paymentTimeout, setPaymentTimeout] = useState(null);
+  const [retryCount, setRetryCount] = useState(0);
   const [landingTheme, setLandingTheme] = useState(() => {
     try {
       return localStorage.getItem('theme') || 'light';
@@ -207,15 +209,38 @@ function App() {
   const handleConfirmPayment = async () => {
     setAuthError('');
     setCheckingPayment(true);
+    setRetryCount(0);
     const deviceId = deviceIdRef.current || getOrCreateDeviceId();
+    
+    // Set a timeout countdown (30 seconds max per attempt)
+    let timeLeft = 30;
+    setPaymentTimeout(timeLeft);
+    const countdownInterval = setInterval(() => {
+      timeLeft--;
+      setPaymentTimeout(timeLeft);
+      if (timeLeft <= 0) {
+        clearInterval(countdownInterval);
+      }
+    }, 1000);
+    
     try {
       const res = await fetch('/api/auth/payment/confirm', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ wallet: licenseKey.trim(), plan: licensePlan, deviceId }),
+        body: JSON.stringify({ 
+          wallet: licenseKey.trim(), 
+          plan: licensePlan, 
+          deviceId,
+          timeoutMs: 30000 // 30 seconds instead of 60
+        }),
       });
+      
+      clearInterval(countdownInterval);
+      setPaymentTimeout(null);
+      
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Payment not found');
+      
       localStorage.setItem('sessionToken', data.sessionToken);
       setAuthState({
         loading: false,
@@ -228,11 +253,29 @@ function App() {
       setShowAuthModal(false);
       setLicenseKey('');
       setPaymentInfo(null);
+      setRetryCount(0);
     } catch (error) {
-      setAuthError(error.message || 'Payment not found');
+      clearInterval(countdownInterval);
+      setPaymentTimeout(null);
+      
+      const errorMsg = error.message || 'Payment not found';
+      if (errorMsg.includes('not found') || errorMsg.includes('timeout')) {
+        setAuthError('Payment not detected yet. Please ensure you sent the exact amount to the correct wallet, then try again.');
+        setRetryCount(prev => prev + 1);
+      } else {
+        setAuthError(errorMsg);
+      }
     } finally {
       setCheckingPayment(false);
     }
+  };
+
+  const handleCancelPayment = () => {
+    setPaymentInfo(null);
+    setAuthError('');
+    setPaymentTimeout(null);
+    setCheckingPayment(false);
+    setRetryCount(0);
   };
 
   const handleLogout = async () => {
@@ -959,33 +1002,76 @@ function App() {
                 <option value="month">Monthly</option>
               </select>
               <div className="auth-payment">
-                <div className="auth-payment-title">Payment</div>
+                <div className="auth-payment-title">Payment Options</div>
                 <div className="auth-payment-text">
                   Weekly: 0.25 SOL · Monthly: 0.5 SOL
                 </div>
                 {paymentInfo && (
                   <div className="auth-payment-details">
-                    <div>Send {paymentInfo.amountSol} SOL to:</div>
-                    <div className="auth-payment-wallet">{paymentInfo.tradingWallet}</div>
+                    <div className="payment-instruction">
+                      <strong>Step 1:</strong> Send exactly <strong>{paymentInfo.amountSol} SOL</strong> to:
+                    </div>
+                    <div className="auth-payment-wallet" onClick={() => {
+                      navigator.clipboard.writeText(paymentInfo.tradingWallet);
+                      alert('Wallet address copied!');
+                    }}>
+                      {paymentInfo.tradingWallet}
+                      <span className="copy-hint">Click to copy</span>
+                    </div>
+                    <div className="payment-instruction">
+                      <strong>Step 2:</strong> After sending, click "I Paid" below
+                    </div>
+                    {checkingPayment && paymentTimeout && (
+                      <div className="payment-checking">
+                        <div className="checking-spinner"></div>
+                        <span>Checking for payment... ({paymentTimeout}s)</span>
+                      </div>
+                    )}
+                    {retryCount > 0 && !checkingPayment && (
+                      <div className="payment-retry-info">
+                        Attempt {retryCount}. If you sent payment, it may take a moment to confirm on-chain.
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
-              {authError && <div className="auth-error">{authError}</div>}
+              {authError && (
+                <div className="auth-error">
+                  {authError}
+                  {retryCount > 0 && retryCount < 3 && (
+                    <div className="error-help">
+                      • Verify you sent the exact amount ({paymentInfo?.amountSol} SOL)<br/>
+                      • Check the transaction completed on-chain<br/>
+                      • Wait 30-60 seconds after sending before clicking "I Paid"
+                    </div>
+                  )}
+                  {retryCount >= 3 && (
+                    <div className="error-help">
+                      Still not working? Contact support with your wallet address and transaction signature.
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="auth-actions">
                 <button className="auth-secondary" onClick={() => setShowAuthModal(false)}>
                   Cancel
                 </button>
                 <button className="auth-activate" onClick={handleActivate}>
-                  Activate
+                  Activate Existing
                 </button>
                 {!paymentInfo ? (
                   <button className="auth-primary" onClick={handleStartPayment}>
                     New Payment
                   </button>
                 ) : (
-                  <button className="auth-primary" onClick={handleConfirmPayment} disabled={checkingPayment}>
-                    {checkingPayment ? 'Checking…' : 'I Paid'}
-                  </button>
+                  <>
+                    <button className="auth-cancel-payment" onClick={handleCancelPayment} disabled={checkingPayment}>
+                      Cancel Payment
+                    </button>
+                    <button className="auth-primary" onClick={handleConfirmPayment} disabled={checkingPayment}>
+                      {checkingPayment ? `Checking (${paymentTimeout}s)` : 'I Paid'}
+                    </button>
+                  </>
                 )}
               </div>
             </div>
