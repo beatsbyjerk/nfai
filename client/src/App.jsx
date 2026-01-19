@@ -836,7 +836,7 @@ function App() {
           </div>
           <div className="landing-header-controls">
             <a 
-              href="https://x.com/claudecash" 
+              href="https://x.com/" 
               target="_blank" 
               rel="noopener noreferrer" 
               className="landing-x-btn"
@@ -1320,7 +1320,7 @@ function App() {
           </div>
           
           {selectedToken && (
-            <div className="detail-panel">
+            <div className="detail-panel desktop-only">
               <TokenDetail 
                 token={selectedToken} 
                 onClose={() => setSelectedTokenAddress(null)}
@@ -1328,6 +1328,20 @@ function App() {
             </div>
           )}
         </div>
+
+        {selectedToken && (
+          <div
+            className="token-detail-modal mobile-only"
+            role="dialog"
+            aria-modal="true"
+            onClick={() => setSelectedTokenAddress(null)}
+          >
+            <div className="modal-scrim" />
+            <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+              <TokenDetail token={selectedToken} onClose={() => setSelectedTokenAddress(null)} />
+            </div>
+          </div>
+        )}
       </main>
       
       <style>{`

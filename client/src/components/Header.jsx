@@ -57,7 +57,7 @@ export function Header({ connected, soundEnabled, onToggleSound, authWallet, lic
             </div>
           )}
           <a 
-            href="https://x.com/claudecash" 
+            href="https://x.com/" 
             target="_blank" 
             rel="noopener noreferrer" 
             className="x-btn"
