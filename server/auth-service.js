@@ -706,24 +706,24 @@ export class AuthService {
       }, timeoutMs);
 
       let subId = null;
-      this.connection.onLogs(tradingPubkey, async (logInfo) => {
-        if (settled) return;
-        const match = await this.findMatchingPayment({
-          wallet: normalizedWallet,
-          plan: requestedPlan,
-          usedSignatures,
-        });
-        if (!match) return;
-        clearTimeout(timer);
-        cleanup(subId);
-        resolve(match);
-      }, 'confirmed').then((id) => {
-        subId = id;
-      }).catch(() => {
+      try {
+        subId = this.connection.onLogs(tradingPubkey, async (logInfo) => {
+          if (settled) return;
+          const match = await this.findMatchingPayment({
+            wallet: normalizedWallet,
+            plan: requestedPlan,
+            usedSignatures,
+          });
+          if (!match) return;
+          clearTimeout(timer);
+          cleanup(subId);
+          resolve(match);
+        }, 'confirmed');
+      } catch (error) {
         clearTimeout(timer);
         cleanup(subId);
         resolve(null);
-      });
+      }
     });
   }
 
