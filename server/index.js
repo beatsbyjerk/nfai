@@ -67,7 +67,7 @@ const VISIBLE_REFRESH_LIMIT = Number.parseInt(process.env.VISIBLE_REFRESH_LIMIT 
 const REALTIME_MCAP_BROADCAST_INTERVAL_MS = Number.parseInt(process.env.REALTIME_MCAP_BROADCAST_INTERVAL_MS || '4000', 10);
 const REALTIME_MCAP_BROADCAST_LIMIT = Number.parseInt(process.env.REALTIME_MCAP_BROADCAST_LIMIT || '60', 10);
 const REALTIME_MCAP_BROADCAST_CONCURRENCY = Number.parseInt(process.env.REALTIME_MCAP_BROADCAST_CONCURRENCY || '4', 10);
-const REALTIME_MCAP_BROADCAST_MIN_PCT_CHANGE = Number.parseFloat(process.env.REALTIME_MCAP_BROADCAST_MIN_PCT_CHANGE || '0.5'); // %
+const REALTIME_MCAP_BROADCAST_MIN_PCT_CHANGE = Number.parseFloat(process.env.REALTIME_MCAP_BROADCAST_MIN_PCT_CHANGE || '0.1'); // %
 
 const pumpPortalWs = new PumpPortalWebSocket({
   url: process.env.PUMP_PORTAL_WS_URL || 'wss://pumpportal.fun/api/data',
@@ -512,7 +512,28 @@ async function broadcastRealtimeMcaps() {
   const limit = Number.isFinite(REALTIME_MCAP_BROADCAST_LIMIT) && REALTIME_MCAP_BROADCAST_LIMIT > 0
     ? REALTIME_MCAP_BROADCAST_LIMIT
     : 60;
-  const tokens = tokenStore.getTokens({ sort: 'first_seen_local', order: 'desc', limit });
+
+  // Get tokens from both sources to ensure both tabs get realtime updates
+  const allTokens = tokenStore.getAllTokens();
+  const memeRadarTokens = allTokens
+    .filter(t => (t.sources || t.source || '').includes('meme_radar'))
+    .sort((a, b) => new Date(b.first_seen_local || 0) - new Date(a.first_seen_local || 0))
+    .slice(0, limit);
+  const printScanTokens = allTokens
+    .filter(t => (t.sources || t.source || '').includes('print_scan'))
+    .sort((a, b) => new Date(b.first_seen_local || 0) - new Date(a.first_seen_local || 0))
+    .slice(0, limit);
+
+  // Dedupe by address
+  const seen = new Set();
+  const tokens = [];
+  for (const t of [...printScanTokens, ...memeRadarTokens]) {
+    if (!seen.has(t.address)) {
+      seen.add(t.address);
+      tokens.push(t);
+    }
+  }
+
   const now = Date.now();
 
   const updates = await mapWithConcurrency(tokens, REALTIME_MCAP_BROADCAST_CONCURRENCY, async (token) => {
