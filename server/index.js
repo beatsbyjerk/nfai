@@ -476,15 +476,19 @@ async function pollStalkFun() {
     }
 
     // Broadcast updates for existing tokens so UIs stay live
+    // Preserve realtime_mcap from Helius if we have it cached
     if (updatedTokens.length > 0) {
-      updatedTokens
-        .filter(Boolean)
-        .forEach((token) => {
-          broadcast({
-            type: 'token_update',
-            data: token
-          });
-        });
+      for (const token of updatedTokens.filter(Boolean)) {
+        const mint = token?.address || token?.mint;
+        if (mint && tradingEngine?.mcapCache) {
+          const cached = tradingEngine.mcapCache.get(mint);
+          if (cached?.value && Date.now() - cached.ts < 10000) {
+            token.realtime_mcap = cached.value;
+            token.realtime_mcap_ts = cached.ts;
+          }
+        }
+        broadcast({ type: 'token_update', data: token });
+      }
     }
 
     // Broadcast only when new tokens appear

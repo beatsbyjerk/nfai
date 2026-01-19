@@ -17,8 +17,8 @@ export class TradingEngine extends EventEmitter {
     this.takeProfitSellPct = parseFloat(process.env.TAKE_PROFIT_SELL_PCT || '75');
     this.trailingStopPct = parseFloat(process.env.TRAILING_STOP_PCT || '25');
     this.realtimeMcapEnabled = process.env.REALTIME_MCAP !== 'false';
-    this.realtimeMcapTtlMs = parseInt(process.env.REALTIME_MCAP_TTL_MS || '5000', 10);
-    this.realtimeMcapIntervalMs = parseInt(process.env.REALTIME_MCAP_INTERVAL_MS || '4000', 10);
+    this.realtimeMcapTtlMs = parseInt(process.env.REALTIME_MCAP_TTL_MS || '2000', 10);
+    this.realtimeMcapIntervalMs = parseInt(process.env.REALTIME_MCAP_INTERVAL_MS || '3000', 10);
     this.pumpPortalUrl = process.env.PUMP_PORTAL_URL || 'https://pumpportal.fun/api/trade-local';
     this.pumpPortalPool = process.env.PUMP_PORTAL_POOL || 'auto';
     this.pumpPortalPriorityFeeSol = parseFloat(process.env.PUMP_PORTAL_PRIORITY_FEE_SOL || '0.00001');
@@ -123,10 +123,18 @@ export class TradingEngine extends EventEmitter {
 
   startRealtimeMonitor() {
     if (!this.realtimeMcapEnabled) return;
-    this.log('info', 'Realtime monitoring enabled (Helius).');
-    setInterval(() => {
+    this.log('info', `Realtime monitoring enabled (Helius). Interval: ${this.realtimeMcapIntervalMs}ms, Cache TTL: ${this.realtimeMcapTtlMs}ms`);
+    
+    let cycleCount = 0;
+    setInterval(async () => {
       if (this.realtimePausedUntil && Date.now() < this.realtimePausedUntil) return;
-      this.updatePositionsRealtime().catch((e) => {
+      
+      cycleCount++;
+      const posCount = this.positions.size;
+      
+      try {
+        await this.updatePositionsRealtime();
+      } catch (e) {
         const now = Date.now();
         const message = e?.message || 'Unknown error';
         if (message.includes('ENOTFOUND')) {
@@ -141,7 +149,7 @@ export class TradingEngine extends EventEmitter {
           this.lastRealtimeErrorAt = now;
           this.log('error', `Realtime monitor failed: ${message}`);
         }
-      });
+      }
     }, this.realtimeMcapIntervalMs);
   }
 
@@ -210,59 +218,64 @@ export class TradingEngine extends EventEmitter {
 
   async getRealtimeMcap(mint) {
     if (!mint) return null;
+    
     const cached = this.mcapCache.get(mint);
-    const now = Date.now();
-    if (cached && now - cached.ts < this.realtimeMcapTtlMs) {
+    if (cached && Date.now() - cached.ts < this.realtimeMcapTtlMs) {
       return cached.value;
     }
 
     const inflight = this.mcapInFlight.get(mint);
     if (inflight) {
-      try {
-        return await inflight;
-      } catch {
-        return null;
-      }
+      return inflight;
     }
 
     const computePromise = (async () => {
-    const tokenRecord = this.getTokenRecord(mint);
-    const isMigrating = this.isTokenMigrating(tokenRecord);
-    let price = null;
+      const price = await this.helius.getTokenPrice(mint);
+      if (!price) return null;
 
-    if (!price) {
-      price = await this.helius.getTokenPrice(mint);
-    }
+      const supply = await this.helius.getTokenSupply(mint);
+      if (!supply?.uiAmount) return null;
 
-    if (!price) return null;
+      const mcap = price * supply.uiAmount;
+      if (!Number.isFinite(mcap)) return null;
 
-    const supply = await this.helius.getTokenSupply(mint);
-    if (!supply?.uiAmount) return null;
-
-    const mcap = price * supply.uiAmount;
-    if (!Number.isFinite(mcap)) return null;
-
-    this.mcapCache.set(mint, { value: mcap, ts: now });
-    return mcap;
+      // Cache with fresh timestamp AFTER data is fetched
+      this.mcapCache.set(mint, { value: mcap, ts: Date.now() });
+      return mcap;
     })();
 
     this.mcapInFlight.set(mint, computePromise);
     try {
       return await computePromise;
     } finally {
-      if (this.mcapInFlight.get(mint) === computePromise) {
-        this.mcapInFlight.delete(mint);
-      }
+      this.mcapInFlight.delete(mint);
     }
   }
 
   async updatePositionsRealtime() {
     if (this.positions.size === 0) return;
     const realtimeTokens = [];
-    for (const mint of this.positions.keys()) {
-      const mcap = await this.getRealtimeMcap(mint);
-      if (!mcap) continue;
-      realtimeTokens.push({ mint, latest_mcap: mcap });
+    for (const [mint, position] of this.positions.entries()) {
+      try {
+        const mcap = await this.getRealtimeMcap(mint);
+        if (!mcap) {
+          if (Date.now() - (position.lastMcapWarnAt || 0) > 60000) {
+            position.lastMcapWarnAt = Date.now();
+            this.log('warn', `No realtime mcap for ${position.symbol || mint.slice(0, 6)} - retrying`);
+          }
+          continue;
+        }
+        realtimeTokens.push({ mint, latest_mcap: mcap });
+        
+        // Log position P&L every 30s
+        if (Date.now() - (position.lastMonitorLogAt || 0) > 30000) {
+          position.lastMonitorLogAt = Date.now();
+          const pnlPct = ((mcap - position.entryMcap) / position.entryMcap) * 100;
+          this.log('info', `Monitoring ${position.symbol || mint.slice(0, 6)}: $${mcap.toFixed(0)} mcap, ${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(1)}% P&L`);
+        }
+      } catch (e) {
+        this.log('error', `Mcap fetch failed for ${position.symbol || mint.slice(0, 6)}: ${e.message}`);
+      }
     }
     if (realtimeTokens.length > 0) {
       await this.updatePositions(realtimeTokens, 'realtime');
