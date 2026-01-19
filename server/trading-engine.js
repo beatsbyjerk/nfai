@@ -17,6 +17,7 @@ export class TradingEngine extends EventEmitter {
     this.takeProfitPct = parseFloat(process.env.TAKE_PROFIT_PCT || '100');
     this.takeProfitSellPct = parseFloat(process.env.TAKE_PROFIT_SELL_PCT || '75');
     this.trailingStopPct = parseFloat(process.env.TRAILING_STOP_PCT || '25');
+    this.autoExecutionEnabled = process.env.AUTO_EXECUTION_ENABLED !== 'false'; // Default: enabled
     this.realtimeMcapEnabled = process.env.REALTIME_MCAP !== 'false';
     this.realtimeMcapTtlMs = parseInt(process.env.REALTIME_MCAP_TTL_MS || '1000', 10); // 1s cache
     this.realtimeMcapIntervalMs = parseInt(process.env.REALTIME_MCAP_INTERVAL_MS || '3000', 10); // 3s interval for accurate stop-loss
@@ -565,6 +566,11 @@ export class TradingEngine extends EventEmitter {
 
       const pnlPct = ((currentMcap - position.entryMcap) / position.entryMcap) * 100;
       position.pnlPct = pnlPct;
+
+      // Skip all auto-executions if disabled (only buy, no sells)
+      if (!this.autoExecutionEnabled) {
+        continue;
+      }
 
       // Stop loss
       if (pnlPct <= this.stopLossPct && position.remainingPct > 0) {

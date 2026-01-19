@@ -17,6 +17,7 @@ TRADING_MODE=paper                # paper | live
 TRADING_WALLET_ADDRESS=...        # required to display balance
 TRADING_PRIVATE_KEY=...           # base58 private key (required for live trading)
 TRADE_AMOUNT_SOL=0.2
+AUTO_EXECUTION_ENABLED=true          # Enable/disable auto-executions (stop loss, take profit, trailing stop). When false, only buys execute, no sells.
 STOP_LOSS_PCT=-30
 TAKE_PROFIT_PCT=100
 TAKE_PROFIT_SELL_PCT=75
