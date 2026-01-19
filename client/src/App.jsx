@@ -784,14 +784,15 @@ function App() {
   const athMultiples = claudeCashStatsTokens
     .map(athMultiple)
     .filter((value) => Number.isFinite(value) && value > 0);
-  // Success = ATH > initial (token reached higher than entry)
+  
+  // Success = How many tokens have ATH > Initial (any gain)
   const successfulCalls = athMultiples.filter((value) => value > 1).length;
-  const successRate = athMultiples.length > 0 ? (successfulCalls / athMultiples.length) * 100 : 0;
-  // Average X = Average of ATH multiples
-  const averageCurrentX =
-    athMultiples.length > 0
-      ? athMultiples.reduce((sum, value) => sum + value, 0) / athMultiples.length
-      : 0;
+  const successRate = totalCalls > 0 ? (successfulCalls / totalCalls) * 100 : 0;
+  
+  // Average X = Average of all ATH X multiples
+  const averageAthX = athMultiples.length > 0
+    ? athMultiples.reduce((sum, value) => sum + value, 0) / athMultiples.length
+    : 0;
 
   if (authState.loading) {
     return (
@@ -1196,7 +1197,7 @@ function App() {
                 </div>
                 <div className="ops-stat">
                   <span>Average X</span>
-                  <strong>{averageCurrentX.toFixed(1)}x</strong>
+                  <strong>{averageAthX.toFixed(1)}x</strong>
                 </div>
               </div>
             </div>
