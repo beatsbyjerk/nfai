@@ -674,8 +674,28 @@ async function pollStalkFun() {
         if (mint) {
           // Check PumpPortal WebSocket cache first (freshest for bonding curve)
           if (tradingEngine?.pumpPortalWs) {
-            const pumpMcap = tradingEngine.pumpPortalWs.getMarketCap(mint);
-            if (pumpMcap) {
+            let pumpMcap =
+              tradingEngine.pumpPortalWs.getMarketCapUsd?.(mint) ??
+              tradingEngine.pumpPortalWs.getMarketCap?.(mint) ??
+              null;
+
+            // Seamless fallback: if PumpPortal only provides SOL mcap, convert using SOL/USD.
+            if (!pumpMcap) {
+              const pumpSol = tradingEngine.pumpPortalWs.getMarketCapSol?.(mint) ?? null;
+              if (Number.isFinite(pumpSol) && pumpSol > 0) {
+                try {
+                  const solUsd = await tradingEngine.helius.getSolUsdPrice();
+                  const converted = Number.isFinite(solUsd) && solUsd > 0 ? pumpSol * solUsd : null;
+                  if (Number.isFinite(converted) && converted > 0) {
+                    pumpMcap = converted;
+                  }
+                } catch {
+                  // ignore
+                }
+              }
+            }
+
+            if (Number.isFinite(pumpMcap) && pumpMcap > 0) {
               token.realtime_mcap = pumpMcap;
               token.realtime_mcap_ts = Date.now();
             }
