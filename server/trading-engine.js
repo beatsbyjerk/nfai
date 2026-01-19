@@ -317,26 +317,64 @@ export class TradingEngine extends EventEmitter {
     const now = Date.now();
     
     for (const { mint, position, mcap, error } of mcapResults) {
-      if (error) {
-        this.log('error', `Mcap fetch failed for ${position.symbol || mint.slice(0, 6)}: ${error.message}`);
-        continue;
-      }
+      let finalMcap = mcap;
       
-      if (!mcap) {
-        if (now - (position.lastMcapWarnAt || 0) > 60000) {
+      // If fetch failed or returned null, use fallback to prevent stale data
+      if (error || !finalMcap) {
+        if (error && now - (position.lastMcapWarnAt || 0) > 60000) {
           position.lastMcapWarnAt = now;
-          this.log('warn', `No realtime mcap for ${position.symbol || mint.slice(0, 6)} - retrying`);
+          this.log('error', `Mcap fetch failed for ${position.symbol || mint.slice(0, 6)}: ${error?.message || 'null result'}`);
         }
-        continue;
+        
+        // Fallback 1: Try cached value (from ClaudeCash feed which refreshes every 5s)
+        const cached = this.mcapCache.get(mint);
+        if (cached && cached.value && Number.isFinite(cached.value) && cached.value > 0) {
+          finalMcap = cached.value;
+          if (now - (position.lastMcapWarnAt || 0) > 60000) {
+            position.lastMcapWarnAt = now;
+            this.log('warn', `Using cached mcap for ${position.symbol || mint.slice(0, 6)} (fetch failed)`);
+          }
+        } else {
+          // Fallback 2: Use token store latest_mcap (from ClaudeCash feed)
+          const tokenRecord = this.getTokenRecord(mint);
+          const storeMcap = parseFloat(tokenRecord?.latest_mcap || tokenRecord?.realtime_mcap || 0);
+          if (storeMcap && Number.isFinite(storeMcap) && storeMcap > 0) {
+            finalMcap = storeMcap;
+            if (now - (position.lastMcapWarnAt || 0) > 60000) {
+              position.lastMcapWarnAt = now;
+              this.log('warn', `Using token store mcap for ${position.symbol || mint.slice(0, 6)} (fetch failed)`);
+            }
+          } else {
+            // Fallback 3: Use last known mcap from position (if we've monitored before)
+            if (position.lastKnownMcap && Number.isFinite(position.lastKnownMcap) && position.lastKnownMcap > 0) {
+              finalMcap = position.lastKnownMcap;
+              if (now - (position.lastMcapWarnAt || 0) > 60000) {
+                position.lastMcapWarnAt = now;
+                this.log('warn', `Using last known mcap for ${position.symbol || mint.slice(0, 6)} (fetch failed)`);
+              }
+            } else {
+              // No fallback available - skip this cycle but don't exit
+              if (now - (position.lastMcapWarnAt || 0) > 60000) {
+                position.lastMcapWarnAt = now;
+                this.log('warn', `No realtime mcap for ${position.symbol || mint.slice(0, 6)} - retrying (no fallback available)`);
+              }
+              continue; // Skip only if absolutely no data available
+            }
+          }
+        }
       }
       
-      realtimeTokens.push({ mint, latest_mcap: mcap });
-      
-      // Log position P&L every 30s
-      if (now - (position.lastMonitorLogAt || 0) > 30000) {
-        position.lastMonitorLogAt = now;
-        const pnlPct = ((mcap - position.entryMcap) / position.entryMcap) * 100;
-        this.log('info', `Monitoring ${position.symbol || mint.slice(0, 6)}: $${mcap.toFixed(0)} mcap, ${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(1)}% P&L`);
+      // Store last known mcap for future fallback
+      if (finalMcap && Number.isFinite(finalMcap) && finalMcap > 0) {
+        position.lastKnownMcap = finalMcap;
+        realtimeTokens.push({ mint, latest_mcap: finalMcap });
+        
+        // Log position P&L every 30s
+        if (now - (position.lastMonitorLogAt || 0) > 30000) {
+          position.lastMonitorLogAt = now;
+          const pnlPct = ((finalMcap - position.entryMcap) / position.entryMcap) * 100;
+          this.log('info', `Monitoring ${position.symbol || mint.slice(0, 6)}: $${finalMcap.toFixed(0)} mcap, ${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(1)}% P&L`);
+        }
       }
     }
     
