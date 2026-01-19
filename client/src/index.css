@@ -424,14 +424,12 @@ h1, h2, h3, h4, h5, h6 {
   letter-spacing: 0.05em;
 }
 
-.activity-feed {
+.activity-feed-container {
   background: var(--bg-card);
   border: 1px solid var(--border-color);
   border-radius: 12px;
-  padding: 2rem;
-  min-height: 200px;
-  max-height: 400px;
-  overflow-y: auto;
+  overflow: hidden;
+  min-height: 400px;
 }
 
 .activity-placeholder {

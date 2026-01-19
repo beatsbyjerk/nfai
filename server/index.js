@@ -398,7 +398,7 @@ function broadcastToPublic(message) {
   });
 }
 
-function getRecentPublicTokens(limit = 10) {
+function getRecentPublicTokens(limit = 200) {
   const now = Date.now();
   const tokens = tokenStore.getAllTokens()
     .filter(t => {

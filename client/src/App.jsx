@@ -56,6 +56,11 @@ function App() {
       return 'light';
     }
   });
+  
+  // Public feed state (for unauthenticated landing page)
+  const [publicToasts, setPublicToasts] = useState([]);
+  const [publicActivity, setPublicActivity] = useState([]);
+  
   const deviceIdRef = useRef(null);
   const wsRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
@@ -66,6 +71,8 @@ function App() {
   const claudeCashSeenRef = useRef(new Set());
   const lastSoundTokenRef = useRef(null);
   const lastActivitySoundRef = useRef(null);
+  const publicWsRef = useRef(null);
+  const publicReconnectTimeoutRef = useRef(null);
 
   useEffect(() => {
     audioRef.current = new Audio('/mixkit-retro-game-notification-212.mp3');
@@ -648,11 +655,9 @@ function App() {
     setLandingTheme(prev => prev === 'light' ? 'dark' : 'light');
   };
 
-  // Public feed state (for unauthenticated landing page)
-  const [publicToasts, setPublicToasts] = useState([]);
-  const [publicActivity, setPublicActivity] = useState([]);
-  const publicWsRef = useRef(null);
-  const publicReconnectTimeoutRef = useRef(null);
+  const dismissToast = (id) => {
+    setPublicToasts(prev => prev.filter(t => t.id !== id));
+  };
 
   const connectPublicWebSocket = useCallback(() => {
     if (authState.authenticated) return; // Don't connect if authenticated
@@ -675,9 +680,9 @@ function App() {
         
         switch (message.type) {
           case 'public_init':
-            // Initial load of recent tokens
+            // Initial load of recent tokens (up to 200 with 5min+ delay)
             if (message.data?.tokens && Array.isArray(message.data.tokens)) {
-              setPublicActivity(message.data.tokens.slice(0, 10));
+              setPublicActivity(message.data.tokens);
             }
             break;
             
@@ -692,8 +697,13 @@ function App() {
                 };
                 setPublicToasts(prev => [...prev, newToast].slice(-5)); // Keep max 5 toasts
                 
-                // Add to activity feed (prepend)
-                setPublicActivity(prev => [token, ...prev].slice(0, 10));
+                // Add to activity feed (prepend) - keep all, pagination handled by TokenStream
+                setPublicActivity(prev => {
+                  // Check if token already exists
+                  const exists = prev.find(t => t.address === token.address);
+                  if (exists) return prev;
+                  return [token, ...prev];
+                });
               });
             }
             break;
@@ -749,10 +759,6 @@ function App() {
       clearTimeout(publicReconnectTimeoutRef.current);
     };
   }, [authState.authenticated, authState.loading, connectPublicWebSocket]);
-
-  const dismissToast = (id) => {
-    setPublicToasts(prev => prev.filter(t => t.id !== id));
-  };
 
   if (!authState.authenticated) {
 
@@ -883,16 +889,22 @@ function App() {
             </div>
             <p className="section-subtitle">Recent calls from my trading system (5 minute delay for public view)</p>
             
-            <div id="live-activity-feed" className="activity-feed">
+            <div id="live-activity-feed" className="activity-feed-container">
               {publicActivity.length === 0 ? (
                 <div className="activity-placeholder">
                   <div className="pulse-indicator"></div>
                   <span>Connecting to live feed...</span>
                 </div>
               ) : (
-                publicActivity.map((token) => (
-                  <ActivityItem key={token.address} token={token} />
-                ))
+                <TokenStream 
+                  tokens={publicActivity}
+                  onSelect={() => {}} 
+                  selectedId={null}
+                  highlightedId={null}
+                  label="Called"
+                  timeSource="print_scan"
+                  pageSize={15}
+                />
               )}
             </div>
           </div>
