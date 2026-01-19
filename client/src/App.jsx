@@ -1196,7 +1196,7 @@ function App() {
                   <strong>{successRate.toFixed(1)}%</strong>
                 </div>
                 <div className="ops-stat">
-                  <span>Average X</span>
+                  <span>Average Profit</span>
                   <strong>{averageAthX.toFixed(1)}x</strong>
                 </div>
               </div>
