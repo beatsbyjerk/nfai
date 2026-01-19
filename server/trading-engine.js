@@ -176,6 +176,23 @@ export class TradingEngine extends EventEmitter {
     return cached.state;
   }
 
+  async inferMigrationFromMcap(mint) {
+    // Fallback: if mcap > 58K, token has migrated (pump.fun bonding curve completes at ~58K)
+    if (!mint) return null;
+    try {
+      const mcap = await this.getRealtimeMcap(mint);
+      if (Number.isFinite(mcap) && mcap > 58000) {
+        return false; // migrated (false = migration complete)
+      }
+      if (Number.isFinite(mcap) && mcap > 0 && mcap <= 58000) {
+        return true; // still bonding (true = migration in progress)
+      }
+    } catch {
+      // ignore
+    }
+    return null;
+  }
+
   setMigrationState(mint, state, source = 'pumpportal') {
     if (!mint || typeof state !== 'boolean') return;
     const prev = this.migrationStateCache.get(mint);
@@ -365,7 +382,8 @@ export class TradingEngine extends EventEmitter {
     const migrationState =
       this.getCachedMigrationState(mint) ??
       this.isTokenMigrating({ raw: token }) ??
-      this.isTokenMigrating(tokenRecord);
+      this.isTokenMigrating(tokenRecord) ??
+      await this.inferMigrationFromMcap(mint);
 
     if (this.realtimeMcapEnabled && mint) {
       const realtimeMcap = await this.getRealtimeMcap(mint);
@@ -522,7 +540,7 @@ export class TradingEngine extends EventEmitter {
         this.getCachedMigrationState(mint) ??
         (tokenRecord ? this.isTokenMigrating(tokenRecord) : null) ??
         position.isMigrating ??
-        null;
+        await this.inferMigrationFromMcap(mint);
 
       // Use stored tokenAmount from position, fallback to fresh fetch
       let tokenAmount = position.tokenAmount;
