@@ -253,23 +253,8 @@ export class TradingEngine extends EventEmitter {
     }
 
     const computePromise = (async () => {
-      // FAST PATH: PumpPortal WS cache (instant updates from subscribeTokenTrade)
-      // This gives us marketCapSol pushed on every trade (no polling delay)
-      if (this.pumpPortalWs && !forceRefresh) {
-        const pumpSol = this.pumpPortalWs.getMarketCapSol?.(mint) ?? null;
-        if (Number.isFinite(pumpSol) && pumpSol > 0) {
-          const solUsd = await this.helius.getSolUsdPrice();
-          if (Number.isFinite(solUsd) && solUsd > 0) {
-            const mcapUsd = pumpSol * solUsd;
-            if (Number.isFinite(mcapUsd) && mcapUsd > 0) {
-              this.mcapCache.set(mint, { value: mcapUsd, ts: Date.now() });
-              return mcapUsd;
-            }
-          }
-        }
-      }
-
-      // ACCURATE PATH: Jupiter quote (for initial fetch or when PumpPortal has no data)
+      // ACCURATE PATH: Jupiter quote (always use for accurate baseline)
+      // This ensures entry mcap and monitoring mcap are consistent
       try {
         const supply = await this.helius.getTokenSupply(mint);
         if (supply?.uiAmount && supply.uiAmount > 0) {
@@ -400,7 +385,8 @@ export class TradingEngine extends EventEmitter {
       await this.inferMigrationFromMcap(mint);
 
     if (this.realtimeMcapEnabled && mint) {
-      const realtimeMcap = await this.getRealtimeMcap(mint);
+      // Force fresh fetch at entry (bypass cache) to ensure accurate baseline
+      const realtimeMcap = await this.getRealtimeMcap(mint, true);
       if (Number.isFinite(realtimeMcap) && realtimeMcap > 0) {
         entryMcap = realtimeMcap;
       }
