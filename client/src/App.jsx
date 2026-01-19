@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { Header } from './components/Header';
 import { TokenStream } from './components/TokenStream';
 import { TokenDetail } from './components/TokenDetail';
@@ -969,13 +970,22 @@ function App() {
                     timeSource="print_scan"
                     pageSize={15}
                   />
-                  {publicSelectedToken && (
-                    <div className="public-detail-modal">
-                      <TokenDetail 
-                        token={publicSelectedToken} 
-                        onClose={() => setPublicSelectedToken(null)}
-                      />
-                    </div>
+                  {publicSelectedToken && typeof document !== 'undefined' && createPortal(
+                    <div
+                      className="token-detail-modal"
+                      role="dialog"
+                      aria-modal="true"
+                      onClick={() => setPublicSelectedToken(null)}
+                    >
+                      <div className="modal-scrim" />
+                      <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+                        <TokenDetail 
+                          token={publicSelectedToken} 
+                          onClose={() => setPublicSelectedToken(null)}
+                        />
+                      </div>
+                    </div>,
+                    document.body
                   )}
                 </>
               )}
