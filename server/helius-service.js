@@ -13,6 +13,8 @@ export class HeliusService {
     this.solPriceCache = { value: null, ts: 0 };
     this.dexScreenerCache = new Map(); // mint -> { mcap, price, ts }
     this.dexScreenerTtlMs = 10000; // 10 seconds
+    this.pumpPortalCache = new Map(); // mint -> { mcap, price, migrated, ts }
+    this.pumpPortalTtlMs = 5000; // 5 seconds for bonding curve data
   }
 
   async getSolBalance(address) {
@@ -146,6 +148,53 @@ export class HeliusService {
       }
       return rawPrice;
     } catch {
+      return null;
+    }
+  }
+
+  async getPumpPortalMcap(mintAddress) {
+    if (!mintAddress) return null;
+    const now = Date.now();
+    const cached = this.pumpPortalCache.get(mintAddress);
+    
+    // Return fresh cache
+    if (cached && now - cached.ts < this.pumpPortalTtlMs) {
+      return { mcap: cached.mcap, migrated: cached.migrated };
+    }
+    
+    try {
+      const res = await fetch(`https://frontend-api.pump.fun/coins/${mintAddress}`);
+      if (!res.ok) {
+        // On error, return stale cache if available (up to 30s old)
+        if (cached && now - cached.ts < 30000) {
+          return { mcap: cached.mcap, migrated: cached.migrated };
+        }
+        return null;
+      }
+      const data = await res.json();
+      
+      // Check if migrated (raydium_pool exists means migrated to Raydium)
+      const migrated = !!data.raydium_pool || data.complete === true;
+      
+      // If migrated, don't use pump.fun data - return null so we use Helius/DexScreener
+      if (migrated) {
+        this.pumpPortalCache.set(mintAddress, { mcap: null, migrated: true, ts: now });
+        return { mcap: null, migrated: true };
+      }
+      
+      // For bonding curve tokens, calculate mcap from virtual reserves
+      const marketCap = parseFloat(data.usd_market_cap);
+      if (Number.isFinite(marketCap) && marketCap > 0) {
+        this.pumpPortalCache.set(mintAddress, { mcap: marketCap, migrated: false, ts: now });
+        return { mcap: marketCap, migrated: false };
+      }
+      
+      return null;
+    } catch {
+      // On error, return stale cache if available (up to 30s old)
+      if (cached && now - cached.ts < 30000) {
+        return { mcap: cached.mcap, migrated: cached.migrated };
+      }
       return null;
     }
   }

@@ -230,13 +230,37 @@ export class TradingEngine extends EventEmitter {
     }
 
     const computePromise = (async () => {
-      // DexScreener provides accurate realtime market cap
-      const mcap = await this.helius.getDexScreenerMcap(mint);
-      if (!Number.isFinite(mcap) || mcap <= 0) return null;
-
-      // Cache with fresh timestamp AFTER data is fetched
-      this.mcapCache.set(mint, { value: mcap, ts: Date.now() });
-      return mcap;
+      // Industrial standard: auto-detect migration state and use appropriate source
+      // 1. Try PumpPortal API first (handles both bonding curve and migration detection)
+      const pumpData = await this.helius.getPumpPortalMcap(mint);
+      
+      if (pumpData?.mcap && !pumpData.migrated) {
+        // Token is on bonding curve - use PumpPortal data
+        this.mcapCache.set(mint, { value: pumpData.mcap, ts: Date.now() });
+        return pumpData.mcap;
+      }
+      
+      // 2. Token is migrated or PumpPortal failed - use Helius getAsset
+      const price = await this.helius.getTokenPrice(mint);
+      if (price) {
+        const supply = await this.helius.getTokenSupply(mint);
+        if (supply?.uiAmount) {
+          const mcap = price * supply.uiAmount;
+          if (Number.isFinite(mcap) && mcap > 0) {
+            this.mcapCache.set(mint, { value: mcap, ts: Date.now() });
+            return mcap;
+          }
+        }
+      }
+      
+      // 3. Fallback to DexScreener if Helius fails
+      const dexMcap = await this.helius.getDexScreenerMcap(mint);
+      if (Number.isFinite(dexMcap) && dexMcap > 0) {
+        this.mcapCache.set(mint, { value: dexMcap, ts: Date.now() });
+        return dexMcap;
+      }
+      
+      return null;
     })();
 
     this.mcapInFlight.set(mint, computePromise);
