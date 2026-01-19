@@ -975,9 +975,12 @@ function App() {
                 <button className="auth-secondary" onClick={() => setShowAuthModal(false)}>
                   Cancel
                 </button>
+                <button className="auth-activate" onClick={handleActivate}>
+                  Activate
+                </button>
                 {!paymentInfo ? (
                   <button className="auth-primary" onClick={handleStartPayment}>
-                    Start Payment
+                    New Payment
                   </button>
                 ) : (
                   <button className="auth-primary" onClick={handleConfirmPayment} disabled={checkingPayment}>

@@ -672,7 +672,8 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .auth-primary,
-.auth-secondary {
+.auth-secondary,
+.auth-activate {
   border: none;
   padding: 0.6rem 1rem;
   border-radius: 8px;
@@ -683,6 +684,15 @@ h1, h2, h3, h4, h5, h6 {
 .auth-primary {
   background: var(--accent-primary);
   color: #fff;
+}
+
+.auth-activate {
+  background: #22c55e;
+  color: #fff;
+}
+
+.auth-activate:hover {
+  background: #16a34a;
 }
 
 .auth-secondary {
