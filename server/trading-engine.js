@@ -305,7 +305,8 @@ export class TradingEngine extends EventEmitter {
     const mcapResults = await Promise.all(
       entries.map(async ([mint, position]) => {
         try {
-          const mcap = await this.getRealtimeMcap(mint, true); // forceRefresh: true for accurate execution decisions
+          // Use same method as ClaudeCash feed (no forceRefresh) - relies on cache updated every 5s
+          const mcap = await this.getRealtimeMcap(mint, false);
           return { mint, position, mcap, error: null };
         } catch (e) {
           return { mint, position, mcap: null, error: e };
