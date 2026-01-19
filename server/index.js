@@ -60,8 +60,6 @@ const backfilled = tokenStore.backfillMissingMetrics();
 if (backfilled > 0) {
   console.log(`Backfilled metrics for ${backfilled} tokens`);
 }
-const tradingEngine = new TradingEngine({ tokenStore });
-tradingEngine.start();
 
 const VISIBLE_REFRESH_LIMIT = Number.parseInt(process.env.VISIBLE_REFRESH_LIMIT || '15', 10);
 const REALTIME_MCAP_BROADCAST_INTERVAL_MS = Number.parseInt(process.env.REALTIME_MCAP_BROADCAST_INTERVAL_MS || '4000', 10);
@@ -71,12 +69,17 @@ const REALTIME_MCAP_BROADCAST_MIN_PCT_CHANGE = Number.parseFloat(process.env.REA
 
 const pumpPortalWs = new PumpPortalWebSocket({
   url: process.env.PUMP_PORTAL_WS_URL || 'wss://pumpportal.fun/api/data',
-  accountKeys: (tradingEngine.walletAddress || '')
-    .split(',')
-    .map((v) => v.trim())
-    .filter(Boolean),
   tokenKeys: [],
 });
+
+const tradingEngine = new TradingEngine({ tokenStore, pumpPortalWs });
+tradingEngine.start();
+
+// Update PumpPortal accountKeys after tradingEngine is initialized
+pumpPortalWs.accountKeys = (tradingEngine.walletAddress || '')
+  .split(',')
+  .map((v) => v.trim())
+  .filter(Boolean);
 
 pumpPortalWs.on('migration', ({ mint, state }) => {
   tradingEngine.setMigrationState(mint, state, 'pumpportal');

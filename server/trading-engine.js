@@ -6,10 +6,11 @@ import { Keypair, PublicKey, VersionedTransaction } from '@solana/web3.js';
 import { HeliusService } from './helius-service.js';
 
 export class TradingEngine extends EventEmitter {
-  constructor({ tokenStore }) {
+  constructor({ tokenStore, pumpPortalWs = null }) {
     super();
     this.tokenStore = tokenStore;
     this.helius = new HeliusService(process.env.HELIUS_API);
+    this.pumpPortalWs = pumpPortalWs;
 
     this.tradeAmountSol = parseFloat(process.env.TRADE_AMOUNT_SOL || '0.2');
     this.stopLossPct = parseFloat(process.env.STOP_LOSS_PCT || '-30');
@@ -231,29 +232,35 @@ export class TradingEngine extends EventEmitter {
 
     const computePromise = (async () => {
       // Industrial standard: auto-detect migration state and use appropriate source
-      // 1. Try PumpPortal API first (handles both bonding curve and migration detection)
-      const pumpData = await this.helius.getPumpPortalMcap(mint);
-      
-      if (pumpData?.mcap && !pumpData.migrated) {
-        // Token is on bonding curve - use PumpPortal data
-        this.mcapCache.set(mint, { value: pumpData.mcap, ts: Date.now() });
-        return pumpData.mcap;
+      // 1. Try PumpPortal WebSocket cache first (realtime trade data)
+      if (this.pumpPortalWs) {
+        const pumpMcap = this.pumpPortalWs.getMarketCap(mint);
+        if (Number.isFinite(pumpMcap) && pumpMcap > 0) {
+          this.mcapCache.set(mint, { value: pumpMcap, ts: Date.now() });
+          return pumpMcap;
+        }
       }
       
-      // 2. Token is migrated or PumpPortal failed - use Helius getAsset
-      const price = await this.helius.getTokenPrice(mint);
-      if (price) {
-        const supply = await this.helius.getTokenSupply(mint);
-        if (supply?.uiAmount) {
-          const mcap = price * supply.uiAmount;
-          if (Number.isFinite(mcap) && mcap > 0) {
-            this.mcapCache.set(mint, { value: mcap, ts: Date.now() });
-            return mcap;
+      // 2. Check migration state and use Helius for migrated tokens
+      const cachedMigration = this.getCachedMigrationState(mint);
+      const isMigrated = cachedMigration === false; // false means migration complete
+      
+      if (isMigrated) {
+        // Token is migrated - use Helius getAsset
+        const price = await this.helius.getTokenPrice(mint);
+        if (price) {
+          const supply = await this.helius.getTokenSupply(mint);
+          if (supply?.uiAmount) {
+            const mcap = price * supply.uiAmount;
+            if (Number.isFinite(mcap) && mcap > 0) {
+              this.mcapCache.set(mint, { value: mcap, ts: Date.now() });
+              return mcap;
+            }
           }
         }
       }
       
-      // 3. Fallback to DexScreener if Helius fails
+      // 3. Fallback to DexScreener if PumpPortal and Helius fail
       const dexMcap = await this.helius.getDexScreenerMcap(mint);
       if (Number.isFinite(dexMcap) && dexMcap > 0) {
         this.mcapCache.set(mint, { value: dexMcap, ts: Date.now() });

@@ -12,6 +12,8 @@ export class PumpPortalWebSocket extends EventEmitter {
     this.ws = null;
     this.reconnectDelayMs = 5000;
     this.shouldReconnect = true;
+    this.mcapCache = new Map(); // mint -> { mcap, ts }
+    this.mcapCacheTtl = 10000; // 10 seconds
   }
 
   start() {
@@ -86,6 +88,12 @@ export class PumpPortalWebSocket extends EventEmitter {
 
     const mint = this.extractMint(message);
     const migrationState = this.extractMigrationState(message);
+    const mcap = this.extractMarketCap(message);
+
+    // Cache market cap from trade messages
+    if (mint && mcap && Number.isFinite(mcap) && mcap > 0) {
+      this.mcapCache.set(mint, { mcap, ts: Date.now() });
+    }
 
     if (migrationState !== null && mint) {
       this.emit('migration', { mint, state: migrationState, payload: message });
@@ -154,5 +162,35 @@ export class PumpPortalWebSocket extends EventEmitter {
     }
     if (typeof progress === 'number') return progress < 1;
     return null;
+  }
+
+  extractMarketCap(message) {
+    // Extract market cap from trade message payload
+    return (
+      message?.marketCapSol ??
+      message?.market_cap_sol ??
+      message?.marketCap ??
+      message?.market_cap ??
+      message?.usd_market_cap ??
+      message?.usdMarketCap ??
+      message?.data?.marketCapSol ??
+      message?.data?.market_cap_sol ??
+      message?.data?.marketCap ??
+      message?.data?.market_cap ??
+      message?.data?.usd_market_cap ??
+      message?.data?.usdMarketCap ??
+      null
+    );
+  }
+
+  getMarketCap(mint) {
+    if (!mint) return null;
+    const cached = this.mcapCache.get(mint);
+    if (!cached) return null;
+    if (Date.now() - cached.ts > this.mcapCacheTtl) {
+      this.mcapCache.delete(mint);
+      return null;
+    }
+    return cached.mcap;
   }
 }
