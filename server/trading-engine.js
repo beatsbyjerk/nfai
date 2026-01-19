@@ -591,6 +591,9 @@ export class TradingEngine extends EventEmitter {
         await this.waitForConfirmation(sellResult.txid);
       }
 
+      // Track realized profit for live trades
+      await this.recordLiveProfit(position, pctToSell, reason);
+
       this.log('trade', `Exit executed: ${pctToSell}% of ${position.symbol || mint.slice(0, 6)}. Reason: ${reason}`, {
         mint,
         txid: sellResult?.txid,
@@ -632,6 +635,37 @@ export class TradingEngine extends EventEmitter {
     }
     this.log('warn', `Transaction ${txid.slice(0, 8)}... confirmation timeout, proceeding anyway`);
     return false;
+  }
+
+  async recordLiveProfit(position, pctToSell, reason) {
+    if (this.tradingMode !== 'live') return;
+    
+    // Measure actual SOL balance change (before/after sell)
+    const balanceBefore = this.balanceSol;
+    await this.refreshBalance();
+    const balanceAfter = this.balanceSol;
+    const solReceived = balanceAfter - balanceBefore;
+    
+    // Calculate profit: SOL received - SOL originally invested in this portion
+    const pct = pctToSell / 100;
+    const solInvested = position.amountSol * pct;
+    const profit = solReceived - solInvested;
+    
+    this.realizedProfitSol += profit;
+    
+    // Distribution pool (only if enabled)
+    if (this.distributionEnabled && profit > 0) {
+      const retained = profit * 0.25;
+      const distributed = profit * 0.75;
+      this.distributionPoolSol += distributed;
+      
+      this.log('info', `P&L Recorded: ${profit >= 0 ? '+' : ''}${profit.toFixed(3)} SOL. Allocating resources...`, {
+        retained: retained.toFixed(3),
+        distributed: distributed.toFixed(3),
+      });
+    } else {
+      this.log('info', `P&L Recorded: ${profit >= 0 ? '+' : ''}${profit.toFixed(3)} SOL (retained).`);
+    }
   }
 
   recordPaperProfit(position, pctToSell, reason) {
