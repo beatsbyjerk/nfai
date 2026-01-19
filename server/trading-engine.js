@@ -33,7 +33,9 @@ export class TradingEngine extends EventEmitter {
     this.tradingMode = process.env.TRADING_MODE || 'paper'; // paper | live
     this.walletAddress = process.env.TRADING_WALLET_ADDRESS || null;
     this.privateKey = process.env.TRADING_PRIVATE_KEY || null;
-    this.jupiterBase = process.env.JUPITER_API_BASE || 'https://quote-api.jup.ag/v6';
+    // Jupiter endpoints changed; prefer the current public base by default.
+    // Can be overridden via JUPITER_API_BASE if needed.
+    this.jupiterBase = process.env.JUPITER_API_BASE || 'https://lite-api.jup.ag/swap/v1';
     this.slippageBps = parseInt(process.env.JUPITER_SLIPPAGE_BPS || '500', 10);
 
     this.positions = new Map(); // mint -> position
@@ -511,6 +513,11 @@ export class TradingEngine extends EventEmitter {
     }
 
     try {
+      const now = Date.now();
+      if (position.sellInProgress) return;
+      if (position.nextSellAttemptAt && now < position.nextSellAttemptAt) return;
+      position.sellInProgress = true;
+
       const tokenRecord = this.getTokenRecord(mint);
       const migrationState =
         this.getCachedMigrationState(mint) ??
@@ -545,6 +552,7 @@ export class TradingEngine extends EventEmitter {
         amount: sellAmount,
         isInputSol: false,
         migrationState,
+        tokenDecimals,
       });
 
       // Wait for sell confirmation
@@ -567,7 +575,11 @@ export class TradingEngine extends EventEmitter {
       }
       this.emitPositions();
     } catch (e) {
+      // Avoid spamming sell attempts if routing/quotes are temporarily failing.
+      position.nextSellAttemptAt = Date.now() + 30000; // 30s backoff
       this.log('error', `Live SELL failed for ${position.symbol || mint.slice(0, 6)}: ${e.message}`);
+    } finally {
+      position.sellInProgress = false;
     }
   }
 
@@ -622,10 +634,10 @@ export class TradingEngine extends EventEmitter {
     };
   }
 
-  async swapForMint({ inputMint, outputMint, amount, isInputSol, migrationState }) {
+  async swapForMint({ inputMint, outputMint, amount, isInputSol, migrationState, tokenDecimals = null }) {
     if (migrationState !== false) {
       try {
-        return await this.swapPumpPortalLocal({ inputMint, outputMint, amount, isInputSol });
+        return await this.swapPumpPortalLocal({ inputMint, outputMint, amount, isInputSol, tokenDecimals });
       } catch (e) {
         this.log('warn', `Pump Portal trade-local failed, falling back to Jupiter: ${e.message}`);
       }
@@ -633,7 +645,7 @@ export class TradingEngine extends EventEmitter {
     return this.swapJupiter({ inputMint, outputMint, amount, isInputSol });
   }
 
-  async swapPumpPortalLocal({ inputMint, outputMint, amount, isInputSol }) {
+  async swapPumpPortalLocal({ inputMint, outputMint, amount, isInputSol, tokenDecimals = null }) {
     if (!this.pumpPortalUrl) {
       throw new Error('Pump Portal URL not configured');
     }
@@ -643,7 +655,14 @@ export class TradingEngine extends EventEmitter {
 
     const mint = isInputSol ? outputMint : inputMint;
     const action = isInputSol ? 'buy' : 'sell';
-    const amountValue = isInputSol ? amount / 1e9 : amount;
+    // PumpPortal expects:
+    // - buy: SOL amount (UI units)
+    // - sell: token amount in UI units (not base units)
+    const amountValue = isInputSol
+      ? amount / 1e9
+      : (Number.isFinite(tokenDecimals) && tokenDecimals >= 0
+        ? amount / Math.pow(10, tokenDecimals)
+        : amount);
     const slippagePct = this.slippageBps / 100;
 
     const response = await fetch(this.pumpPortalUrl, {

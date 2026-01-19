@@ -165,18 +165,16 @@ export class PumpPortalWebSocket extends EventEmitter {
   }
 
   extractMarketCap(message) {
-    // Extract market cap from trade message payload
+    // IMPORTANT:
+    // We treat "mcap" throughout the app as USD market cap (see UI `$` formatting + stop-loss logic).
+    // PumpPortal frequently provides `marketCapSol` / `market_cap_sol` which is *SOL-denominated*.
+    // If we mistakenly feed SOL-mcap into USD logic, it can look like a -99% crash and prematurely trigger sells.
+    //
+    // So: only accept USD market cap fields here. If unavailable, return null and let other sources
+    // (Helius/DexScreener) provide a USD market cap.
     return (
-      message?.marketCapSol ??
-      message?.market_cap_sol ??
-      message?.marketCap ??
-      message?.market_cap ??
       message?.usd_market_cap ??
       message?.usdMarketCap ??
-      message?.data?.marketCapSol ??
-      message?.data?.market_cap_sol ??
-      message?.data?.marketCap ??
-      message?.data?.market_cap ??
       message?.data?.usd_market_cap ??
       message?.data?.usdMarketCap ??
       null
