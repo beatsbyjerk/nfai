@@ -292,6 +292,108 @@ function App() {
     }
   }, [landingTheme]);
 
+  const toggleLandingTheme = () => {
+    setLandingTheme(prev => prev === 'light' ? 'dark' : 'light');
+  };
+
+  const dismissToast = (id) => {
+    setPublicToasts(prev => prev.filter(t => t.id !== id));
+  };
+
+  const connectPublicWebSocket = useCallback(() => {
+    if (authState.authenticated) return;
+    if (publicWsRef.current && publicWsRef.current.readyState === WebSocket.OPEN) return;
+
+    const isDev = window.location.port === '5173';
+    const wsUrl = isDev
+      ? `ws://localhost:3001?public=true`
+      : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}?public=true`;
+    
+    const ws = new WebSocket(wsUrl);
+    
+    ws.onopen = () => {
+      console.log('Public WebSocket connected');
+    };
+    
+    ws.onmessage = (event) => {
+      try {
+        const message = JSON.parse(event.data);
+        
+        switch (message.type) {
+          case 'public_init':
+            if (message.data?.tokens && Array.isArray(message.data.tokens)) {
+              setPublicActivity(message.data.tokens);
+            }
+            break;
+            
+          case 'public_new_tokens':
+            if (message.data && Array.isArray(message.data)) {
+              message.data.forEach(token => {
+                const newToast = {
+                  id: `${token.address}-${Date.now()}`,
+                  ...token
+                };
+                setPublicToasts(prev => [...prev, newToast].slice(-5));
+                
+                setPublicActivity(prev => {
+                  const exists = prev.find(t => t.address === token.address);
+                  if (exists) return prev;
+                  return [token, ...prev];
+                });
+              });
+            }
+            break;
+            
+          case 'token_update':
+            if (message.data?.address) {
+              setPublicActivity(prev => 
+                prev.map(token => 
+                  token.address === message.data.address 
+                    ? { ...token, realtime_mcap: message.data.realtime_mcap }
+                    : token
+                )
+              );
+              
+              setPublicToasts(prev =>
+                prev.map(toast =>
+                  toast.address === message.data.address
+                    ? { ...toast, realtime_mcap: message.data.realtime_mcap }
+                    : toast
+                )
+              );
+            }
+            break;
+        }
+      } catch (e) {
+        console.error('Public WebSocket message error:', e);
+      }
+    };
+    
+    ws.onerror = () => {
+      console.error('Public WebSocket error');
+    };
+    
+    ws.onclose = () => {
+      console.log('Public WebSocket disconnected');
+      if (!authState.authenticated) {
+        publicReconnectTimeoutRef.current = setTimeout(connectPublicWebSocket, 3000);
+      }
+    };
+    
+    publicWsRef.current = ws;
+  }, [authState.authenticated]);
+
+  useEffect(() => {
+    if (!authState.authenticated && !authState.loading) {
+      connectPublicWebSocket();
+    }
+    
+    return () => {
+      publicWsRef.current?.close();
+      clearTimeout(publicReconnectTimeoutRef.current);
+    };
+  }, [authState.authenticated, authState.loading, connectPublicWebSocket]);
+
   const connectWebSocket = useCallback(() => {
     if (!authState.authenticated || !authState.sessionToken) return;
     if (wsRef.current && (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)) {
@@ -650,115 +752,6 @@ function App() {
       </div>
     );
   }
-
-  const toggleLandingTheme = () => {
-    setLandingTheme(prev => prev === 'light' ? 'dark' : 'light');
-  };
-
-  const dismissToast = (id) => {
-    setPublicToasts(prev => prev.filter(t => t.id !== id));
-  };
-
-  const connectPublicWebSocket = useCallback(() => {
-    if (authState.authenticated) return; // Don't connect if authenticated
-    if (publicWsRef.current && publicWsRef.current.readyState === WebSocket.OPEN) return;
-
-    const isDev = window.location.port === '5173';
-    const wsUrl = isDev
-      ? `ws://localhost:3001?public=true`
-      : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}?public=true`;
-    
-    const ws = new WebSocket(wsUrl);
-    
-    ws.onopen = () => {
-      console.log('Public WebSocket connected');
-    };
-    
-    ws.onmessage = (event) => {
-      try {
-        const message = JSON.parse(event.data);
-        
-        switch (message.type) {
-          case 'public_init':
-            // Initial load of recent tokens (up to 200 with 5min+ delay)
-            if (message.data?.tokens && Array.isArray(message.data.tokens)) {
-              setPublicActivity(message.data.tokens);
-            }
-            break;
-            
-          case 'public_new_tokens':
-            // New delayed tokens (show as toasts)
-            if (message.data && Array.isArray(message.data)) {
-              message.data.forEach(token => {
-                // Add to toasts
-                const newToast = {
-                  id: `${token.address}-${Date.now()}`,
-                  ...token
-                };
-                setPublicToasts(prev => [...prev, newToast].slice(-5)); // Keep max 5 toasts
-                
-                // Add to activity feed (prepend) - keep all, pagination handled by TokenStream
-                setPublicActivity(prev => {
-                  // Check if token already exists
-                  const exists = prev.find(t => t.address === token.address);
-                  if (exists) return prev;
-                  return [token, ...prev];
-                });
-              });
-            }
-            break;
-            
-          case 'token_update':
-            // Update market cap for existing tokens in activity
-            if (message.data?.address) {
-              setPublicActivity(prev => 
-                prev.map(token => 
-                  token.address === message.data.address 
-                    ? { ...token, realtime_mcap: message.data.realtime_mcap }
-                    : token
-                )
-              );
-              
-              // Also update toasts
-              setPublicToasts(prev =>
-                prev.map(toast =>
-                  toast.address === message.data.address
-                    ? { ...toast, realtime_mcap: message.data.realtime_mcap }
-                    : toast
-                )
-              );
-            }
-            break;
-        }
-      } catch (e) {
-        console.error('Public WebSocket message error:', e);
-      }
-    };
-    
-    ws.onerror = () => {
-      console.error('Public WebSocket error');
-    };
-    
-    ws.onclose = () => {
-      console.log('Public WebSocket disconnected');
-      if (!authState.authenticated) {
-        publicReconnectTimeoutRef.current = setTimeout(connectPublicWebSocket, 3000);
-      }
-    };
-    
-    publicWsRef.current = ws;
-  }, [authState.authenticated]);
-
-  useEffect(() => {
-    if (!authState.authenticated && !authState.loading) {
-      connectPublicWebSocket();
-    }
-    
-    return () => {
-      publicWsRef.current?.close();
-      clearTimeout(publicReconnectTimeoutRef.current);
-    };
-  }, [authState.authenticated, authState.loading, connectPublicWebSocket]);
 
   if (!authState.authenticated) {
 
