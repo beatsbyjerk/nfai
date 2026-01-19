@@ -63,6 +63,7 @@ function App() {
   const [publicToasts, setPublicToasts] = useState([]);
   const [publicActivity, setPublicActivity] = useState([]);
   const [publicSelectedToken, setPublicSelectedToken] = useState(null);
+  const publicActivityRef = useRef([]);
   
   const deviceIdRef = useRef(null);
   const wsRef = useRef(null);
@@ -89,6 +90,10 @@ function App() {
   useEffect(() => {
     tokensRef.current = tokens;
   }, [tokens]);
+
+  useEffect(() => {
+    publicActivityRef.current = publicActivity;
+  }, [publicActivity]);
 
   useEffect(() => {
     soundEnabledRef.current = soundEnabled;
@@ -369,26 +374,39 @@ function App() {
             // Initial load - same as authenticated users but filtered to 5+ min old
             if (message.data?.tokens && Array.isArray(message.data.tokens)) {
               setPublicActivity(message.data.tokens);
+              publicActivityRef.current = message.data.tokens;
             }
             break;
             
           case 'new_tokens':
             // New ClaudeCash calls (after 5 min delay)
             if (message.data && Array.isArray(message.data)) {
-              message.data.forEach(token => {
-                // Show toast notification
-                const newToast = {
-                  id: `${token.address}-${Date.now()}`,
-                  ...token
-                };
-                setPublicToasts(prev => [...prev, newToast].slice(-5));
-                
-                // Add to activity feed (prepend, no duplicates)
-                setPublicActivity(prev => {
-                  const exists = prev.find(t => t.address === token.address);
-                  if (exists) return prev;
-                  return [token, ...prev];
-                });
+              // Only toast when a token is actually NEW to the public feed.
+              // This prevents "false toasts" on reconnect/resync when the server may
+              // send a token that is already visible in the feed.
+              const existing = new Set((publicActivityRef.current || []).map(t => t?.address).filter(Boolean));
+              const fresh = message.data.filter(t => t?.address && !existing.has(t.address));
+              if (fresh.length === 0) break;
+
+              // Add to activity feed (prepend, no duplicates)
+              setPublicActivity(prev => {
+                const prevList = Array.isArray(prev) ? prev : [];
+                const prevByAddress = new Set(prevList.map(t => t?.address).filter(Boolean));
+                const uniqueFresh = fresh.filter(t => t?.address && !prevByAddress.has(t.address));
+                const next = [...uniqueFresh, ...prevList];
+                publicActivityRef.current = next;
+                return next;
+              });
+
+              // Toast only for tokens that were newly inserted into the feed
+              setPublicToasts(prev => {
+                const prevList = Array.isArray(prev) ? prev : [];
+                const prevToastAddresses = new Set(prevList.map(t => t?.address).filter(Boolean));
+                const now = Date.now();
+                const toAdd = fresh
+                  .filter(t => t?.address && !prevToastAddresses.has(t.address))
+                  .map(t => ({ id: `${t.address}-${now}`, ...t }));
+                return [...prevList, ...toAdd].slice(-5);
               });
             }
             break;
