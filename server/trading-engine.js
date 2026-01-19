@@ -377,6 +377,10 @@ export class TradingEngine extends EventEmitter {
   async executeBuy(token, sourceLabel) {
     let entryMcap = parseFloat(token.latest_mcap || token.initial_mcap || 0);
     const mint = token.mint || token.token_address || token.address;
+    
+    // Double-check position doesn't exist (race condition protection)
+    if (this.positions.has(mint)) return;
+    
     const tokenRecord = this.getTokenRecord(mint);
     const migrationState =
       this.getCachedMigrationState(mint) ??
@@ -398,6 +402,9 @@ export class TradingEngine extends EventEmitter {
     }
 
     if (this.tradingMode !== 'live' || !this.keypair) {
+      // Double-check again before adding position (paper mode)
+      if (this.positions.has(mint)) return;
+      
       this.positions.set(mint, {
         mint,
         symbol: token.symbol,
@@ -421,7 +428,30 @@ export class TradingEngine extends EventEmitter {
       return;
     }
 
+    // Live trading: add protection against concurrent execution
+    // Check if there's a pending buy for this mint
+    const existingPosition = this.positions.get(mint);
+    if (existingPosition?.buyInProgress) return;
+    if (existingPosition?.nextBuyAttemptAt && Date.now() < existingPosition.nextBuyAttemptAt) return;
+
     try {
+      // Mark as in progress immediately to prevent race conditions
+      // Create a temporary position entry to block concurrent buys
+      this.positions.set(mint, {
+        mint,
+        symbol: token.symbol,
+        entryMcap,
+        maxMcap: entryMcap,
+        amountSol: this.tradeAmountSol,
+        openAt: Date.now(),
+        remainingPct: 100,
+        pnlPct: 0,
+        isMigrating: migrationState,
+        buyInProgress: true,
+        tokenAmount: 0, // Will be updated after confirmation
+        tokenDecimals: null,
+      });
+
       const buyResult = await this.swapForMint({
         inputMint: 'So11111111111111111111111111111111111111112',
         outputMint: mint,
@@ -437,10 +467,13 @@ export class TradingEngine extends EventEmitter {
 
       const tokenBalance = await this.getTokenBalance(mint);
       if (tokenBalance.amount <= 0) {
+        // Remove the temporary position if buy failed
+        this.positions.delete(mint);
         this.log('error', `Buy tx confirmed but token balance is 0 for ${token.symbol || mint.slice(0, 6)}. Position not opened.`);
         return;
       }
 
+      // Update position with actual token balance and remove buyInProgress flag
       this.positions.set(mint, {
         mint,
         symbol: token.symbol,
@@ -465,6 +498,11 @@ export class TradingEngine extends EventEmitter {
       this.emitPositions();
       await this.maybeDistribute();
     } catch (e) {
+      // Remove the temporary position on error
+      this.positions.delete(mint);
+      // Set cooldown to prevent spamming buy attempts
+      const tempPosition = { nextBuyAttemptAt: Date.now() + 30000 }; // 30s backoff
+      // Don't store temp position, just log the error
       this.log('error', `Live BUY failed: ${e.message}`);
     }
   }
