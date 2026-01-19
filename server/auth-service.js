@@ -698,7 +698,10 @@ export class AuthService {
     const readiness = this.ensureReady();
     if (!readiness.ok) return { ok: false, error: readiness.error };
 
-    const normalizedWallet = (wallet || '').trim();
+    const normalizedWallet = (wallet || '').trim().replace(/\s+/g, '');
+    if (!WALLET_REGEX.test(normalizedWallet)) {
+      return { ok: false, error: 'Invalid wallet address.' };
+    }
     const requestedPlan = (plan || '').toLowerCase();
 
     const { data: usedPayments } = await this.client

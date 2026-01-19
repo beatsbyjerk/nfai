@@ -878,6 +878,19 @@ function App() {
   const totalCalls = claudeCashStatsTokens.length;
 
   const athMultiple = (token) => {
+    // Use highest_multiplier from database (correct value)
+    if (token.highest_multiplier != null && Number.isFinite(token.highest_multiplier) && token.highest_multiplier > 0) {
+      return token.highest_multiplier;
+    }
+    // Fallback: try from raw_data
+    const rawData = getRawData(token);
+    if (rawData?.highest_multiplier != null) {
+      const parsed = parseFloat(rawData.highest_multiplier);
+      if (Number.isFinite(parsed) && parsed > 0) {
+        return parsed;
+      }
+    }
+    // Last resort: calculate manually
     const initial = statsInitialCap(token);
     const ath = statsAthCap(token);
     if (!initial || !ath) return null;

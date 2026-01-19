@@ -129,7 +129,7 @@ export class TokenStore {
     const address = tokenData.token_address || tokenData.mint || tokenData.mintAddress;
     if (!address) return false;
 
-    const existing = this.db.prepare('SELECT address, first_seen_local, source, sources FROM tokens WHERE address = ?').get(address);
+    const existing = this.db.prepare('SELECT address, first_seen_local, source, sources, initial_mcap FROM tokens WHERE address = ?').get(address);
     const isNew = !existing;
     
     const now = new Date().toISOString();
@@ -148,6 +148,26 @@ export class TokenStore {
       .filter(Boolean);
     const mergedSources = Array.from(new Set([...existingSources, source]));
 
+    // Parse market cap values
+    const parsedInitialMcap = parseFloat(tokenData.initial_mcap || tokenData.initial_market_cap || tokenData.initial_mc);
+    const parsedLatestMcap = parseFloat(tokenData.latest_mcap || tokenData.marketcap || tokenData.current_mc);
+    
+    // For new tokens: set initial_mcap to provided value, or use latest_mcap if initial not provided
+    // For existing tokens: preserve existing initial_mcap, only set if currently NULL
+    let initialMcap;
+    if (isNew) {
+      // New token: use provided initial_mcap, or fallback to latest_mcap
+      initialMcap = (Number.isFinite(parsedInitialMcap) && parsedInitialMcap > 0) 
+        ? parsedInitialMcap 
+        : ((Number.isFinite(parsedLatestMcap) && parsedLatestMcap > 0) ? parsedLatestMcap : null);
+    } else {
+      // Existing token: preserve existing initial_mcap if set, otherwise use new value
+      const existingInitial = existing?.initial_mcap ? parseFloat(existing.initial_mcap) : null;
+      initialMcap = (Number.isFinite(existingInitial) && existingInitial > 0)
+        ? existingInitial
+        : ((Number.isFinite(parsedInitialMcap) && parsedInitialMcap > 0) ? parsedInitialMcap : null);
+    }
+
     const normalized = {
       address,
       symbol: tokenData.token_symbol || tokenData.symbol || null,
@@ -163,7 +183,7 @@ export class TokenStore {
       description: tokenData.description || 
                    tokenData.solanatracker?.token?.description || null,
       
-      initial_mcap: parseFloat(tokenData.initial_mcap || tokenData.initial_market_cap || tokenData.initial_mc) || null,
+      initial_mcap: initialMcap,
       latest_mcap: parseFloat(tokenData.latest_mcap || tokenData.marketcap || tokenData.current_mc) || null,
       ath_mcap: parseFloat(tokenData.ath || tokenData.ath_market_cap || tokenData.ath_mc) || null,
       highest_multiplier: parseFloat(tokenData.highest_multiplier) || null,
@@ -212,7 +232,7 @@ export class TokenStore {
         name = COALESCE(@name, name),
         image = COALESCE(@image, image),
         description = COALESCE(@description, description),
-        initial_mcap = COALESCE(initial_mcap, @initial_mcap),
+        initial_mcap = CASE WHEN initial_mcap IS NOT NULL AND initial_mcap > 0 THEN initial_mcap ELSE @initial_mcap END,
         latest_mcap = COALESCE(@latest_mcap, latest_mcap),
         ath_mcap = CASE WHEN @ath_mcap > COALESCE(ath_mcap, 0) THEN @ath_mcap ELSE ath_mcap END,
         highest_multiplier = CASE WHEN @highest_multiplier > COALESCE(highest_multiplier, 0) THEN @highest_multiplier ELSE highest_multiplier END,
