@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { Connection, PublicKey } from '@solana/web3.js';
 import crypto from 'crypto';
+import { HeliusService } from './helius-service.js';
 
 const PLAN_DURATIONS_MS = {
   week: 7 * 24 * 60 * 60 * 1000,
@@ -45,6 +46,23 @@ export class AuthService {
     this.connection = process.env.HELIUS_API
       ? new Connection(`https://mainnet.helius-rpc.com/?api-key=${process.env.HELIUS_API}`, 'confirmed')
       : new Connection('https://api.mainnet-beta.solana.com', 'confirmed');
+    this.helius = new HeliusService(process.env.HELIUS_API);
+
+    // Token gate configuration
+    this.tokenGateEnabled = process.env.TOKEN_GATE_ENABLED === 'true';
+    this.tokenGateMint = process.env.HOLDERS_MINT || null;
+    this.tokenGateMinAmount = parseFloat(process.env.TOKEN_GATE_MIN_AMOUNT || '10000000'); // 10M default
+  }
+
+  async checkTokenGateEligibility(wallet) {
+    if (!this.tokenGateEnabled || !this.tokenGateMint) return { eligible: false };
+    try {
+      const balance = await this.helius.getWalletTokenBalance(wallet, this.tokenGateMint);
+      const eligible = balance >= this.tokenGateMinAmount;
+      return { eligible, balance, required: this.tokenGateMinAmount };
+    } catch {
+      return { eligible: false, balance: 0, required: this.tokenGateMinAmount };
+    }
   }
 
   getEnvLicense(wallet) {
@@ -160,7 +178,7 @@ export class AuthService {
       return { ok: false, error: 'Missing device id.' };
     }
     const requestedPlan = (plan || '').toLowerCase();
-    if (!['week', 'month', 'admin'].includes(requestedPlan)) {
+    if (!['week', 'month', 'admin', 'holder'].includes(requestedPlan)) {
       return { ok: false, error: 'Invalid plan.' };
     }
 
@@ -176,25 +194,39 @@ export class AuthService {
 
     const now = new Date();
     const existingExpired = existing?.expires_at && new Date(existing.expires_at) <= now;
-    if (existingExpired && existing?.plan !== 'admin') {
-      return { ok: false, error: 'License expired.' };
-    }
+    
+    // Check token gate eligibility (automatic authorization for holders)
+    const tokenGateCheck = await this.checkTokenGateEligibility(normalizedWallet);
+    const isTokenGateEligible = tokenGateCheck.eligible;
 
     // Allow admin plan activation without existing license
     const isAdminRequest = requestedPlan === 'admin' || envLicense?.plan === 'admin' || existing?.plan === 'admin';
+    const isHolderRequest = requestedPlan === 'holder' || isTokenGateEligible;
 
-    if (!existing && !envLicense && !isAdminRequest) {
+    // If expired and not admin/holder, reject
+    if (existingExpired && existing?.plan !== 'admin' && !isTokenGateEligible) {
+      return { ok: false, error: 'License expired.' };
+    }
+
+    // If no existing license and no env license and not admin and not token gate eligible
+    if (!existing && !envLicense && !isAdminRequest && !isTokenGateEligible) {
       return { ok: false, error: 'License key not found.' };
     }
 
+    // Determine the plan: admin > holder (if eligible) > existing/env > requested
     let allowedPlan = envLicense?.plan || existing?.plan || requestedPlan;
+    
+    // If token gate eligible, upgrade to holder plan (unless admin)
+    if (isTokenGateEligible && allowedPlan !== 'admin') {
+      allowedPlan = 'holder';
+    }
     
     // If requesting admin and no other info, allow it (will require manual DB approval)
     if (requestedPlan === 'admin' && !envLicense && !existing) {
       allowedPlan = 'admin';
     }
     
-    if (envLicense?.plan && envLicense.plan !== requestedPlan && envLicense.plan !== 'admin') {
+    if (envLicense?.plan && envLicense.plan !== requestedPlan && envLicense.plan !== 'admin' && !isTokenGateEligible) {
       return { ok: false, error: `License plan mismatch (${envLicense.plan}).` };
     }
 
@@ -211,7 +243,9 @@ export class AuthService {
 
     const sessionToken = crypto.randomUUID();
     const isAdmin = allowedPlan === 'admin';
-    const expiresAt = isAdmin
+    const isHolder = allowedPlan === 'holder';
+    // Admin and holder plans don't expire
+    const expiresAt = (isAdmin || isHolder)
       ? null
       : new Date(now.getTime() + (PLAN_DURATIONS_MS[allowedPlan] || PLAN_DURATIONS_MS[requestedPlan]));
 
@@ -219,7 +253,7 @@ export class AuthService {
       wallet: normalizedWallet,
       plan: allowedPlan,
       activated_at: existing?.activated_at || now.toISOString(),
-      expires_at: existing?.expires_at || (expiresAt ? expiresAt.toISOString() : null),
+      expires_at: (isAdmin || isHolder) ? null : (existing?.expires_at || (expiresAt ? expiresAt.toISOString() : null)),
       device_id: deviceId,
       session_token: sessionToken,
       last_seen_at: now.toISOString(),
@@ -238,6 +272,7 @@ export class AuthService {
       wallet: normalizedWallet,
       plan: allowedPlan,
       expiresAt: payload.expires_at,
+      tokenGate: isTokenGateEligible ? { balance: tokenGateCheck.balance, required: tokenGateCheck.required } : null,
     };
   }
 
@@ -461,5 +496,48 @@ export class AuthService {
       .eq('wallet', data.wallet);
     if (updateError) return { ok: false, error: updateError.message };
     return { ok: true };
+  }
+
+  async monitorHolderLicenses() {
+    if (!this.tokenGateEnabled || !this.tokenGateMint || !this.client) return;
+    
+    try {
+      // Get all active holder licenses
+      const { data: holders, error } = await this.client
+        .from('licenses')
+        .select('wallet, session_token')
+        .eq('plan', 'holder')
+        .not('session_token', 'is', null);
+      
+      if (error || !holders || holders.length === 0) return;
+
+      for (const holder of holders) {
+        const check = await this.checkTokenGateEligibility(holder.wallet);
+        if (!check.eligible) {
+          // Deactivate: clear session (they'll be logged out on next validate)
+          await this.client
+            .from('licenses')
+            .update({ session_token: null, device_id: null })
+            .eq('wallet', holder.wallet);
+          console.log(`Token gate: Deactivated ${holder.wallet} (balance: ${check.balance}, required: ${check.required})`);
+        }
+      }
+    } catch (e) {
+      console.error('Holder license monitor error:', e?.message || e);
+    }
+  }
+
+  startHolderMonitor(intervalMs = 30000) {
+    if (!this.tokenGateEnabled) return;
+    console.log(`Token gate monitor started. Checking every ${intervalMs / 1000}s`);
+    setInterval(() => this.monitorHolderLicenses(), intervalMs);
+  }
+
+  getTokenGateInfo() {
+    return {
+      enabled: this.tokenGateEnabled,
+      mint: this.tokenGateMint,
+      minAmount: this.tokenGateMinAmount,
+    };
   }
 }

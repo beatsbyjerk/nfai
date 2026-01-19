@@ -1,0 +1,10 @@
+SELECT 
+  wallet,
+  plan,
+  expires_at - NOW() as time_remaining,
+  CASE 
+    WHEN expires_at > NOW() THEN 'ACTIVE'
+    ELSE 'EXPIRED'
+  END as status
+FROM public.licenses
+WHERE wallet = 'PASTE_USER_WALLET_HERE';

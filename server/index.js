@@ -133,6 +133,10 @@ app.post('/api/auth/logout', async (req, res) => {
   return res.json({ ok: true });
 });
 
+app.get('/api/auth/token-gate', (req, res) => {
+  res.json(authService.getTokenGateInfo());
+});
+
 // Serve static files from client build
 const clientDist = join(__dirname, '..', 'client', 'dist');
 if (existsSync(clientDist)) {
@@ -848,5 +852,6 @@ server.listen(PORT, () => {
 ║  Polling:   Every ${POLL_INTERVAL/1000}s                                      ║
 ╚═══════════════════════════════════════════════════════════╝
   `);
-  // Deployment trigger
+  // Start token gate holder monitor (checks every 30s)
+  authService.startHolderMonitor(30000);
 });

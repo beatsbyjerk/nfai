@@ -644,6 +644,32 @@ h1, h2, h3, h4, h5, h6 {
   margin-bottom: 1rem;
 }
 
+.token-gate-info {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 0.8rem;
+  margin-bottom: 1rem;
+  background: linear-gradient(135deg, rgba(218, 119, 86, 0.1), rgba(218, 119, 86, 0.05));
+  border: 1px solid rgba(218, 119, 86, 0.3);
+  border-radius: 8px;
+}
+
+.token-gate-badge {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.2rem 0.5rem;
+  background: var(--accent-primary);
+  color: white;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.token-gate-text {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
 .auth-label {
   display: block;
   font-size: 0.85rem;

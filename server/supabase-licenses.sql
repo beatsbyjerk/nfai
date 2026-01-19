@@ -38,3 +38,9 @@ on conflict (wallet)
 do update set 
   plan = 'admin',
   expires_at = null;
+
+-- Plan types:
+-- 'admin'  - Full access, no expiration
+-- 'week'   - Weekly subscription (7 days)
+-- 'month'  - Monthly subscription (30 days)
+-- 'holder' - Token gate holder (no expiration, auto-deactivated if balance drops)

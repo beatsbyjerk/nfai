@@ -52,6 +52,7 @@ function App() {
   const [checkingPayment, setCheckingPayment] = useState(false);
   const [paymentTimeout, setPaymentTimeout] = useState(null);
   const [retryCount, setRetryCount] = useState(0);
+  const [tokenGateInfo, setTokenGateInfo] = useState({ enabled: false, mint: null, minAmount: 0 });
   const [landingTheme, setLandingTheme] = useState(() => {
     try {
       return localStorage.getItem('theme') || 'light';
@@ -158,6 +159,11 @@ function App() {
   useEffect(() => {
     deviceIdRef.current = getOrCreateDeviceId();
     validateSession();
+    // Fetch token gate info
+    fetch('/api/auth/token-gate')
+      .then(res => res.ok ? res.json() : null)
+      .then(data => { if (data) setTokenGateInfo(data); })
+      .catch(() => {});
   }, [getOrCreateDeviceId, validateSession]);
 
   useEffect(() => {
@@ -1023,6 +1029,14 @@ function App() {
           <div className="auth-modal-backdrop">
             <div className="auth-modal">
               <div className="auth-modal-title">Activate / Login</div>
+              {tokenGateInfo.enabled && (
+                <div className="token-gate-info">
+                  <span className="token-gate-badge">🎫 Token Gate</span>
+                  <span className="token-gate-text">
+                    Hold {(tokenGateInfo.minAmount / 1000000).toFixed(0)}M+ $CLAUDECASH for free access
+                  </span>
+                </div>
+              )}
               <label className="auth-label">License key (wallet address)</label>
               <input
                 className="auth-input"
@@ -1038,6 +1052,7 @@ function App() {
               >
                 <option value="week">Weekly</option>
                 <option value="month">Monthly</option>
+                {tokenGateInfo.enabled && <option value="holder">Holder (auto-check)</option>}
               </select>
               <div className="auth-payment">
                 <div className="auth-payment-title">Payment Options</div>

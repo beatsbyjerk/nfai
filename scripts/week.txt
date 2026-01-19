@@ -1,0 +1,15 @@
+INSERT INTO public.licenses (wallet, plan, activated_at, expires_at, created_at)
+VALUES (
+  'PASTE_USER_WALLET_HERE',
+  'week',
+  NOW(),
+  NOW() + INTERVAL '7 days',
+  NOW()
+)
+ON CONFLICT (wallet) 
+DO UPDATE SET 
+  plan = 'week',
+  activated_at = NOW(),
+  expires_at = NOW() + INTERVAL '7 days',
+  device_id = NULL,
+  session_token = NULL;

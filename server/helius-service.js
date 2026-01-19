@@ -35,6 +35,24 @@ export class HeliusService {
     }));
   }
 
+  async getWalletTokenBalance(walletAddress, mintAddress) {
+    if (!walletAddress || !mintAddress) return 0;
+    try {
+      const wallet = new PublicKey(walletAddress);
+      const mint = new PublicKey(mintAddress);
+      const tokenAccounts = await this.connection.getParsedTokenAccountsByOwner(wallet, { mint });
+      const accounts = tokenAccounts?.value || [];
+      let total = 0;
+      for (const acc of accounts) {
+        const uiAmount = acc.account?.data?.parsed?.info?.tokenAmount?.uiAmount;
+        if (Number.isFinite(uiAmount)) total += uiAmount;
+      }
+      return total;
+    } catch {
+      return 0;
+    }
+  }
+
   async getTokenSupply(mintAddress) {
     if (!mintAddress) return null;
     const mint = new PublicKey(mintAddress);

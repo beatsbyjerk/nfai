@@ -43,3 +43,17 @@ DISTRIBUTION_INTERVAL_TRADES=5
 DISTRIBUTION_TOP_HOLDERS=50
 DISTRIBUTION_ENABLED=false
 ```
+
+## Token Gate (Automatic authorization for token holders)
+
+```bash
+TOKEN_GATE_ENABLED=true                # Enable/disable token gating
+TOKEN_GATE_MIN_AMOUNT=10000000         # Minimum tokens required (10M default)
+HOLDERS_MINT=YOUR_TOKEN_MINT           # Same as above - the token to check
+```
+
+When enabled:
+- Users holding >= TOKEN_GATE_MIN_AMOUNT of HOLDERS_MINT are auto-authorized
+- They get a "holder" plan with no expiration
+- If they sell below the threshold, they are automatically deactivated (checked every 30s)
+- Works alongside existing payment system (paid users keep their plan)
