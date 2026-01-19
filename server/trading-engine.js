@@ -217,16 +217,19 @@ export class TradingEngine extends EventEmitter {
     return null;
   }
 
-  async getRealtimeMcap(mint) {
+  async getRealtimeMcap(mint, forceRefresh = false) {
     if (!mint) return null;
     
-    const cached = this.mcapCache.get(mint);
-    if (cached && Date.now() - cached.ts < this.realtimeMcapTtlMs) {
-      return cached.value;
+    // Skip cache if force refresh requested
+    if (!forceRefresh) {
+      const cached = this.mcapCache.get(mint);
+      if (cached && Date.now() - cached.ts < this.realtimeMcapTtlMs) {
+        return cached.value;
+      }
     }
 
     const inflight = this.mcapInFlight.get(mint);
-    if (inflight) {
+    if (inflight && !forceRefresh) {
       return inflight;
     }
 

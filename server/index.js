@@ -190,7 +190,7 @@ const mapWithConcurrency = async (items, concurrency, fn) => {
   return results;
 };
 
-const attachRealtimeMcapField = async (tokens, { limit = 30 } = {}) => {
+const attachRealtimeMcapField = async (tokens, { limit = 30, forceRefresh = false } = {}) => {
   const list = Array.isArray(tokens) ? tokens : [];
   const capped = list.slice(0, Math.max(0, limit));
   const withMcap = await mapWithConcurrency(
@@ -200,7 +200,7 @@ const attachRealtimeMcapField = async (tokens, { limit = 30 } = {}) => {
       const mint = token?.address || token?.mint || token?.token_address;
       if (!mint || !tradingEngine?.getRealtimeMcap) return token;
       try {
-        const realtimeMcap = await tradingEngine.getRealtimeMcap(mint);
+        const realtimeMcap = await tradingEngine.getRealtimeMcap(mint, forceRefresh);
         if (!Number.isFinite(realtimeMcap) || realtimeMcap <= 0) return token;
         // Important: keep stored/latest mcap intact; publish helius mcap separately.
         return { ...token, realtime_mcap: realtimeMcap, realtime_mcap_ts: Date.now() };
@@ -220,31 +220,33 @@ wss.on('connection', async (ws) => {
   clients.add(ws);
   console.log(`Client connected. Total: ${clients.size}`);
   
-  // Clear caches on new connection to force fresh data
-  if (tradingEngine?.mcapCache) {
-    tradingEngine.mcapCache.clear();
-  }
-  if (tradingEngine?.helius?.dexScreenerCache) {
-    tradingEngine.helius.dexScreenerCache.clear();
-  }
-  
-  // Send current state on connect (always)
-  await refreshVisibleTokens();
-  // Force fresh mcap fetch for visible tokens on refresh
-  const refreshTokens = tokenStore.getAllTokens();
-  const tokensWithRealtimeMcap = await attachRealtimeMcapField(refreshTokens, { limit: REALTIME_MCAP_BROADCAST_LIMIT });
-  const snapshot = {
-    type: 'refresh',
-    data: {
-      tokens: tokensWithRealtimeMcap,
-      stats: tokenStore.getStats(),
-      trading: {
-        ...tradingEngine.getState(),
-        activityLog: tradingEngine.activityLog.map(sanitizeActivity),
+  try {
+    // Send current state on connect - fetch fresh data BEFORE sending
+    await refreshVisibleTokens();
+    const refreshTokens = tokenStore.getAllTokens();
+    
+    // CRITICAL: Force fresh mcap fetch (bypass cache) before sending snapshot
+    // This ensures client always receives accurate data on refresh, never stale cache
+    const tokensWithRealtimeMcap = await attachRealtimeMcapField(refreshTokens, { 
+      limit: REALTIME_MCAP_BROADCAST_LIMIT,
+      forceRefresh: true
+    });
+    
+    const snapshot = {
+      type: 'refresh',
+      data: {
+        tokens: tokensWithRealtimeMcap,
+        stats: tokenStore.getStats(),
+        trading: {
+          ...tradingEngine.getState(),
+          activityLog: tradingEngine.activityLog.map(sanitizeActivity),
+        }
       }
-    }
-  };
-  ws.send(JSON.stringify(snapshot));
+    };
+    ws.send(JSON.stringify(snapshot));
+  } catch (error) {
+    console.error('Error sending initial snapshot:', error);
+  }
   
   ws.on('close', () => {
     clients.delete(ws);
