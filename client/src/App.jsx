@@ -936,7 +936,7 @@ function App() {
           </div>
           <div className="landing-header-controls">
             <a 
-              href="https://x.com/" 
+              href="https://x.com/claudecash_sol" 
               target="_blank" 
               rel="noopener noreferrer" 
               className="landing-x-btn"
