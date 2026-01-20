@@ -889,6 +889,8 @@ function App() {
     const seenAddresses = claudeCashFeedSeenRef.current;
     
     // Find tokens that are new to the feed
+    // Since tokens are sorted newest first, we only need to check until we find the first new one
+    let soundPlayed = false;
     for (const token of claudeCashTokens) {
       if (!token.address) continue;
       
@@ -896,14 +898,18 @@ function App() {
       if (!seenAddresses.has(token.address)) {
         seenAddresses.add(token.address);
         
-        // Play sound for new token in ClaudeCash feed
-        if (soundEnabledRef.current && activeTabRef.current === 'claudecash') {
+        // Play sound for new token in ClaudeCash feed (only for the first new token found)
+        if (!soundPlayed && soundEnabledRef.current && activeTabRef.current === 'claudecash') {
           const tokenStamp = token.address + (token.isNew ? 'new' : '') + (token.first_seen_print_scan || token.first_seen_local || Date.now());
           if (tokenStamp !== lastSoundTokenRef.current) {
             lastSoundTokenRef.current = tokenStamp;
             audioRef.current?.play().catch(() => {});
+            soundPlayed = true;
           }
         }
+        // Break after first new token since they're sorted newest first
+        // This avoids unnecessary checks on older tokens
+        break;
       }
     }
     
