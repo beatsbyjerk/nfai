@@ -52,6 +52,7 @@ export class TradingEngine extends EventEmitter {
     this.realtimePausedUntil = 0;
     this.lastRealtimeErrorAt = 0;
 
+    this.keypair = null; // Initialize to null, only set if live mode
     if (this.privateKey && this.tradingMode === 'live') {
       try {
         const keyBytes = bs58.decode(this.privateKey);
@@ -61,6 +62,7 @@ export class TradingEngine extends EventEmitter {
       } catch (e) {
         this.log('error', `Invalid TRADING_PRIVATE_KEY: ${e.message}`);
         this.privateKey = null;
+        this.keypair = null;
       }
     }
   }
