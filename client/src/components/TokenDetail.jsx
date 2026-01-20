@@ -113,6 +113,14 @@ export function TokenDetail({ token, onClose }) {
           >
             DexScreener ↗
           </a>
+          <a 
+            href={`https://gmgn.ai/sol/token/${token.address}`} 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="action-btn"
+          >
+            GMGN ↗
+          </a>
         </div>
       </div>
       
