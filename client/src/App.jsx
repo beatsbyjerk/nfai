@@ -640,17 +640,6 @@ function App() {
             break;
 
           case 'activity':
-            if (activeTabRef.current === 'claudecash' && soundEnabledRef.current) {
-              const activityType = (message.data?.type || '').toLowerCase();
-              const shouldNotify = activityType === 'signal' || activityType === 'trade';
-              if (shouldNotify) {
-                const activityStamp = message.data?.timestamp || Date.now();
-                if (activityStamp !== lastActivitySoundRef.current) {
-                  lastActivitySoundRef.current = activityStamp;
-                  audioRef.current?.play().catch(() => {});
-                }
-              }
-            }
             setActivity(prev => [message.data, ...prev].slice(0, 200));
             break;
 
