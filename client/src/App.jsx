@@ -81,6 +81,7 @@ function App() {
   const lastSoundTokenRef = useRef(null);
   const lastActivitySoundRef = useRef(null);
   const claudeCashFeedSeenRef = useRef(new Set()); // Track tokens seen in ClaudeCash feed
+  const prevClaudeCashAddressesRef = useRef(new Set()); // Track previous addresses to detect new ones
   const publicWsRef = useRef(null);
   const publicReconnectTimeoutRef = useRef(null);
 
@@ -873,42 +874,37 @@ function App() {
   useEffect(() => {
     if (activeTab !== 'claudecash' || !soundEnabled) return;
     
-    // Check for new tokens in the ClaudeCash feed
+    // Get current addresses
     const currentAddresses = new Set(claudeCashTokens.map(t => t.address).filter(Boolean));
-    const seenAddresses = claudeCashFeedSeenRef.current;
+    const prevAddresses = prevClaudeCashAddressesRef.current;
     
-    // Find tokens that are new to the feed
-    // Since tokens are sorted newest first, we only need to check until we find the first new one
-    let soundPlayed = false;
+    // Only proceed if there's actually a NEW address that wasn't there before
+    const newAddresses = Array.from(currentAddresses).filter(addr => !prevAddresses.has(addr));
+    if (newAddresses.length === 0) {
+      // No new addresses, just update the ref and exit
+      prevClaudeCashAddressesRef.current = currentAddresses;
+      return;
+    }
+    
+    // There's a new token - find it and play sound
     for (const token of claudeCashTokens) {
       if (!token.address) continue;
-      
-      // Check if this is a new token (not seen before in feed)
-      if (!seenAddresses.has(token.address)) {
-        seenAddresses.add(token.address);
-        
-        // Play sound for new token in ClaudeCash feed (only once per token address)
-        if (!soundPlayed && soundEnabledRef.current && activeTabRef.current === 'claudecash') {
-          // Only play if we haven't played sound for this address yet
+      if (newAddresses.includes(token.address)) {
+        // This is a new token - play sound once
+        if (soundEnabledRef.current && activeTabRef.current === 'claudecash') {
           if (lastSoundTokenRef.current !== token.address) {
             lastSoundTokenRef.current = token.address;
             audioRef.current?.play().catch(() => {});
-            soundPlayed = true;
           }
         }
-        // Break after first new token since they're sorted newest first
-        // This avoids unnecessary checks on older tokens
+        // Only play for the first new token (they're sorted newest first)
         break;
       }
     }
     
-    // Clean up seen set to prevent memory growth (keep only addresses in current feed)
-    // Remove addresses that are no longer in the feed
-    for (const seenAddr of seenAddresses) {
-      if (!currentAddresses.has(seenAddr)) {
-        seenAddresses.delete(seenAddr);
-      }
-    }
+    // Update refs
+    prevClaudeCashAddressesRef.current = currentAddresses;
+    claudeCashFeedSeenRef.current = new Set(currentAddresses);
   }, [claudeCashTokens, activeTab, soundEnabled]);
 
   const athMultiple = (token) => {
