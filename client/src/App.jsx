@@ -78,10 +78,8 @@ function App() {
   const activeTabRef = useRef(activeTab);
   const soundEnabledRef = useRef(soundEnabled);
   const claudeCashSeenRef = useRef(new Set());
-  const lastSoundTokenRef = useRef(null);
   const lastActivitySoundRef = useRef(null);
-  const claudeCashFeedSeenRef = useRef(new Set()); // Track tokens seen in ClaudeCash feed
-  const prevClaudeCashAddressesRef = useRef(new Set()); // Track previous addresses to detect new ones
+  const claudeCashSoundPlayedRef = useRef(new Set()); // Track token addresses we've played sound for
   const publicWsRef = useRef(null);
   const publicReconnectTimeoutRef = useRef(null);
 
@@ -617,7 +615,7 @@ function App() {
             }).slice(0, 500); // Keep last 500
             setTokens(nextTokens);
 
-            // Replace highlight per source
+            // Replace highlight per source and play sound for new ClaudeCash tokens
             for (const token of newIncoming) {
               const sources = (token.sources || token.source || '').split(',').map(s => s.trim()).filter(Boolean);
               const hasMemeRadar = sources.includes('meme_radar') || token.source === 'meme_radar';
@@ -628,6 +626,14 @@ function App() {
               }
               if (hasPrintScan) {
                 setHighlighted(prev => ({ ...prev, print_scan: token.address }));
+                
+                // Play sound for new ClaudeCash token (only once per token address)
+                if (activeTabRef.current === 'claudecash' && soundEnabledRef.current && token.address) {
+                  if (!claudeCashSoundPlayedRef.current.has(token.address)) {
+                    claudeCashSoundPlayedRef.current.add(token.address);
+                    audioRef.current?.play().catch(() => {});
+                  }
+                }
               }
             }
 
@@ -869,43 +875,6 @@ function App() {
     return sources.includes('print_scan');
   });
   const totalCalls = claudeCashStatsTokens.length;
-
-  // Monitor ClaudeCash feed for new tokens and play sound
-  useEffect(() => {
-    if (activeTab !== 'claudecash' || !soundEnabled) return;
-    
-    // Get current addresses
-    const currentAddresses = new Set(claudeCashTokens.map(t => t.address).filter(Boolean));
-    const prevAddresses = prevClaudeCashAddressesRef.current;
-    
-    // Only proceed if there's actually a NEW address that wasn't there before
-    const newAddresses = Array.from(currentAddresses).filter(addr => !prevAddresses.has(addr));
-    if (newAddresses.length === 0) {
-      // No new addresses, just update the ref and exit
-      prevClaudeCashAddressesRef.current = currentAddresses;
-      return;
-    }
-    
-    // There's a new token - find it and play sound
-    for (const token of claudeCashTokens) {
-      if (!token.address) continue;
-      if (newAddresses.includes(token.address)) {
-        // This is a new token - play sound once
-        if (soundEnabledRef.current && activeTabRef.current === 'claudecash') {
-          if (lastSoundTokenRef.current !== token.address) {
-            lastSoundTokenRef.current = token.address;
-            audioRef.current?.play().catch(() => {});
-          }
-        }
-        // Only play for the first new token (they're sorted newest first)
-        break;
-      }
-    }
-    
-    // Update refs
-    prevClaudeCashAddressesRef.current = currentAddresses;
-    claudeCashFeedSeenRef.current = new Set(currentAddresses);
-  }, [claudeCashTokens, activeTab, soundEnabled]);
 
   const athMultiple = (token) => {
     // Use highest_multiplier from database (correct value)
