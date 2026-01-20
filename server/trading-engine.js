@@ -549,6 +549,14 @@ export class TradingEngine extends EventEmitter {
     // Double-check position doesn't exist (race condition protection)
     if (this.positions.has(mint)) return;
     
+    // Set buyInProgress flag immediately to prevent race conditions (before async work)
+    if (this.tradingMode === 'live' && this.keypair) {
+      const existingPosition = this.positions.get(mint);
+      if (existingPosition?.buyInProgress) return;
+      // Set minimal flag to block concurrent buys
+      this.positions.set(mint, { mint, buyInProgress: true, symbol: token.symbol });
+    }
+    
     const tokenRecord = this.getTokenRecord(mint);
     const migrationState =
       this.getCachedMigrationState(mint) ??
@@ -583,6 +591,13 @@ export class TradingEngine extends EventEmitter {
     }
 
     if (entryMcap <= 0) {
+      // Clean up buyInProgress flag if we set it early
+      if (this.tradingMode === 'live' && this.keypair) {
+        const pending = this.positions.get(mint);
+        if (pending && pending.buyInProgress && !pending.entryMcap) {
+          this.positions.delete(mint);
+        }
+      }
       this.log('warn', `Analysis incomplete: Market cap data missing for ${token.symbol || mint.slice(0, 6)}. Skipping acquisition.`);
       return;
     }
