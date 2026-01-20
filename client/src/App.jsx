@@ -898,11 +898,11 @@ function App() {
       if (!seenAddresses.has(token.address)) {
         seenAddresses.add(token.address);
         
-        // Play sound for new token in ClaudeCash feed (only for the first new token found)
+        // Play sound for new token in ClaudeCash feed (only once per token address)
         if (!soundPlayed && soundEnabledRef.current && activeTabRef.current === 'claudecash') {
-          const tokenStamp = token.address + (token.isNew ? 'new' : '') + (token.first_seen_print_scan || token.first_seen_local || Date.now());
-          if (tokenStamp !== lastSoundTokenRef.current) {
-            lastSoundTokenRef.current = tokenStamp;
+          // Only play if we haven't played sound for this address yet
+          if (lastSoundTokenRef.current !== token.address) {
+            lastSoundTokenRef.current = token.address;
             audioRef.current?.play().catch(() => {});
             soundPlayed = true;
           }
