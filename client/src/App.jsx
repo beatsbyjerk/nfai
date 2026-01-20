@@ -626,8 +626,8 @@ function App() {
               if (hasPrintScan) {
                 setHighlighted(prev => ({ ...prev, print_scan: token.address }));
                 
-                // Play sound for new Claude Cash tokens
-                if (soundEnabledRef.current && audioRef.current) {
+                // Play sound for new Claude Cash tokens (isNew flag set by backend when isNew === true)
+                if (token.isNew && soundEnabledRef.current && audioRef.current) {
                   try {
                     audioRef.current.currentTime = 0; // Reset to start
                     audioRef.current.play().catch(err => {
