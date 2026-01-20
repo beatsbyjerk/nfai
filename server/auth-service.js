@@ -736,6 +736,9 @@ export class AuthService {
       return { ok: false, error: 'Invalid wallet address.' };
     }
     const requestedPlan = (plan || '').toLowerCase();
+    if (!['week', 'month'].includes(requestedPlan)) {
+      return { ok: false, error: 'Invalid plan.' };
+    }
 
     // Check for existing payment in database first
     const { data: existingPayment } = await this.client
