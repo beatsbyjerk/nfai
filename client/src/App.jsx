@@ -64,6 +64,15 @@ function App() {
     }
   });
   const [soundPermissionNeeded, setSoundPermissionNeeded] = useState(false);
+  const safeAlert = useCallback((msg) => {
+    try {
+      if (typeof window !== 'undefined' && window?.alert) {
+        window.alert(msg);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
   
   // Public feed state (for unauthenticated landing page)
   const [publicToasts, setPublicToasts] = useState([]);
@@ -1312,11 +1321,7 @@ function App() {
   const handleToggleSound = useCallback(() => {
     setSoundEnabled(prev => {
       const next = !prev;
-      try {
-        alert(next ? 'Sound ON: bell enabled' : 'Sound OFF: bell muted');
-      } catch {
-        // ignore alert failures
-      }
+      safeAlert(next ? 'Sound ON: bell enabled' : 'Sound OFF: bell muted');
       if (next && audioRef.current) {
         audioRef.current.currentTime = 0;
         audioRef.current.play().catch(() => {
@@ -1325,7 +1330,7 @@ function App() {
       }
       return next;
     });
-  }, []);
+  }, [safeAlert]);
 
   return (
     <div className="app">
