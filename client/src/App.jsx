@@ -646,8 +646,8 @@ function App() {
                 if (
                   soundEnabledRef.current &&
                   audioRef.current &&
-                  token.address !== lastSoundTokenRef.current &&
-                  activeTabRef.current === 'claudecash'
+                  token.isNew &&
+                  token.address !== lastSoundTokenRef.current
                 ) {
                   lastSoundTokenRef.current = token.address;
                   try {

@@ -624,8 +624,34 @@ export class TradingEngine extends EventEmitter {
     // This ensures entryMcap uses the same data source as monitoring
     if (this.realtimeMcapEnabled && mint) {
       try {
-        // Use ClaudeCash method: getRealtimeMcap without forceRefresh (uses cache updated every 5s)
-        const realtimeMcap = await this.getRealtimeMcap(mint, false);
+        // PRIORITY: Check PumpPortal WS cache FIRST (instant, no API delay)
+        // This eliminates delay in buy trigger - use real-time market cap immediately
+        let realtimeMcap = null;
+        if (this.pumpPortalWs) {
+          const wsMcapUsd = this.pumpPortalWs.getMarketCapUsd(mint);
+          if (Number.isFinite(wsMcapUsd) && wsMcapUsd > 0) {
+            realtimeMcap = wsMcapUsd;
+          } else {
+            // Try SOL market cap and convert to USD
+            const wsMcapSol = this.pumpPortalWs.getMarketCapSol(mint);
+            if (Number.isFinite(wsMcapSol) && wsMcapSol > 0) {
+              try {
+                const solUsd = await this.helius.getSolUsdPrice();
+                if (Number.isFinite(solUsd) && solUsd > 0) {
+                  realtimeMcap = wsMcapSol * solUsd;
+                }
+              } catch {
+                // Fall through to getRealtimeMcap
+              }
+            }
+          }
+        }
+        
+        // Only fallback to API if PumpPortal WS doesn't have it
+        if (!Number.isFinite(realtimeMcap) || realtimeMcap <= 0) {
+          realtimeMcap = await this.getRealtimeMcap(mint, false);
+        }
+        
         if (Number.isFinite(realtimeMcap) && realtimeMcap > 0) {
           entryMcap = realtimeMcap;
         } else {

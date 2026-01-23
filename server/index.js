@@ -903,7 +903,7 @@ async function broadcastRealtimeMcaps() {
 }
 
 // Start polling
-const POLL_INTERVAL = 5000; // 5 seconds
+const POLL_INTERVAL = 2000; // 2 seconds for faster token detection
 const PUBLIC_BROADCAST_INTERVAL = 15000; // Check every 15 seconds for delayed tokens
 
 setInterval(pollStalkFun, POLL_INTERVAL);
