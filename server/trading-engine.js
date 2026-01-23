@@ -800,8 +800,8 @@ export class TradingEngine extends EventEmitter {
         await this.executeSell(position, this.takeProfitSellPct, `Take profit target reached (${pnlPct.toFixed(1)}%). Securing gains.`);
       }
 
-      // Trailing stop
-      if (position.remainingPct > 0) {
+      // Trailing stop (only after take profit has been triggered)
+      if (position.remainingPct > 0 && position.remainingPct < 100) {
         const trailingFloor = position.maxMcap * (1 - this.trailingStopPct / 100);
         if (currentMcap < trailingFloor) {
           await this.executeSell(position, position.remainingPct, 'Momentum reversal detected. Exiting position.');
