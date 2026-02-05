@@ -35,10 +35,6 @@ export function Header({ connected, soundEnabled, onToggleSound, authWallet, lic
               {licenseExpiresAt && <span className="license-expiry">Active</span>}
             </div>
           )}
-          <div className={`connection-status ${connected ? 'connected' : 'disconnected'}`}>
-            <span className="status-dot"></span>
-            <span className="status-text">{connected ? 'LIVE' : 'WAITING'}</span>
-          </div>
         </div>
       </div>
 
@@ -77,6 +73,37 @@ export function Header({ connected, soundEnabled, onToggleSound, authWallet, lic
           font-weight: 700;
           color: var(--text-primary);
           letter-spacing: -0.02em;
+        }
+
+        .header-logo {
+          font-family: var(--font-serif);
+          font-size: 1.5rem;
+          font-weight: 700;
+          color: var(--text-primary);
+          letter-spacing: -0.02em;
+        }
+
+        .header-x-btn {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 36px;
+          height: 36px;
+          margin-left: 1rem;
+          background: transparent;
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          border-radius: 6px;
+          color: var(--text-primary);
+          text-decoration: none;
+          font-size: 1.2rem;
+          transition: all 0.2s ease;
+        }
+
+        .header-x-btn:hover {
+          background: rgba(255, 255, 255, 0.05);
+          border-color: var(--accent-primary);
+          color: var(--accent-primary);
+          transform: translateY(-1px);
         }
 
         .logo-img {

@@ -39,9 +39,20 @@ export const Hero = () => {
                     </p>
 
                     <div className="hero-actions">
-                        <button className="btn-primary" onClick={scrollToContent}>
-                            Get Calls <span className="arrow">↓</span>
-                        </button>
+                        <div className="hero-cta-row">
+                            <button className="btn-primary" onClick={scrollToContent}>
+                                Get Calls <span className="arrow">↓</span>
+                            </button>
+                            <a
+                                href="https://x.com/NfaiSolana"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="btn-x"
+                                title="Follow us on X"
+                            >
+                                𝕏
+                            </a>
+                        </div>
                         <div className="hero-trust">
                             <span className="trust-item">🛡️ Non-Custodial</span>
                             <span className="trust-item">⚡ &lt; 100ms Latency</span>
