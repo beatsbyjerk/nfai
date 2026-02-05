@@ -11,5 +11,9 @@ services:
     http_port: 3001
     instance_count: 1
     instance_size_slug: basic-xxs
+    envs:
+      - key: NPM_CONFIG_PRODUCTION
+        value: "false"
+        scope: BUILD_TIME
     routes:
       - path: /
