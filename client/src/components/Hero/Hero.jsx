@@ -59,10 +59,19 @@ export const Hero = () => {
                         </div>
                     </div>
 
-                    <div className="hero-stats-grid">
-                        <StatCard label="Volume Analyzed" value="$4.2B+" sub="Last 24h" />
-                        <StatCard label="Signal Accuracy" value="87%" sub="Verified On-Chain" />
-                        <StatCard label="Active Nodes" value="1,240" sub="Global Network" />
+                    <div className="hero-narrative">
+                        <p className="narrative-text">
+                            Athena is an AI-Agent on{' '}
+                            <a
+                                href="https://x.com/Solana"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="narrative-link"
+                            >
+                                @Solana
+                            </a>
+                            {' '}that outperforms KOLs daily, and shares the profits with top 50 holders. Become a guardian today!
+                        </p>
                     </div>
                 </div>
 
