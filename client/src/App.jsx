@@ -29,13 +29,7 @@ function App() {
   const [positions, setPositions] = useState([]);
   const [tradeCount, setTradeCount] = useState(0);
   const [tradingMode, setTradingMode] = useState('paper');
-  const [soundEnabled, setSoundEnabled] = useState(() => {
-    try {
-      return localStorage.getItem('soundEnabled') === 'true';
-    } catch {
-      return false;
-    }
-  });
+  const [soundEnabled, setSoundEnabled] = useState(false); // Sound disabled
   const [authState, setAuthState] = useState({
     loading: false, // No loading, instant access
     authenticated: true, // Bypassed paywall

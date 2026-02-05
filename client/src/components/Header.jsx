@@ -56,19 +56,7 @@ export function Header({ connected, soundEnabled, onToggleSound, authWallet, lic
               )}
             </div>
           )} */}
-          <button className="theme-toggle" onClick={toggleTheme} title="Toggle Theme">
-            {theme === 'light' ? '🌙' : '☀️'}
-          </button>
-          <button
-            className={`sound-toggle ${soundEnabled ? 'on' : 'off'}`}
-            onClick={onToggleSound}
-            title={soundEnabled ? 'Sound on' : 'Sound off'}
-            aria-pressed={soundEnabled}
-          >
-            {soundEnabled ? '🔔' : '🔕'}
-          </button>
-
-          <div className={`connection-status ${connected ? 'connected' : 'disconnected'}`}>
+<div className={`connection-status ${connected ? 'connected' : 'disconnected'}`}>
             <span className="status-dot"></span>
             <span className="status-text">{connected ? 'LIVE' : 'WAITING'}</span>
           </div>
