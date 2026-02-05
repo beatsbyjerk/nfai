@@ -3,7 +3,7 @@ region: nyc
 services:
   - name: web
     github:
-      repo: AxsolTools/Claude
+      repo: beatsbyjerk/nfai
       branch: main
       deploy_on_push: true
     build_command: npm install && cd client && npm install && npm run build

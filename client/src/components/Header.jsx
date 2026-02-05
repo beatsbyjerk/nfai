@@ -35,16 +35,13 @@ export function Header({ connected, soundEnabled, onToggleSound, authWallet, lic
       <div className="header-content">
         <div className="logo-section">
           <div className="logo">
-            <img src="/logo.png" alt="ClaudeCash" className="logo-img" />
-            <span className="logo-text">ClaudeCash</span>
-          </div>
-          <div className="ca-address">
-            CA: GR4up7L5HAL1Ww48aLyTcUzE4UiWHV8Txt56KbSupump
+            <img src="/logo.png" alt="NFAi" className="logo-img" />
+            <span className="logo-text">NFAi</span>
           </div>
         </div>
-        
+
         <div className="header-right">
-          {authWallet && (
+          {/* {authWallet && (
             <div className="license-status">
               <div className="license-wallet">{authWallet.slice(0, 4)}…{authWallet.slice(-4)}</div>
               {licenseExpiresAt && (
@@ -58,18 +55,7 @@ export function Header({ connected, soundEnabled, onToggleSound, authWallet, lic
                 </button>
               )}
             </div>
-          )}
-          <a 
-            href="https://x.com/claudecash_sol" 
-            target="_blank" 
-            rel="noopener noreferrer" 
-            className="x-btn"
-            title="Follow us on X"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
-            </svg>
-          </a>
+          )} */}
           <button className="theme-toggle" onClick={toggleTheme} title="Toggle Theme">
             {theme === 'light' ? '🌙' : '☀️'}
           </button>
@@ -88,11 +74,14 @@ export function Header({ connected, soundEnabled, onToggleSound, authWallet, lic
           </div>
         </div>
       </div>
-      
+
+
       <style>{`
         .header {
-          background: var(--bg-primary);
-          border-bottom: 1px solid var(--border-color);
+          background: rgba(11, 26, 47, 0.7);
+          backdrop-filter: blur(10px);
+          -webkit-backdrop-filter: blur(10px);
+          border-bottom: 1px solid rgba(212, 175, 55, 0.3);
           padding: 1rem 2rem;
           position: sticky;
           top: 0;
@@ -101,8 +90,7 @@ export function Header({ connected, soundEnabled, onToggleSound, authWallet, lic
         }
         
         .header-content {
-          max-width: 1400px;
-          margin: 0 auto;
+          width: 100%;
           display: flex;
           justify-content: space-between;
           align-items: center;
@@ -117,152 +105,126 @@ export function Header({ connected, soundEnabled, onToggleSound, authWallet, lic
         .logo {
           display: flex;
           align-items: center;
-          gap: 0.5rem;
+          gap: 0.75rem;
           font-family: var(--font-serif);
-          font-size: 1.5rem;
+          font-size: 1.6rem;
           font-weight: 700;
-          color: var(--text-primary);
-          letter-spacing: -0.02em;
+          color: #f5f0e8;
+          letter-spacing: 0.05em;
+          text-shadow: 0 2px 4px rgba(0,0,0,0.3);
         }
         
         .logo-img {
-          width: 32px;
-          height: 32px;
-          border-radius: 6px;
+          width: 36px;
+          height: 36px;
+          border-radius: 4px;
           object-fit: cover;
-        }
-        
-        .ca-address {
-          font-family: var(--font-mono);
-          font-size: 0.75rem;
-          color: var(--text-secondary);
-          padding: 0.35rem 0.7rem;
-          background: var(--bg-secondary);
-          border: 1px solid var(--border-color);
-          border-radius: 6px;
+          border: 1px solid rgba(212, 175, 55, 0.5);
         }
         
         .header-right {
           display: flex;
           align-items: center;
-          gap: 1rem;
+          gap: 1.25rem;
         }
 
         .license-status {
           display: flex;
           align-items: center;
           gap: 0.75rem;
-          padding: 0.4rem 0.6rem;
-          border: 1px solid var(--border-color);
-          border-radius: 8px;
-          background: var(--bg-secondary);
+          padding: 0.4rem 0.8rem;
+          border: 1px solid rgba(212, 175, 55, 0.3);
+          border-radius: 4px; /* Roman Sharpness */
+          background: rgba(14, 25, 41, 0.6);
           font-size: 0.85rem;
+          color: #f5f0e8;
         }
 
         .license-wallet {
-          color: var(--text-primary);
+          color: #d4af37;
           font-weight: 600;
+          font-family: var(--font-mono);
         }
 
         .license-expiry {
-          color: var(--text-secondary);
+          color: rgba(245, 240, 232, 0.7);
         }
 
         .license-logout {
-          border: none;
-          background: var(--accent-primary);
-          color: #fff;
-          padding: 0.3rem 0.6rem;
-          border-radius: 6px;
+          border: 1px solid rgba(212, 175, 55, 0.5);
+          background: rgba(212, 175, 55, 0.1);
+          color: #d4af37;
+          padding: 0.2rem 0.6rem;
+          border-radius: 2px;
           cursor: pointer;
-          font-size: 0.8rem;
-        }
-
-        .x-btn {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          width: 36px;
-          height: 36px;
-          background: transparent;
-          border: 1px solid var(--border-color);
-          border-radius: 6px;
-          color: var(--text-primary);
-          text-decoration: none;
-          transition: all 0.2s ease;
-        }
-
-        .x-btn:hover {
-          background: var(--bg-hover);
-          border-color: var(--accent-primary);
-          color: var(--accent-primary);
-        }
-        
-        .theme-toggle {
-          background: transparent;
-          border: 1px solid var(--border-color);
-          color: var(--text-primary);
-          width: 36px;
-          height: 36px;
-          border-radius: 6px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          cursor: pointer;
+          font-size: 0.75rem;
+          font-family: var(--font-serif);
+          text-transform: uppercase;
           transition: all 0.2s ease;
         }
         
-        .theme-toggle:hover {
-          background: var(--bg-hover);
-          border-color: var(--text-secondary);
+        .license-logout:hover {
+            background: rgba(212, 175, 55, 0.3);
+            color: #f5f0e8;
         }
-
+        
+        .theme-toggle,
         .sound-toggle {
           background: transparent;
-          border: 1px solid var(--border-color);
-          color: var(--text-primary);
-          width: 36px;
-          height: 36px;
-          border-radius: 6px;
+          border: 1px solid rgba(212, 175, 55, 0.3);
+          color: #d4af37;
+          width: 40px;
+          height: 40px;
+          border-radius: 50%; /* Medallion Style */
           display: flex;
           align-items: center;
           justify-content: center;
           cursor: pointer;
           transition: all 0.2s ease;
+          font-size: 1.1rem;
         }
-
+        
+        .theme-toggle:hover,
         .sound-toggle:hover {
-          background: var(--bg-hover);
-          border-color: var(--text-secondary);
+          background: rgba(212, 175, 55, 0.2);
+          border-color: #d4af37;
+          color: #f5f0e8;
+          box-shadow: 0 0 10px rgba(212, 175, 55, 0.2);
+          transform: translateY(-1px);
         }
 
         .sound-toggle.on {
-          color: var(--accent-primary);
+          color: #f5f0e8;
+          background: rgba(212, 175, 55, 0.15);
+          border-color: #d4af37;
         }
         
         .connection-status {
           display: flex;
           align-items: center;
-          gap: 0.5rem;
-          padding: 0.4rem 0.8rem;
-          border-radius: 20px;
-          font-family: var(--font-sans);
+          gap: 0.6rem;
+          padding: 0.4rem 1rem;
+          border: 1px solid rgba(212, 175, 55, 0.4);
+          border-radius: 2px; /* Sharp/Roman */
+          font-family: var(--font-serif);
           font-size: 0.75rem;
-          font-weight: 500;
-          background: var(--bg-secondary);
-          color: var(--text-secondary);
+          font-weight: 600;
+          letter-spacing: 0.1em;
+          background: rgba(14, 25, 41, 0.6);
+          color: #f5f0e8;
+          text-transform: uppercase;
         }
         
         .status-dot {
           width: 6px;
           height: 6px;
-          border-radius: 50%;
-          background: var(--text-muted);
+          transform: rotate(45deg); /* Diamond Dot */
+          background: rgba(245, 240, 232, 0.3);
         }
         
         .connected .status-dot {
-          background: var(--accent-primary);
-          box-shadow: 0 0 0 2px rgba(218, 119, 86, 0.2);
+          background: #00ff9d;
+          box-shadow: 0 0 8px #00ff9d;
         }
       `}</style>
     </header>

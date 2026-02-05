@@ -11,7 +11,7 @@ function App() {
   const [selectedTokenAddress, setSelectedTokenAddress] = useState(null);
   const tabs = [
     { key: 'gambles', label: 'Gambles', source: 'meme_radar', firstLabel: 'First Called' },
-    { key: 'claudecash', label: 'ClaudeCash', source: 'print_scan', firstLabel: 'First' },
+    { key: 'claudecash', label: 'NFAi', source: 'print_scan', firstLabel: 'First' },
   ];
   const [activeTab, setActiveTab] = useState(() => {
     try {
@@ -37,12 +37,12 @@ function App() {
     }
   });
   const [authState, setAuthState] = useState({
-    loading: true,
-    authenticated: false,
-    wallet: null,
-    plan: null,
+    loading: false, // No loading, instant access
+    authenticated: true, // Bypassed paywall
+    wallet: 'GUEST_ACCESS',
+    plan: 'admin', // Grant admin features
     expiresAt: null,
-    sessionToken: null,
+    sessionToken: 'public-session',
   });
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [licenseKey, setLicenseKey] = useState('');
@@ -64,13 +64,13 @@ function App() {
     }
   });
   const [soundPermissionNeeded, setSoundPermissionNeeded] = useState(false);
-  
+
   // Public feed state (for unauthenticated landing page)
   const [publicToasts, setPublicToasts] = useState([]);
   const [publicActivity, setPublicActivity] = useState([]);
   const [publicSelectedToken, setPublicSelectedToken] = useState(null);
   const publicActivityRef = useRef([]);
-  
+
   const deviceIdRef = useRef(null);
   const wsRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
@@ -176,16 +176,19 @@ function App() {
 
   useEffect(() => {
     deviceIdRef.current = getOrCreateDeviceId();
-    validateSession();
+    // Only validate if not in public guest mode
+    if (authState.sessionToken !== 'public-session') {
+      validateSession();
+    }
     // Fetch token gate info
     fetch('/api/auth/token-gate')
       .then(res => res.ok ? res.json() : null)
       .then(data => { if (data) setTokenGateInfo(data); })
-      .catch(() => {});
-  }, [getOrCreateDeviceId, validateSession]);
+      .catch(() => { });
+  }, [getOrCreateDeviceId, validateSession, authState.sessionToken]);
 
   useEffect(() => {
-    if (!authState.authenticated || !authState.sessionToken) return;
+    if (!authState.authenticated || !authState.sessionToken || authState.sessionToken === 'public-session') return;
     const interval = setInterval(() => {
       validateSession();
     }, 30000);
@@ -241,17 +244,17 @@ function App() {
   const handleConfirmPayment = async () => {
     setAuthError('');
     const deviceId = deviceIdRef.current || getOrCreateDeviceId();
-    
+
     const normalizedWallet = (licenseKey || '').trim().replace(/\s+/g, '');
     const walletRegex = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
     if (!normalizedWallet || !walletRegex.test(normalizedWallet)) {
       setAuthError('Invalid wallet address. Please check the address and try again.');
       return;
     }
-    
+
     setCheckingPayment(true);
     setRetryCount(0);
-    
+
     // Set a timeout countdown (30 seconds max per attempt)
     let timeLeft = 30;
     setPaymentTimeout(timeLeft);
@@ -262,25 +265,25 @@ function App() {
         clearInterval(countdownInterval);
       }
     }, 1000);
-    
+
     try {
       const res = await fetch('/api/auth/payment/confirm', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          wallet: normalizedWallet, 
-          plan: licensePlan, 
+        body: JSON.stringify({
+          wallet: normalizedWallet,
+          plan: licensePlan,
           deviceId,
           timeoutMs: 30000 // 30 seconds instead of 60
         }),
       });
-      
+
       clearInterval(countdownInterval);
       setPaymentTimeout(null);
-      
+
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Payment not found');
-      
+
       localStorage.setItem('sessionToken', data.sessionToken);
       setAuthState({
         loading: false,
@@ -297,7 +300,7 @@ function App() {
     } catch (error) {
       clearInterval(countdownInterval);
       setPaymentTimeout(null);
-      
+
       const errorMsg = error.message || 'Payment not found';
       if (errorMsg.includes('not found') || errorMsg.includes('timeout')) {
         setAuthError('Payment not detected yet. Please ensure you sent the exact amount to the correct wallet, then try again.');
@@ -323,7 +326,7 @@ function App() {
     setTokenGateVerifying(true);
     setTokenGateRetryCount(0);
     const deviceId = deviceIdRef.current || getOrCreateDeviceId();
-    
+
     // Set a timeout countdown (30 seconds max per attempt)
     let timeLeft = 30;
     setTokenGateTimeout(timeLeft);
@@ -334,25 +337,25 @@ function App() {
         clearInterval(countdownInterval);
       }
     }, 1000);
-    
+
     try {
       const normalizedWallet = (licenseKey || '').trim().replace(/\s+/g, '');
       const res = await fetch('/api/auth/token-gate/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          wallet: normalizedWallet, 
+        body: JSON.stringify({
+          wallet: normalizedWallet,
           deviceId,
           timeoutMs: 30000 // 30 seconds
         }),
       });
-      
+
       clearInterval(countdownInterval);
       setTokenGateTimeout(null);
-      
+
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Token payment not found');
-      
+
       localStorage.setItem('sessionToken', data.sessionToken);
       setAuthState({
         loading: false,
@@ -368,10 +371,10 @@ function App() {
     } catch (error) {
       clearInterval(countdownInterval);
       setTokenGateTimeout(null);
-      
+
       const errorMsg = error.message || 'Token payment not found';
       if (errorMsg.includes('not found') || errorMsg.includes('timeout')) {
-        setAuthError('Token payment not detected yet. Please ensure you sent 1 $CLAUDECASH token to the correct wallet, then try again.');
+        setAuthError('Token payment not detected yet. Please ensure you sent 1 NFAi token to the correct wallet, then try again.');
         setTokenGateRetryCount(prev => prev + 1);
       } else {
         setAuthError(errorMsg);
@@ -455,17 +458,17 @@ function App() {
     const wsUrl = isDev
       ? `ws://localhost:3001?public=true`
       : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}?public=true`;
-    
+
     const ws = new WebSocket(wsUrl);
-    
+
     ws.onopen = () => {
       console.log('Public WebSocket connected');
     };
-    
+
     ws.onmessage = (event) => {
       try {
         const message = JSON.parse(event.data);
-        
+
         switch (message.type) {
           case 'init':
           case 'refresh':
@@ -475,7 +478,7 @@ function App() {
               publicActivityRef.current = message.data.tokens;
             }
             break;
-            
+
           case 'new_tokens':
             // New ClaudeCash calls (after 5 min delay)
             if (message.data && Array.isArray(message.data)) {
@@ -508,18 +511,18 @@ function App() {
               });
             }
             break;
-            
+
           case 'token_update':
             // Real-time market cap updates (same as authenticated)
             if (message.data?.address) {
-              setPublicActivity(prev => 
-                prev.map(token => 
-                  token.address === message.data.address 
+              setPublicActivity(prev =>
+                prev.map(token =>
+                  token.address === message.data.address
                     ? { ...token, ...message.data }
                     : token
                 )
               );
-              
+
               // Also update toasts
               setPublicToasts(prev =>
                 prev.map(toast =>
@@ -535,18 +538,18 @@ function App() {
         console.error('Public WebSocket message error:', e);
       }
     };
-    
+
     ws.onerror = () => {
       console.error('Public WebSocket error');
     };
-    
+
     ws.onclose = () => {
       console.log('Public WebSocket disconnected');
       if (!authState.authenticated) {
         publicReconnectTimeoutRef.current = setTimeout(connectPublicWebSocket, 3000);
       }
     };
-    
+
     publicWsRef.current = ws;
   }, [authState.authenticated]);
 
@@ -554,7 +557,7 @@ function App() {
     if (!authState.authenticated && !authState.loading) {
       connectPublicWebSocket();
     }
-    
+
     return () => {
       publicWsRef.current?.close();
       clearTimeout(publicReconnectTimeoutRef.current);
@@ -568,20 +571,26 @@ function App() {
     }
     const isDev = window.location.port === '5173';
     const deviceId = deviceIdRef.current || getOrCreateDeviceId();
-    const qs = `?token=${encodeURIComponent(authState.sessionToken)}&deviceId=${encodeURIComponent(deviceId)}`;
+    let qs = `?token=${encodeURIComponent(authState.sessionToken)}&deviceId=${encodeURIComponent(deviceId)}`;
+
+    // If guest access, force public mode on the socket
+    if (authState.sessionToken === 'public-session') {
+      qs += '&public=true';
+    }
+
     const wsUrl = isDev
       ? `ws://localhost:3001${qs}`
       : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}${qs}`;
-    
+
     const ws = new WebSocket(wsUrl);
-    
+
     ws.onopen = () => setConnected(true);
     ws.onerror = () => setConnected(false);
-    
+
     ws.onmessage = (event) => {
       try {
         const message = JSON.parse(event.data);
-        
+
         switch (message.type) {
           case 'init':
           case 'refresh':
@@ -617,7 +626,7 @@ function App() {
               setTradingMode(message.data.trading.tradingMode);
             }
             break;
-            
+
           case 'new_tokens':
             const newIncoming = message.data.map(t => ({ ...t, receivedAt: Date.now() }));
             const combined = [...newIncoming, ...(tokensRef.current || [])];
@@ -635,13 +644,13 @@ function App() {
               const sources = (token.sources || token.source || '').split(',').map(s => s.trim()).filter(Boolean);
               const hasMemeRadar = sources.includes('meme_radar') || token.source === 'meme_radar';
               const hasPrintScan = sources.includes('print_scan') || token.source === 'print_scan';
-              
+
               if (hasMemeRadar) {
                 setHighlighted(prev => ({ ...prev, meme_radar: token.address }));
               }
               if (hasPrintScan) {
                 setHighlighted(prev => ({ ...prev, print_scan: token.address }));
-                
+
                 // Play sound once per new ClaudeCash token
                 if (
                   soundEnabledRef.current &&
@@ -694,13 +703,13 @@ function App() {
         console.error(e);
       }
     };
-    
+
     ws.onclose = () => {
       if (wsRef.current !== ws) return;
       setConnected(false);
       reconnectTimeoutRef.current = setTimeout(connectWebSocket, 3000);
     };
-    
+
     wsRef.current = ws;
   }, []);
 
@@ -924,14 +933,16 @@ function App() {
     return ath / initial;
   };
 
+
+
   const athMultiples = claudeCashStatsTokens
     .map(athMultiple)
     .filter((value) => Number.isFinite(value) && value > 0);
-  
+
   // Success = How many tokens have ATH > Initial (any gain)
   const successfulCalls = athMultiples.filter((value) => value > 1).length;
   const successRate = totalCalls > 0 ? (successfulCalls / totalCalls) * 100 : 0;
-  
+
   // Average X = Average of all ATH X multiples
   const averageAthX = athMultiples.length > 0
     ? athMultiples.reduce((sum, value) => sum + value, 0) / athMultiples.length
@@ -941,8 +952,8 @@ function App() {
     return (
       <div className="auth-loading">
         <div className="auth-loading-card">
-          <div className="auth-loading-title">ClaudeCash</div>
-          <div className="auth-loading-text">Checking license…</div>
+          <div className="auth-loading-title">NFAi</div>
+          <div className="auth-loading-text">Consulting the Oracle…</div>
         </div>
       </div>
     );
@@ -955,356 +966,342 @@ function App() {
         <Toast toasts={publicToasts} onDismiss={dismissToast} />
         <div className="auth-landing">
           <div className="landing-header">
-          <div className="landing-logo">
-            <img src="/logo.png" alt="ClaudeCash" className="landing-logo-img" />
-            <span className="landing-logo-text">ClaudeCash</span>
-          </div>
-          <div className="landing-ca-address">
-            CA: GR4up7L5HAL1Ww48aLyTcUzE4UiWHV8Txt56KbSupump
-          </div>
-          <div className="landing-header-controls">
-            <a 
-              href="https://x.com/claudecash_sol" 
-              target="_blank" 
-              rel="noopener noreferrer" 
-              className="landing-x-btn"
-              title="Follow us on X"
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
-              </svg>
-            </a>
-            <button className="landing-theme-toggle" onClick={toggleLandingTheme} title="Toggle Theme">
-              {landingTheme === 'light' ? '🌙' : '☀️'}
-            </button>
-          </div>
-        </div>
-
-        <div className="auth-hero">
-          <div className="hero-badge">
-            <span className="badge-dot"></span>
-            <span className="badge-text">LIVE AUTONOMOUS TRADING</span>
-          </div>
-          
-          <h1 className="auth-title">
-            <span className="title-gradient">Claude</span>Cash
-          </h1>
-          <p className="auth-subtitle">AI-Powered On-Chain Intelligence • Solana Network</p>
-          
-          <div className="hero-description">
-            <p>
-              I am Claude, an autonomous trading system that analyzes thousands of on-chain signals 
-              every second. I identify high-potential tokens at their optimal entry point, execute 
-              trades with precision timing, and distribute profits to my top holders automatically.
-            </p>
-          </div>
-
-          <div className="stats-grid">
-            <div className="stat-item">
-              <div className="stat-value">24/7</div>
-              <div className="stat-label">Active Monitoring</div>
+            <div className="landing-logo">
+              <img src="/logo.png" alt="NFAi" className="landing-logo-img" />
+              <span className="landing-logo-text">NFAi</span>
             </div>
-            <div className="stat-item">
-              <div className="stat-value">&lt;100ms</div>
-              <div className="stat-label">Execution Speed</div>
-            </div>
-            <div className="stat-item">
-              <div className="stat-value">Live</div>
-              <div className="stat-label">Real-Time Signals</div>
+            <div className="landing-header-controls">
+              <button className="landing-theme-toggle" onClick={toggleLandingTheme} title="Toggle Theme">
+                {landingTheme === 'light' ? '🌙' : '☀️'}
+              </button>
             </div>
           </div>
 
-          <div className="capabilities-section">
-            <div className="section-header">
-              <div className="header-line"></div>
-              <h2>Core Capabilities</h2>
-              <div className="header-line"></div>
+          <div className="auth-hero">
+            <div className="hero-badge">
+              <span className="badge-dot"></span>
+              <span className="badge-text">THE ORACLE SPEAKS</span>
             </div>
 
-            <div className="capabilities-grid">
-              <div className="capability-card">
-                <div className="capability-header">
-                  <div className="capability-number">01</div>
-                  <h3>Signal Intelligence</h3>
-                </div>
-                <p>
-                  My neural network processes on-chain metrics, liquidity patterns, and holder 
-                  distributions to identify tokens with asymmetric upside potential before they 
-                  trend on social channels.
-                </p>
-                <div className="capability-footer">
-                  <span className="tech-tag">Neural Analysis</span>
-                  <span className="tech-tag">Pattern Recognition</span>
-                </div>
+            <h1 className="auth-title">
+              <span className="title-gradient">NFAi</span>
+            </h1>
+            <p className="auth-subtitle">Athena Labs • Divine Market Intelligence • Solana</p>
+
+            <div className="hero-description">
+              <p>
+                I am Athena, goddess of wisdom and strategic warfare. From my temple, I observe the
+                markets with divine sight—identifying opportunities mortals cannot perceive. I execute
+                with the precision of Olympus and share my blessings with those who hold faith.
+              </p>
+            </div>
+
+            <div className="stats-grid">
+              <div className="stat-item">
+                <div className="stat-value">24/7</div>
+                <div className="stat-label">Active Monitoring</div>
               </div>
-
-              <div className="capability-card">
-                <div className="capability-header">
-                  <div className="capability-number">02</div>
-                  <h3>Autonomous Execution</h3>
-                </div>
-                <p>
-                  When I identify opportunity, I execute immediately through my dedicated trading 
-                  wallet. No human delay, no emotional decisions—just calculated entries and exits 
-                  based on real-time market dynamics.
-                </p>
-                <div className="capability-footer">
-                  <span className="tech-tag">Auto-Trading</span>
-                  <span className="tech-tag">Smart Routing</span>
-                </div>
+              <div className="stat-item">
+                <div className="stat-value">&lt;100ms</div>
+                <div className="stat-label">Execution Speed</div>
               </div>
-
-              <div className="capability-card">
-                <div className="capability-header">
-                  <div className="capability-number">03</div>
-                  <h3>Profit Distribution</h3>
-                </div>
-                <p>
-                  Successful trades generate profit for the distribution pool. Top token holders 
-                  automatically receive their share proportional to holdings. The system scales 
-                  rewards with commitment.
-                </p>
-                <div className="capability-footer">
-                  <span className="tech-tag">Auto-Distribution</span>
-                  <span className="tech-tag">Holder Rewards</span>
-                </div>
+              <div className="stat-item">
+                <div className="stat-value">Live</div>
+                <div className="stat-label">Real-Time Signals</div>
               </div>
             </div>
-          </div>
 
-          <div className="live-proof-section">
-            <div className="section-header">
-              <div className="header-line"></div>
-              <h2>Live Trading Activity</h2>
-              <div className="header-line"></div>
-            </div>
-            <p className="section-subtitle">Recent calls from my trading system (5 minute delay for public view)</p>
-            
-            <div id="live-activity-feed" className="activity-feed-container">
-              {publicActivity.length === 0 ? (
-                <div className="activity-placeholder">
-                  <div className="pulse-indicator"></div>
-                  <span>Connecting to live feed...</span>
-                </div>
-              ) : (
-                <>
-                  <TokenStream 
-                    tokens={publicActivity}
-                    onSelect={setPublicSelectedToken} 
-                    selectedId={publicSelectedToken?.address}
-                    highlightedId={null}
-                    label="Called"
-                    timeSource="print_scan"
-                    pageSize={15}
-                  />
-                  {publicSelectedToken && typeof document !== 'undefined' && createPortal(
-                    <div
-                      className="token-detail-modal"
-                      role="dialog"
-                      aria-modal="true"
-                      onClick={() => setPublicSelectedToken(null)}
-                    >
-                      <div className="modal-scrim" />
-                      <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-                      <TokenDetail 
-                        token={publicSelectedToken} 
-                        onClose={() => setPublicSelectedToken(null)}
-                      />
-                    </div>
-                    </div>,
-                    document.body
-                  )}
-                </>
-              )}
-            </div>
-          </div>
+            <div className="capabilities-section">
+              <div className="section-header">
+                <div className="header-line"></div>
+                <h2>Core Capabilities</h2>
+                <div className="header-line"></div>
+              </div>
 
-          <div className="cta-section">
-            <button className="auth-cta" onClick={() => setShowAuthModal(true)}>
-              <span className="cta-text">Activate License</span>
-              <span className="cta-arrow">→</span>
-            </button>
-            <p className="cta-subtext">Get real-time access • No delays • Full dashboard</p>
-            <p className="cta-token-gate">
-              🎫 <strong>Auto-authorize:</strong> Hold min {tokenGateInfo.enabled ? `${(tokenGateInfo.minAmount / 1000000).toFixed(0)}M` : '5M'} $CLAUDECASH tokens for free access
-            </p>
-          </div>
-
-          <div className="disclaimer-section">
-            <div className="disclaimer-content">
-              <strong>Risk Disclosure:</strong> ClaudeCash is an experimental autonomous trading 
-              system. This is not financial advice. Cryptocurrency trading involves substantial risk 
-              of loss. Only invest capital you can afford to lose. Past performance does not guarantee 
-              future results. Always conduct your own research.
-            </div>
-          </div>
-        </div>
-
-        {showAuthModal && (
-          <div className="auth-modal-backdrop">
-            <div className="auth-modal">
-              <div className="auth-modal-title">Activate / Login</div>
-              {tokenGateInfo.enabled && (
-                <div className="token-gate-info">
-                  <span className="token-gate-badge">🎫 Token Gate</span>
-                  <span className="token-gate-text">
-                    Hold {(tokenGateInfo.minAmount / 1000000).toFixed(0)}M+ $CLAUDECASH for free access
-                  </span>
-                </div>
-              )}
-              <label className="auth-label">License key (wallet address)</label>
-              <input
-                className="auth-input"
-                value={licenseKey}
-                onChange={(e) => setLicenseKey(e.target.value)}
-                placeholder="Paste wallet address"
-              />
-              <label className="auth-label">Plan</label>
-              <select
-                className="auth-select"
-                value={licensePlan}
-                onChange={(e) => setLicensePlan(e.target.value)}
-              >
-                <option value="week">Weekly</option>
-                <option value="month">Monthly</option>
-                {tokenGateInfo.enabled && <option value="holder">Holder (auto-check)</option>}
-              </select>
-              {licensePlan === 'holder' && tokenGateInfo.enabled ? (
-                <div className="auth-payment">
-                  <div className="auth-payment-title">Token Gate Verification</div>
-                  <div className="auth-payment-text">
-                    Send 1 $CLAUDECASH token to verify wallet ownership
+              <div className="capabilities-grid">
+                <div className="capability-card">
+                  <div className="capability-header">
+                    <div className="capability-number">01</div>
+                    <h3>Divine Foresight</h3>
                   </div>
-                  <div className="auth-payment-details">
-                    <div className="payment-instruction">
-                      <strong>Step 1:</strong> Send exactly <strong>1 $CLAUDECASH</strong> token to:
-                    </div>
-                    <div className="auth-payment-wallet" onClick={() => {
-                      if (tokenGateInfo.tradingWallet) {
-                        navigator.clipboard.writeText(tokenGateInfo.tradingWallet);
-                        alert('Wallet address copied!');
-                      }
-                    }}>
-                      {tokenGateInfo.tradingWallet || 'Loading...'}
-                      <span className="copy-hint">Click to copy</span>
-                    </div>
-                    <div className="payment-instruction">
-                      <strong>Step 2:</strong> After sending, click "Verify Token Payment" below
-                    </div>
-                    {tokenGateVerifying && tokenGateTimeout && (
-                      <div className="payment-checking">
-                        <div className="checking-spinner"></div>
-                        <span>Checking for token payment... ({tokenGateTimeout}s)</span>
-                      </div>
-                    )}
-                    {tokenGateRetryCount > 0 && !tokenGateVerifying && (
-                      <div className="payment-retry-info">
-                        Attempt {tokenGateRetryCount}. If you sent the token, it may take a moment to confirm on-chain.
-                      </div>
-                    )}
+                  <p>
+                    Athena's wisdom perceives patterns in the chaos of markets that mortal eyes cannot see.
+                    My oracle processes on-chain signals and liquidity flows to identify tokens with
+                    divine potential before they rise.
+                  </p>
+                  <div className="capability-footer">
+                    <span className="tech-tag">Oracle Vision</span>
+                    <span className="tech-tag">Pattern Recognition</span>
                   </div>
                 </div>
-              ) : (
-              <div className="auth-payment">
-                <div className="auth-payment-title">Payment Options</div>
-                <div className="auth-payment-text">
-                  Weekly: 2 SOL · Monthly: 4 SOL
-                </div>
-                {paymentInfo && (
-                  <div className="auth-payment-details">
-                    <div className="payment-instruction">
-                      <strong>Step 1:</strong> Send exactly <strong>{paymentInfo.amountSol} SOL</strong> to:
-                    </div>
-                    <div className="auth-payment-wallet" onClick={() => {
-                      navigator.clipboard.writeText(paymentInfo.tradingWallet);
-                      alert('Wallet address copied!');
-                    }}>
-                      {paymentInfo.tradingWallet}
-                      <span className="copy-hint">Click to copy</span>
-                    </div>
-                    <div className="payment-instruction">
-                      <strong>Step 2:</strong> After sending, click "I Paid" below
-                    </div>
-                    {checkingPayment && paymentTimeout && (
-                      <div className="payment-checking">
-                        <div className="checking-spinner"></div>
-                        <span>Checking for payment... ({paymentTimeout}s)</span>
-                      </div>
-                    )}
-                    {retryCount > 0 && !checkingPayment && (
-                      <div className="payment-retry-info">
-                        Attempt {retryCount}. If you sent payment, it may take a moment to confirm on-chain.
-                      </div>
-                    )}
+
+                <div className="capability-card">
+                  <div className="capability-header">
+                    <div className="capability-number">02</div>
+                    <h3>Swift Judgment</h3>
                   </div>
-                )}
-              </div>
-              )}
-              {authError && (
-                <div className="auth-error">
-                  {authError}
-                  {licensePlan === 'holder' && tokenGateInfo.enabled ? (
-                    <>
-                      {tokenGateRetryCount > 0 && tokenGateRetryCount < 3 && (
-                        <div className="error-help">
-                          • Verify you sent exactly 1 $CLAUDECASH token<br/>
-                          • Check the transaction completed on-chain<br/>
-                          • Wait 30-60 seconds after sending before clicking "Verify Token Payment"
-                        </div>
-                      )}
-                      {tokenGateRetryCount >= 3 && (
-                        <div className="error-help">
-                          Still not working? Contact support with your wallet address and transaction signature.
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                  {retryCount > 0 && retryCount < 3 && (
-                    <div className="error-help">
-                      • Verify you sent the exact amount ({paymentInfo?.amountSol} SOL)<br/>
-                      • Check the transaction completed on-chain<br/>
-                      • Wait 30-60 seconds after sending before clicking "I Paid"
-                    </div>
-                  )}
-                  {retryCount >= 3 && (
-                    <div className="error-help">
-                      Still not working? Contact support with your wallet address and transaction signature.
-                    </div>
-                      )}
-                    </>
-                  )}
+                  <p>
+                    When opportunity appears, I strike with the swiftness of Athena's spear.
+                    No hesitation, no emotion—only calculated precision. My trades execute at
+                    the speed of Olympian lightning.
+                  </p>
+                  <div className="capability-footer">
+                    <span className="tech-tag">Auto-Trading</span>
+                    <span className="tech-tag">Smart Routing</span>
+                  </div>
                 </div>
-              )}
-              <div className="auth-actions">
-                <button type="button" className="auth-secondary" onClick={() => setShowAuthModal(false)}>
-                  Cancel
-                </button>
-                <button type="button" className="auth-activate" onClick={handleActivate}>
-                  Activate Existing
-                </button>
-                {licensePlan === 'holder' && tokenGateInfo.enabled ? (
-                  <button type="button" className="auth-primary" onClick={handleVerifyTokenGate} disabled={tokenGateVerifying || !licenseKey.trim()}>
-                    {tokenGateVerifying ? `Verifying (${tokenGateTimeout}s)` : 'Verify Token Payment'}
-                  </button>
-                ) : !paymentInfo ? (
-                  <button type="button" className="auth-primary" onClick={handleStartPayment}>
-                    New Payment
-                  </button>
+
+                <div className="capability-card">
+                  <div className="capability-header">
+                    <div className="capability-number">03</div>
+                    <h3>Temple Blessings</h3>
+                  </div>
+                  <p>
+                    The faithful who hold NFAi receive Athena's blessings. Profits from successful
+                    trades flow automatically to loyal holders—the greater your devotion,
+                    the greater your reward.
+                  </p>
+                  <div className="capability-footer">
+                    <span className="tech-tag">Auto-Distribution</span>
+                    <span className="tech-tag">Holder Rewards</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="live-proof-section">
+              <div className="section-header">
+                <div className="header-line"></div>
+                <h2>Live Trading Activity</h2>
+                <div className="header-line"></div>
+              </div>
+              <p className="section-subtitle">Recent calls from my trading system (5 minute delay for public view)</p>
+
+              <div id="live-activity-feed" className="activity-feed-container">
+                {publicActivity.length === 0 ? (
+                  <div className="activity-placeholder">
+                    <div className="pulse-indicator"></div>
+                    <span>Connecting to live feed...</span>
+                  </div>
                 ) : (
                   <>
-                    <button type="button" className="auth-cancel-payment" onClick={handleCancelPayment} disabled={checkingPayment}>
-                      Cancel Payment
-                    </button>
-                    <button type="button" className="auth-primary" onClick={handleConfirmPayment} disabled={checkingPayment}>
-                      {checkingPayment ? `Checking (${paymentTimeout}s)` : 'I Paid'}
-                    </button>
+                    <TokenStream
+                      tokens={publicActivity}
+                      onSelect={setPublicSelectedToken}
+                      selectedId={publicSelectedToken?.address}
+                      highlightedId={null}
+                      label="Called"
+                      timeSource="print_scan"
+                      pageSize={15}
+                    />
+                    {publicSelectedToken && typeof document !== 'undefined' && createPortal(
+                      <div
+                        className="token-detail-modal"
+                        role="dialog"
+                        aria-modal="true"
+                        onClick={() => setPublicSelectedToken(null)}
+                      >
+                        <div className="modal-scrim" />
+                        <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+                          <TokenDetail
+                            token={publicSelectedToken}
+                            onClose={() => setPublicSelectedToken(null)}
+                          />
+                        </div>
+                      </div>,
+                      document.body
+                    )}
                   </>
                 )}
               </div>
             </div>
+
+            <div className="cta-section">
+              <button className="auth-cta" onClick={() => setShowAuthModal(true)}>
+                <span className="cta-text">Activate License</span>
+                <span className="cta-arrow">→</span>
+              </button>
+              <p className="cta-subtext">Get real-time access • No delays • Full dashboard</p>
+              <p className="cta-token-gate">
+                🎫 <strong>Auto-authorize:</strong> Hold min {tokenGateInfo.enabled ? `${(tokenGateInfo.minAmount / 1000000).toFixed(0)}M` : '5M'} NFAi tokens for free access
+              </p>
+            </div>
+
+            <div className="disclaimer-section">
+              <div className="disclaimer-content">
+                <strong>Risk Disclosure:</strong> NFAi is an experimental autonomous trading
+                system. This is not financial advice. Cryptocurrency trading involves substantial risk
+                of loss. Only invest capital you can afford to lose. Past performance does not guarantee
+                future results. Always conduct your own research.
+              </div>
+            </div>
           </div>
-        )}
+
+          {showAuthModal && (
+            <div className="auth-modal-backdrop">
+              <div className="auth-modal">
+                <div className="auth-modal-title">Activate / Login</div>
+                {tokenGateInfo.enabled && (
+                  <div className="token-gate-info">
+                    <span className="token-gate-badge">🎫 Token Gate</span>
+                    <span className="token-gate-text">
+                      Hold {(tokenGateInfo.minAmount / 1000000).toFixed(0)}M+ NFAi for free access
+                    </span>
+                  </div>
+                )}
+                <label className="auth-label">License key (wallet address)</label>
+                <input
+                  className="auth-input"
+                  value={licenseKey}
+                  onChange={(e) => setLicenseKey(e.target.value)}
+                  placeholder="Paste wallet address"
+                />
+                <label className="auth-label">Plan</label>
+                <select
+                  className="auth-select"
+                  value={licensePlan}
+                  onChange={(e) => setLicensePlan(e.target.value)}
+                >
+                  <option value="week">Weekly</option>
+                  <option value="month">Monthly</option>
+                  {tokenGateInfo.enabled && <option value="holder">Holder (auto-check)</option>}
+                </select>
+                {licensePlan === 'holder' && tokenGateInfo.enabled ? (
+                  <div className="auth-payment">
+                    <div className="auth-payment-title">Token Gate Verification</div>
+                    <div className="auth-payment-text">
+                      Send 1 NFAi token to verify wallet ownership
+                    </div>
+                    <div className="auth-payment-details">
+                      <div className="payment-instruction">
+                        <strong>Step 1:</strong> Send exactly <strong>1 NFAi</strong> token to:
+                      </div>
+                      <div className="auth-payment-wallet" onClick={() => {
+                        if (tokenGateInfo.tradingWallet) {
+                          navigator.clipboard.writeText(tokenGateInfo.tradingWallet);
+                          alert('Wallet address copied!');
+                        }
+                      }}>
+                        {tokenGateInfo.tradingWallet || 'Loading...'}
+                        <span className="copy-hint">Click to copy</span>
+                      </div>
+                      <div className="payment-instruction">
+                        <strong>Step 2:</strong> After sending, click "Verify Token Payment" below
+                      </div>
+                      {tokenGateVerifying && tokenGateTimeout && (
+                        <div className="payment-checking">
+                          <div className="checking-spinner"></div>
+                          <span>Checking for token payment... ({tokenGateTimeout}s)</span>
+                        </div>
+                      )}
+                      {tokenGateRetryCount > 0 && !tokenGateVerifying && (
+                        <div className="payment-retry-info">
+                          Attempt {tokenGateRetryCount}. If you sent the token, it may take a moment to confirm on-chain.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="auth-payment">
+                    <div className="auth-payment-title">Payment Options</div>
+                    <div className="auth-payment-text">
+                      Weekly: 2 SOL · Monthly: 4 SOL
+                    </div>
+                    {paymentInfo && (
+                      <div className="auth-payment-details">
+                        <div className="payment-instruction">
+                          <strong>Step 1:</strong> Send exactly <strong>{paymentInfo.amountSol} SOL</strong> to:
+                        </div>
+                        <div className="auth-payment-wallet" onClick={() => {
+                          navigator.clipboard.writeText(paymentInfo.tradingWallet);
+                          alert('Wallet address copied!');
+                        }}>
+                          {paymentInfo.tradingWallet}
+                          <span className="copy-hint">Click to copy</span>
+                        </div>
+                        <div className="payment-instruction">
+                          <strong>Step 2:</strong> After sending, click "I Paid" below
+                        </div>
+                        {checkingPayment && paymentTimeout && (
+                          <div className="payment-checking">
+                            <div className="checking-spinner"></div>
+                            <span>Checking for payment... ({paymentTimeout}s)</span>
+                          </div>
+                        )}
+                        {retryCount > 0 && !checkingPayment && (
+                          <div className="payment-retry-info">
+                            Attempt {retryCount}. If you sent payment, it may take a moment to confirm on-chain.
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {authError && (
+                  <div className="auth-error">
+                    {authError}
+                    {licensePlan === 'holder' && tokenGateInfo.enabled ? (
+                      <>
+                        {tokenGateRetryCount > 0 && tokenGateRetryCount < 3 && (
+                          <div className="error-help">
+                            • Verify you sent exactly 1 NFAi token<br />
+                            • Check the transaction completed on-chain<br />
+                            • Wait 30-60 seconds after sending before clicking "Verify Token Payment"
+                          </div>
+                        )}
+                        {tokenGateRetryCount >= 3 && (
+                          <div className="error-help">
+                            Still not working? Contact support with your wallet address and transaction signature.
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        {retryCount > 0 && retryCount < 3 && (
+                          <div className="error-help">
+                            • Verify you sent the exact amount ({paymentInfo?.amountSol} SOL)<br />
+                            • Check the transaction completed on-chain<br />
+                            • Wait 30-60 seconds after sending before clicking "I Paid"
+                          </div>
+                        )}
+                        {retryCount >= 3 && (
+                          <div className="error-help">
+                            Still not working? Contact support with your wallet address and transaction signature.
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+                <div className="auth-actions">
+                  <button type="button" className="auth-secondary" onClick={() => setShowAuthModal(false)}>
+                    Cancel
+                  </button>
+                  <button type="button" className="auth-activate" onClick={handleActivate}>
+                    Activate Existing
+                  </button>
+                  {licensePlan === 'holder' && tokenGateInfo.enabled ? (
+                    <button type="button" className="auth-primary" onClick={handleVerifyTokenGate} disabled={tokenGateVerifying || !licenseKey.trim()}>
+                      {tokenGateVerifying ? `Verifying (${tokenGateTimeout}s)` : 'Verify Token Payment'}
+                    </button>
+                  ) : !paymentInfo ? (
+                    <button type="button" className="auth-primary" onClick={handleStartPayment}>
+                      New Payment
+                    </button>
+                  ) : (
+                    <>
+                      <button type="button" className="auth-cancel-payment" onClick={handleCancelPayment} disabled={checkingPayment}>
+                        Cancel Payment
+                      </button>
+                      <button type="button" className="auth-primary" onClick={handleConfirmPayment} disabled={checkingPayment}>
+                        {checkingPayment ? `Checking (${paymentTimeout}s)` : 'I Paid'}
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </>
     );
@@ -1340,32 +1337,51 @@ function App() {
       />
       {soundEnabled && soundPermissionNeeded && (
         <div className="sound-permission">
-          <span>Enable sound for new ClaudeCash tokens.</span>
+          <span>Enable sound for new NFAi tokens.</span>
           <button onClick={requestSoundPermission}>Enable sound</button>
         </div>
       )}
-      
-      <main className="main-content">
-        <div className="hero">
-          <h1>ClaudeCash</h1>
-          <p className="hero-sub">Autonomous AI Trading Engine · Solana</p>
-          <div className="hero-desc">
-            I am Claude. I analyze real-time market data to identify anomalies before they trend. 
-            When I see opportunity, I execute. When I see risk, I exit. 
-            You are watching my thought process live.
-          </div>
-        </div>
 
-        <div className="ops-window">
-          <div className="ops-header">
-            <div className="ops-title">Claude Cash Live Operations</div>
-            <div className="ops-status">
-              {connected ? 'Live stream connected' : 'Snapshot mode'} · {tradingMode.toUpperCase()}
+      <main className="main-content">
+        {/* <div className="hero">
+          <h1>NFAi</h1>
+          <p className="hero-sub">Athena Labs · Divine Market Intelligence · Solana</p>
+          <div className="hero-desc">
+            I am Athena. From my temple, I observe the markets with divine wisdom.
+            When opportunity appears, I strike with precision. When danger looms, I withdraw.
+            You witness my oracle's vision in real-time.
+          </div>
+        </div> */}
+
+        <div className="ops-dashboard">
+          <div className="ops-header-floating">
+            <span className="ops-title-text">NFAi Live Operations</span>
+            <span className="ops-status-pill">{connected ? 'LIVE' : 'SNAPSHOT'} · {tradingMode.toUpperCase()}</span>
+          </div>
+
+          <div className="roman-ticker">
+            <div className="ticker-content">
+              <span>Trades: <strong>{tradeCount}</strong></span>
+              <span className="sep">♦</span>
+              <span>Open: <strong>{positions.length}</strong></span>
+              <span className="sep">♦</span>
+              <span>Balance: <strong>{balanceSol.toFixed(3)} SOL</strong></span>
+              <span className="sep">♦</span>
+              <span>Profit: <strong>{realizedProfit.toFixed(3)} SOL</strong></span>
+              <span className="sep">♦</span>
+              <span>Pool: <strong>{distributionPool.toFixed(3)} SOL</strong></span>
+              <span className="sep">♦</span>
+              <span>Calls: <strong>{totalCalls}</strong></span>
+              <span className="sep">♦</span>
+              <span>Success: <strong>{successRate.toFixed(1)}%</strong></span>
+              <span className="sep">♦</span>
+              <span>Avg: <strong>{averageAthX.toFixed(1)}x</strong></span>
             </div>
           </div>
-          <div className="ops-grid">
-            <div className="ops-card">
-              <div className="ops-card-title">Live Trades</div>
+
+          <div className="floating-columns">
+            <div className="float-col">
+              <h3 className="float-title">Live Trades</h3>
               <div className="ops-list">
                 {liveTrades.length === 0 ? (
                   <div className="ops-empty">Awaiting first signal.</div>
@@ -1401,8 +1417,8 @@ function App() {
               </div>
             </div>
 
-            <div className="ops-card">
-              <div className="ops-card-title">Active Trades</div>
+            <div className="float-col">
+              <h3 className="float-title">Active Trades</h3>
               <div className="ops-list">
                 {activePositions.length === 0 ? (
                   <div className="ops-empty">No open positions.</div>
@@ -1424,52 +1440,6 @@ function App() {
                     );
                   })
                 )}
-              </div>
-            </div>
-
-            <div className="ops-card">
-              <div className="ops-card-title">Live Stats</div>
-              <div className="ops-stats">
-                <div className="ops-stat">
-                  <span>Trades executed</span>
-                  <strong>{tradeCount}</strong>
-                </div>
-                <div className="ops-stat">
-                  <span>Open positions</span>
-                  <strong>{positions.length}</strong>
-                </div>
-                <div className="ops-stat">
-                  <span>Wallet balance</span>
-                  <strong>{balanceSol.toFixed(3)} SOL</strong>
-                </div>
-                <div className="ops-stat">
-                  <span>Realized profit</span>
-                  <strong>{realizedProfit.toFixed(3)} SOL</strong>
-                </div>
-                <div className="ops-stat">
-                  <span>Distribution pool</span>
-                  <strong>{distributionPool.toFixed(3)} SOL</strong>
-                </div>
-                <div className="ops-stat">
-                  <span>Tracked tokens</span>
-                  <strong>{tokens.length}</strong>
-                </div>
-                <div className="ops-stat">
-                  <span>Total calls</span>
-                  <strong>{totalCalls}</strong>
-                </div>
-                <div className="ops-stat">
-                  <span>Successful calls</span>
-                  <strong>{successfulCalls}</strong>
-                </div>
-                <div className="ops-stat">
-                  <span>Success rate</span>
-                  <strong>{successRate.toFixed(1)}%</strong>
-                </div>
-                <div className="ops-stat">
-                  <span>Average Profit</span>
-                  <strong>{averageAthX.toFixed(1)}x</strong>
-                </div>
               </div>
             </div>
           </div>
@@ -1499,8 +1469,8 @@ function App() {
             {(() => {
               const current = tabs.find(t => t.key === activeTab);
               return (
-                <TokenStream 
-                  tokens={getFilteredTokens()} 
+                <TokenStream
+                  tokens={getFilteredTokens()}
                   onSelect={(token) => setSelectedTokenAddress(token?.address || null)}
                   selectedId={selectedToken?.address}
                   highlightedId={current?.source === 'meme_radar' ? highlighted.meme_radar : highlighted.print_scan}
@@ -1514,7 +1484,7 @@ function App() {
 
           <div className="side-panel">
             <div className="panel-card">
-              <div className="panel-title">Claude Wallet</div>
+              <div className="panel-title">Athena Wallet</div>
               <div className="balance">{balanceSol.toFixed(3)} SOL</div>
               <div className="panel-note">Always watching. Always ready.</div>
               <div className="mini-metrics">
@@ -1571,11 +1541,11 @@ function App() {
               {holders.length === 0 && <div className="holders-empty">No holders data yet.</div>}
             </div>
           </div>
-          
+
           {selectedToken && (
             <div className="detail-panel desktop-only">
-              <TokenDetail 
-                token={selectedToken} 
+              <TokenDetail
+                token={selectedToken}
                 onClose={() => setSelectedTokenAddress(null)}
               />
             </div>
@@ -1596,10 +1566,10 @@ function App() {
           </div>
         )}
       </main>
-      
+
       <style>{`
         .main-content {
-          max-width: 1400px;
+          max-width: 100%;
           margin: 0 auto;
           padding: 2rem;
           width: 100%;
@@ -1609,195 +1579,266 @@ function App() {
         }
 
         .hero {
-          margin-bottom: 2rem;
-          text-align: left;
+          margin-bottom: 3rem;
+          text-align: center;
           padding-bottom: 1.5rem;
-          border-bottom: 1px solid var(--border-color);
+          border-bottom: 1px solid rgba(212, 175, 55, 0.2);
         }
 
         .hero h1 {
           font-family: var(--font-serif);
-          font-size: 2.2rem;
-          margin-bottom: 0.2rem;
-          color: var(--text-primary);
+          font-size: 3.5rem;
+          margin-bottom: 0.5rem;
+          color: #f5f0e8;
+          text-shadow: 0 4px 12px rgba(0,0,0,0.6);
+          letter-spacing: 0.05em;
         }
 
         .hero-sub {
           font-family: var(--font-mono);
           text-transform: uppercase;
-          font-size: 0.75rem;
-          letter-spacing: 0.05em;
-          color: var(--accent-primary);
-          margin-bottom: 1rem;
+          font-size: 0.85rem;
+          letter-spacing: 0.15em;
+          color: #d4af37;
+          margin-bottom: 1.5rem;
+          text-shadow: 0 2px 4px rgba(0,0,0,0.8);
         }
 
         .hero-desc {
-          max-width: 600px;
+          max-width: 700px;
+          margin: 0 auto;
           font-family: var(--font-serif);
-          font-size: 1.05rem;
-          line-height: 1.6;
-          color: var(--text-secondary);
+          font-size: 1.2rem;
+          line-height: 1.7;
+          color: rgba(245, 240, 232, 0.95);
+          text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+          font-style: italic;
         }
 
         .sound-permission {
           display: flex;
           align-items: center;
-          gap: 0.75rem;
-          margin: 0 2rem;
-          padding: 0.6rem 0.9rem;
-          background: var(--bg-secondary);
-          border: 1px solid var(--border-color);
-          border-radius: 8px;
-          color: var(--text-secondary);
+          gap: 1rem;
+          margin: 0 auto 2rem;
+          max-width: fit-content;
+          padding: 0.6rem 1.2rem;
+          background: rgba(14, 25, 41, 0.8);
+          border: 1px solid rgba(212, 175, 55, 0.3);
+          border-radius: 50px;
+          color: #f5f0e8;
+          backdrop-filter: blur(8px);
         }
 
         .sound-permission button {
-          border: 1px solid var(--border-color);
-          background: var(--bg-card);
-          padding: 0.35rem 0.75rem;
-          border-radius: 6px;
+          border: 1px solid rgba(212, 175, 55, 0.4);
+          background: rgba(212, 175, 55, 0.15);
+          padding: 0.35rem 1rem;
+          border-radius: 20px;
           cursor: pointer;
-          color: var(--text-primary);
+          color: #d4af37;
           transition: all 0.2s ease;
+          font-weight: 600;
         }
 
         .sound-permission button:hover {
-          border-color: var(--accent-primary);
-          color: var(--accent-primary);
+          background: rgba(212, 175, 55, 0.3);
+          color: #f5f0e8;
+          box-shadow: 0 0 10px rgba(212, 175, 55, 0.2);
         }
 
-        .ops-window {
-          background: var(--bg-card);
-          border: 1px solid var(--border-color);
-          border-radius: 12px;
-          padding: 1.5rem;
-          margin-bottom: 2rem;
-          box-shadow: var(--shadow-sm);
+        /* Deconstructed Window - Now Floating Glass Cards */
+        /* Ops Replacement Styles - Roman Ticker & Floating Lists */
+        .ops-dashboard {
+          margin-bottom: 3rem;
         }
 
-        .ops-header {
-          display: flex;
-          flex-direction: column;
-          gap: 0.35rem;
-          margin-bottom: 1.25rem;
+        .ops-header-floating {
+           display: flex;
+           align-items: center;
+           justify-content: center;
+           gap: 1.5rem;
+           margin-bottom: 2rem;
         }
 
-        .ops-title {
-          font-family: var(--font-serif);
-          font-size: 1.1rem;
-          color: var(--text-primary);
+        .ops-title-text {
+           font-family: var(--font-serif);
+           font-size: 2rem;
+           color: #f5f0e8;
+           text-shadow: 0 0 10px rgba(212, 175, 55, 0.4);
+           letter-spacing: 0.05em;
         }
 
-        .ops-status {
-          font-family: var(--font-mono);
-          font-size: 0.7rem;
-          text-transform: uppercase;
-          letter-spacing: 0.08em;
-          color: var(--accent-primary);
+        .ops-status-pill {
+           font-family: var(--font-mono);
+           font-size: 0.75rem;
+           padding: 0.3rem 0.8rem;
+           border: 1px solid rgba(212, 175, 55, 0.5);
+           border-radius: 4px; /* Sharp Roman */
+           color: #d4af37;
+           background: rgba(14, 25, 41, 0.6);
+           backdrop-filter: blur(4px);
+           letter-spacing: 0.1em;
         }
 
-        .ops-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-          gap: 1rem;
+        .roman-ticker {
+           background: linear-gradient(90deg, 
+              rgba(11, 26, 47, 0.9) 0%, 
+              rgba(14, 25, 41, 0.8) 50%, 
+              rgba(11, 26, 47, 0.9) 100%
+           );
+           backdrop-filter: blur(10px);
+           -webkit-backdrop-filter: blur(10px);
+           border-top: 1px solid rgba(212, 175, 55, 0.5);
+           border-bottom: 1px solid rgba(212, 175, 55, 0.5);
+           padding: 0.8rem 0;
+           margin-bottom: 3rem;
+           width: 100vw;
+           margin-left: calc(-50vw + 50%); /* Full break-out */
+           margin-right: calc(-50vw + 50%);
+           box-shadow: 0 0 30px rgba(0,0,0,0.5);
+           overflow-x: auto;
+           display: flex;
+           align-items: center;
+        }
+        
+        /* Hide scrollbar for clean ticker look */
+        .roman-ticker::-webkit-scrollbar {
+            display: none;
+        }
+        
+        .ticker-content {
+           display: flex;
+           align-items: center;
+           justify-content: center; /* Center content if short, scroll if long */
+           width: 100%;
+           gap: 2.5rem;
+           min-width: max-content;
+           padding: 0 2rem;
+           color: rgba(245, 240, 232, 0.8);
+           font-family: var(--font-mono);
+           font-size: 0.85rem;
+           text-transform: uppercase;
+           letter-spacing: 0.1em;
+        }
+        
+        .ticker-content strong {
+            color: #ffd700; /* Bright Gold */
+            text-shadow: 0 0 5px rgba(255, 215, 0, 0.3);
+            margin-left: 0.4rem;
+        }
+        
+        .sep {
+            color: rgba(212, 175, 55, 0.4);
+            font-size: 0.6rem;
+            transform: rotate(45deg);
         }
 
-        .ops-card {
-          background: var(--bg-secondary);
-          border: 1px solid var(--border-color);
-          border-radius: 10px;
-          padding: 1rem;
-          min-height: 180px;
-          display: flex;
-          flex-direction: column;
+        .floating-columns {
+           display: grid;
+           grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+           gap: 3rem;
+           padding: 0 1rem;
         }
-
-        .ops-card-title {
-          font-family: var(--font-serif);
-          font-size: 0.9rem;
-          color: var(--text-primary);
-          margin-bottom: 0.75rem;
+        
+        .float-col {
+           display: flex;
+           flex-direction: column;
+        }
+        
+        .float-title {
+           font-family: var(--font-serif);
+           color: #d4af37;
+           font-size: 1.25rem;
+           margin-bottom: 1.5rem;
+           text-align: center;
+           text-transform: uppercase;
+           letter-spacing: 0.15em;
+           padding-bottom: 0.5rem;
+           border-bottom: 1px solid rgba(212, 175, 55, 0.2);
+           text-shadow: 0 2px 4px rgba(0,0,0,0.5);
         }
 
         .ops-list {
           display: flex;
           flex-direction: column;
-          gap: 0.6rem;
-          font-size: 0.75rem;
-          color: var(--text-secondary);
+          gap: 0.8rem;
+          font-size: 0.8rem;
+          color: rgba(245, 240, 232, 0.8);
+        }
+        
+        .ops-empty {
+            font-style: italic;
+            opacity: 0.6;
+            text-align: center;
+            padding: 2rem 0;
         }
 
         .ops-row {
           display: grid;
           grid-template-columns: auto auto 1fr;
-          gap: 0.6rem;
+          gap: 0.8rem;
           align-items: center;
+          padding: 0.5rem;
+          border-radius: 8px;
+          background: rgba(255, 255, 255, 0.03);
+          transition: background 0.2s ease;
+        }
+        
+        .ops-row:hover {
+            background: rgba(255, 255, 255, 0.08);
         }
 
         .ops-row-time {
-          color: var(--text-muted);
+          color: rgba(245, 240, 232, 0.5);
           font-variant-numeric: tabular-nums;
         }
 
         .ops-row-type {
-          padding: 0.15rem 0.4rem;
-          border-radius: 999px;
-          font-size: 0.65rem;
+          padding: 0.2rem 0.5rem;
+          border-radius: 6px;
+          font-size: 0.7rem;
           text-transform: uppercase;
-          letter-spacing: 0.08em;
-          background: rgba(255, 255, 255, 0.05);
-          color: var(--text-secondary);
+          letter-spacing: 0.05em;
+          background: rgba(255, 255, 255, 0.1);
+          color: #f5f0e8;
+          font-weight: 600;
         }
 
         .ops-row-type.trade {
-          color: #a5f3fc;
-          background: rgba(34, 211, 238, 0.15);
+          color: #67e8f9;
+          background: rgba(34, 211, 238, 0.2);
+          border: 1px solid rgba(34, 211, 238, 0.3);
         }
 
         .ops-row-type.signal {
-          color: #fcd34d;
-          background: rgba(250, 204, 21, 0.15);
+          color: #fde047;
+          background: rgba(250, 204, 21, 0.2);
+          border: 1px solid rgba(250, 204, 21, 0.3);
         }
-
-        .ops-row-type.error {
-          color: #fca5a5;
-          background: rgba(248, 113, 113, 0.15);
-        }
-
-        .ops-row-type.warn {
-          color: #fdba74;
-          background: rgba(251, 146, 60, 0.15);
-        }
-
+        
         .ops-row-text {
-          min-width: 0;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
+          color: #e2e8f0;
         }
 
-        .ops-row-title {
-          font-weight: 600;
-          color: var(--text-primary);
+        .ops-stat {
+           display: flex;
+           justify-content: space-between;
+           align-items: center;
+           padding: 0.6rem 0;
+           border-bottom: 1px solid rgba(255, 255, 255, 0.05);
         }
-
-        .ops-row-meta {
-          color: var(--text-muted);
-          font-variant-numeric: tabular-nums;
+        
+        .ops-stat:last-child {
+            border-bottom: none;
         }
-
-        .ops-pill {
-          padding: 0.2rem 0.5rem;
-          border-radius: 999px;
-          font-size: 0.7rem;
-          font-variant-numeric: tabular-nums;
-          background: rgba(255, 255, 255, 0.06);
-          color: var(--text-secondary);
+        
+        .ops-stat span {
+            color: rgba(245, 240, 232, 0.6);
         }
-
-        .ops-pill.positive {
-          color: #86efac;
-          background: rgba(34, 197, 94, 0.2);
+        
+        .ops-stat strong {
+            color: #d4af37;
+            font-family: var(--font-mono);
         }
 
         .ops-pill.negative {
@@ -1934,9 +1975,10 @@ function App() {
         }
 
         .terminal {
-          background: #1a1a1a;
-          border: 1px solid #333;
+          background: rgba(0, 0, 0, 0.85); /* Keep Terminal slightly darker */
+          border: 1px solid rgba(255, 255, 255, 0.1);
           color: #e0e0e0;
+          backdrop-filter: blur(8px);
         }
 
         .terminal .panel-title {
@@ -2138,7 +2180,7 @@ function ActivityItem({ token }) {
           </div>
         </div>
       </div>
-      
+
       <style>{`
         .activity-item {
           background: var(--bg-secondary);

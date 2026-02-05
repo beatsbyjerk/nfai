@@ -15,7 +15,7 @@ export function TokenStream({ tokens, onSelect, selectedId, highlightedId, label
     const diffMs = now - date;
     const diffMins = Math.floor(diffMs / 60000);
     const diffHours = Math.floor(diffMins / 60);
-    
+
     if (diffMins < 1) return 'Just now';
     if (diffMins < 60) return `${diffMins}m ago`;
     if (diffHours < 24) return `${diffHours}h ago`;
@@ -119,15 +119,15 @@ export function TokenStream({ tokens, onSelect, selectedId, highlightedId, label
         </div>
       ) : (
         pagedTokens.map((token) => (
-          <div 
+          <div
             key={token.address}
             className={`token-card ${highlightedId === token.address ? 'new-call-highlight' : ''} ${selectedId === token.address ? 'selected' : ''}`}
             onClick={() => onSelect(token)}
           >
             <div className="card-left">
               {token.image ? (
-                <img 
-                  src={token.image} 
+                <img
+                  src={token.image}
                   alt={token.symbol}
                   className="token-logo"
                   onError={(e) => {
@@ -141,7 +141,7 @@ export function TokenStream({ tokens, onSelect, selectedId, highlightedId, label
                 </div>
               )}
             </div>
-            
+
             <div className="card-main">
               <div className="token-header">
                 <span className="token-symbol">{token.symbol || 'UNKNOWN'}</span>
@@ -159,7 +159,7 @@ export function TokenStream({ tokens, onSelect, selectedId, highlightedId, label
                 <span className="meta-item">ATH {formatMcap(athCap(token))}</span>
               </div>
             </div>
-            
+
             <div className="card-right">
               <div className="metric-grid">
                 <div className="metric-row">
@@ -173,13 +173,12 @@ export function TokenStream({ tokens, onSelect, selectedId, highlightedId, label
                 <div className="metric-row">
                   <span className="metric-label">Mcap X</span>
                   <span
-                    className={`metric-value ${
-                      currentMultiple(token) !== null && currentMultiple(token) > 1
+                    className={`metric-value ${currentMultiple(token) !== null && currentMultiple(token) > 1
                         ? 'metric-positive'
                         : currentMultiple(token) !== null && currentMultiple(token) < 1
                           ? 'metric-negative'
                           : ''
-                    }`}
+                      }`}
                   >
                     {formatMultiple(currentMultiple(token))}
                   </span>
@@ -250,118 +249,167 @@ export function TokenStream({ tokens, onSelect, selectedId, highlightedId, label
           </div>
         </div>
       )}
-      
+
       <style>{`
         .token-stream {
           display: flex;
           flex-direction: column;
         }
         
-        .token-card {
+        .token-stream {
           display: grid;
-          grid-template-columns: 56px 1fr 260px;
-          align-items: center;
-          padding: 1.1rem 1.5rem;
-          border-bottom: 1px solid var(--border-color);
+          grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+          gap: 1.5rem;
+          padding: 1rem 0 3rem;
+        }
+
+        .token-card {
+          display: flex;
+          flex-direction: column;
+          padding: 1.5rem;
+          background: rgba(14, 25, 41, 0.65); /* Glassy Blue */
+          backdrop-filter: blur(10px);
+          -webkit-backdrop-filter: blur(10px);
+          border: 1px solid rgba(212, 175, 55, 0.25); /* Gold Border */
+          border-radius: 16px;
           cursor: pointer;
-          transition: background 0.2s ease;
-          background: var(--bg-card);
-          gap: 1rem;
+          transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+          box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+          position: relative;
+          overflow: hidden;
+          height: 100%;
+          min-height: 240px;
+        }
+
+        .token-card::before {
+          content: '';
+          position: absolute;
+          top: 0; left: 0; right: 0; height: 3px;
+          background: linear-gradient(90deg, var(--accent-primary), transparent);
+          opacity: 0.7;
         }
         
         .token-card:hover {
-          background: var(--bg-hover);
+          transform: translateY(-6px);
+          box-shadow: 0 12px 24px rgba(0, 0, 0, 0.3);
+          background: rgba(14, 25, 41, 0.8);
+          border-color: var(--accent-primary);
         }
         
         .token-card.selected {
-          background: var(--bg-hover);
-          border-left: 3px solid var(--text-primary);
+          border-color: var(--accent-primary);
+          background: rgba(212, 175, 55, 0.08);
+          box-shadow: 0 0 0 2px rgba(212, 175, 55, 0.3);
+        }
+
+        .token-card.new-call-highlight {
+           animation: newCallEnter 0.6s backwards;
+           border: 1px solid var(--accent-primary);
+           box-shadow: 0 0 20px rgba(212, 175, 55, 0.3);
         }
         
         .card-left {
-          margin-right: 1rem;
+          display: flex;
+          align-items: center;
+          margin-bottom: 1rem;
         }
         
         .token-logo {
-          width: 40px;
-          height: 40px;
-          border-radius: 8px;
+          width: 56px;
+          height: 56px;
+          border-radius: 12px;
           object-fit: cover;
-          border: 1px solid var(--border-color);
+          border: 2px solid rgba(212, 175, 55, 0.3);
+          box-shadow: 0 4px 8px rgba(0,0,0,0.2);
         }
         
         .token-logo-placeholder {
-          width: 40px;
-          height: 40px;
-          border-radius: 8px;
-          background: var(--bg-secondary);
+          width: 56px;
+          height: 56px;
+          border-radius: 12px;
+          background: rgba(255,255,255,0.05);
           display: flex;
           align-items: center;
           justify-content: center;
-          font-weight: 600;
-          color: var(--text-secondary);
+          font-weight: 700;
+          font-size: 1.5rem;
+          color: var(--accent-primary);
+          border: 1px dashed rgba(212, 175, 55, 0.3);
         }
         
         .card-main {
           flex: 1;
-          min-width: 0;
+          display: flex;
+          flex-direction: column;
         }
         
         .token-header {
           display: flex;
-          align-items: baseline;
-          gap: 0.5rem;
-          margin-bottom: 0.25rem;
+          flex-direction: column;
+          gap: 0.1rem;
+          margin-bottom: 0.75rem;
         }
         
         .token-symbol {
-          font-family: var(--font-sans);
-          font-weight: 600;
-          font-size: 1rem;
-          color: var(--text-primary);
+          font-family: var(--font-serif);
+          font-weight: 700;
+          font-size: 1.4rem;
+          color: var(--accent-primary); /* Gold Symbol */
+          letter-spacing: 0.02em;
         }
         
         .token-name {
-          font-family: var(--font-serif);
+          font-family: var(--font-sans);
           font-size: 0.9rem;
           color: var(--text-secondary);
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
         
         .token-meta {
           display: flex;
           align-items: center;
-          gap: 0.5rem;
+          flex-wrap: wrap;
+          gap: 0.75rem;
           font-size: 0.8rem;
           color: var(--text-muted);
-          font-family: var(--font-mono);
+          margin-bottom: auto;
+          padding-bottom: 1rem;
         }
 
         .token-meta .label {
+          background: rgba(212, 175, 55, 0.1);
+          padding: 0.2rem 0.5rem;
+          border-radius: 4px;
+          border: 1px solid rgba(212, 175, 55, 0.2);
           color: var(--accent-primary);
           font-weight: 600;
         }
 
         .token-meta.secondary {
-          margin-top: 0.35rem;
+          margin-top: 0;
         }
         
         .meta-sep {
-          color: var(--border-color);
+          display: none; /* Hide separators in card view */
         }
         
         .card-right {
-          display: flex;
-          justify-content: flex-end;
+          margin-top: auto;
+          padding-top: 1rem;
+          border-top: 1px solid rgba(255, 255, 255, 0.1);
+          width: 100%;
         }
-
+ 
         .metric-grid {
           display: grid;
           grid-template-columns: 1fr 1fr;
-          gap: 0.4rem 0.8rem;
+          gap: 0.75rem 1.5rem;
           font-family: var(--font-mono);
-          font-size: 0.7rem;
+          font-size: 0.85rem;
           color: var(--text-secondary);
-          min-width: 240px;
+          width: 100%;
         }
 
         .metric-row {
