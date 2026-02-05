@@ -184,6 +184,24 @@ pumpPortalWs.accountKeys = (tradingEngine.walletAddress || '')
 
 pumpPortalWs.on('migration', ({ mint, state }) => {
   tradingEngine.setMigrationState(mint, state, 'pumpportal');
+
+  // If this is a migration complete event (state=false) and we have an active position,
+  // immediately refresh the market cap from DexScreener for accurate pricing
+  if (state === false && mint && tradingEngine.positions.has(mint)) {
+    const position = tradingEngine.positions.get(mint);
+    console.log(`Migration complete for active position ${position?.symbol || mint.slice(0, 6)} - switching to DexScreener mcap`);
+
+    // Force refresh mcap from DexScreener (since migration is now cached, getRealtimeMcap will use DexScreener)
+    tradingEngine.getRealtimeMcap(mint, true).then(mcap => {
+      if (Number.isFinite(mcap) && mcap > 0) {
+        tradingEngine.updatePositions([{ mint, latest_mcap: mcap }], 'realtime').then(() => {
+          tradingEngine.emitPositions();
+        });
+      }
+    }).catch(err => {
+      console.error(`Error refreshing mcap after migration for ${mint?.slice(0, 8)}:`, err?.message || err);
+    });
+  }
 });
 
 // Connect PumpPortal WS trade events to trigger immediate position updates
