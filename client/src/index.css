@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600;700&display=swap');
+/* Helvetica Font Family */
 
 :root {
   /* NFAi Athena Unified Glass Theme - Roman Blue & Gold */
@@ -29,10 +29,10 @@
   --highlight-new: rgba(255, 215, 0, 0.15);
   --highlight-border: #ffd700;
 
-  /* Typography */
-  --font-serif: 'Cinzel', 'Merriweather', 'Georgia', serif;
-  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-mono: 'JetBrains Mono', monospace;
+  /* Typography - Helvetica Family */
+  --font-serif: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --font-sans: 'Helvetica Neue', Helvetica, Arial, -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Mono', 'Droid Sans Mono', monospace;
 
   /* Shadows */
   --shadow-sm: 0 4px 6px rgba(0, 0, 0, 0.2);

@@ -14,7 +14,7 @@ export class PumpPortalWebSocket extends EventEmitter {
     this.shouldReconnect = true;
     // mint -> { mcapUsd?: number|null, mcapSol?: number|null, ts: number }
     this.mcapCache = new Map();
-    this.mcapCacheTtl = 5000; // 5 seconds for bonding curve data
+    this.mcapCacheTtl = 2000; // 2 seconds - unified with tradingEngine cache
   }
 
   start() {

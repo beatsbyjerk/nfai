@@ -194,16 +194,20 @@ pumpPortalWs.on('trade', ({ mint, payload }) => {
     // Check if this is a sell from our trading wallet (fallback detection)
     const txType = payload?.txType || payload?.data?.txType;
     const traderPublicKey = payload?.traderPublicKey || payload?.data?.traderPublicKey;
-    if (txType === 'sell' && traderPublicKey && tradingEngine.walletAddress && 
-        traderPublicKey === tradingEngine.walletAddress) {
+    if (txType === 'sell' && traderPublicKey && tradingEngine.walletAddress &&
+      traderPublicKey === tradingEngine.walletAddress) {
       // Manual sell detected via PumpPortal WS - immediately check balance via Helius
       tradingEngine.checkWalletSells().catch(err => {
         console.error(`Error checking wallet sell via PumpPortal WS for ${mint?.slice(0, 8)}:`, err?.message || err);
       });
     }
-    
+
     // Trigger immediate position update with real-time market cap from WebSocket
-    tradingEngine.handleRealtimeTrade({ mint, payload }).catch(err => {
+    // This ensures 0-delay trigger evaluation instead of waiting for 3s polling cycle
+    tradingEngine.handleRealtimeTrade({ mint, payload }).then(() => {
+      // Immediately emit updated positions to all connected clients
+      tradingEngine.emitPositions();
+    }).catch(err => {
       console.error(`Error handling PumpPortal trade update for ${mint?.slice(0, 8)}:`, err?.message || err);
     });
   }
@@ -353,13 +357,13 @@ const attachRealtimeMcapField = async (tokens, { limit = 30, forceRefresh = fals
             }
           }
         }
-        
+
         // Fallback to getRealtimeMcap if PumpPortal WS doesn't have data
         // On forceRefresh, this will bypass cache and fetch fresh from API
         if (!Number.isFinite(realtimeMcap) || realtimeMcap <= 0) {
           realtimeMcap = await tradingEngine.getRealtimeMcap(mint, forceRefresh);
         }
-        
+
         if (!Number.isFinite(realtimeMcap) || realtimeMcap <= 0) return token;
         // Important: keep stored/latest mcap intact; publish helius mcap separately.
         return { ...token, realtime_mcap: realtimeMcap, realtime_mcap_ts: Date.now() };
@@ -384,12 +388,12 @@ const MAX_QUEUE_SIZE = 100;
 wss.on('connection', async (ws, req) => {
   try {
     const requestUrl = new URL(req.url || '', `http://${req.headers.host || 'localhost'}`);
-    
+
     // Check if this is a public connection (no authentication required)
     if (requestUrl.pathname === '/public' || requestUrl.searchParams.get('public') === 'true') {
       publicClients.add(ws);
       console.log(`Public client connected. Total: ${publicClients.size}`);
-      
+
       // Send ALL ClaudeCash tokens that are 5+ minutes old (full data, not duplicated)
       const recentPublic = getRecentPublicTokens(200);
       ws.send(JSON.stringify({
@@ -399,7 +403,7 @@ wss.on('connection', async (ws, req) => {
           stats: tokenStore.getStats()
         }
       }));
-      
+
       ws.on('close', () => {
         publicClients.delete(ws);
         console.log(`Public client disconnected. Total: ${publicClients.size}`);
@@ -423,14 +427,14 @@ wss.on('connection', async (ws, req) => {
     // Send current state on connect - fetch fresh data BEFORE sending
     await refreshVisibleTokens();
     const refreshTokens = tokenStore.getAllTokens();
-    
+
     // CRITICAL: Force fresh mcap fetch (bypass cache) before sending snapshot
     // This ensures client always receives accurate data on refresh, never stale cache
-    const tokensWithRealtimeMcap = await attachRealtimeMcapField(refreshTokens, { 
+    const tokensWithRealtimeMcap = await attachRealtimeMcapField(refreshTokens, {
       limit: REALTIME_MCAP_BROADCAST_LIMIT,
       forceRefresh: true
     });
-    
+
     const snapshot = {
       type: 'refresh',
       data: {
@@ -479,7 +483,7 @@ function getRecentPublicTokens(limit = 200) {
     .filter(t => {
       const sources = (t.sources || t.source || '').split(',').map(s => s.trim());
       if (!sources.includes('print_scan')) return false;
-      
+
       const callTime = new Date(t.first_seen_print_scan || t.first_seen_local).getTime();
       const age = now - callTime;
       return age >= DELAY_MS; // Only show tokens 5+ minutes old
@@ -495,7 +499,7 @@ function getRecentPublicTokens(limit = 200) {
 function isPublicEligible(token) {
   const sources = (token.sources || token.source || '').split(',').map(s => s.trim());
   if (!sources.includes('print_scan')) return false;
-  
+
   const callTime = new Date(token.first_seen_print_scan || token.first_seen_local).getTime();
   const age = Date.now() - callTime;
   return age >= DELAY_MS;
@@ -676,14 +680,14 @@ async function pollStalkFun() {
               const flagged = { ...record, isNew: true };
               newTokens.push(flagged);
               newPrintTokens.push(flagged);
-              
+
               // Add to delayed queue for public broadcast (5 minute delay)
               delayedTokenQueue.push({
                 token: record,
                 callTime: Date.now(),
                 broadcastTime: Date.now() + DELAY_MS
               });
-              
+
               // Keep queue size limited
               if (delayedTokenQueue.length > MAX_QUEUE_SIZE) {
                 delayedTokenQueue.shift();
@@ -754,8 +758,8 @@ async function pollStalkFun() {
           }
         }
         // Ensure address field is present for frontend matching
-        broadcast({ 
-          type: 'token_update', 
+        broadcast({
+          type: 'token_update',
           data: { ...token, address: token.address || token.mint || mint }
         });
       }
@@ -781,10 +785,10 @@ async function pollStalkFun() {
 // Broadcast delayed tokens to public clients
 async function broadcastPublicFeed() {
   if (publicClients.size === 0) return;
-  
+
   const now = Date.now();
   const ready = [];
-  
+
   // Find tokens ready to broadcast (broadcast time has passed)
   for (let i = delayedTokenQueue.length - 1; i >= 0; i--) {
     const item = delayedTokenQueue[i];
@@ -797,9 +801,9 @@ async function broadcastPublicFeed() {
       delayedTokenQueue.splice(i, 1);
     }
   }
-  
+
   if (ready.length === 0) return;
-  
+
   // Broadcast to public clients - same format as authenticated feed
   console.log(`Broadcasting ${ready.length} delayed tokens to ${publicClients.size} public clients`);
   broadcastToPublic({
@@ -843,7 +847,7 @@ async function broadcastRealtimeMcaps() {
   const updates = await mapWithConcurrency(tokens, REALTIME_MCAP_BROADCAST_CONCURRENCY, async (token) => {
     const mint = token?.address || token?.mint || token?.token_address;
     if (!mint) return null;
-    
+
     // PRIORITY: Check PumpPortal WS cache first (fastest, real-time from trade events)
     let mcap = null;
     if (pumpPortalWs) {
@@ -865,12 +869,12 @@ async function broadcastRealtimeMcaps() {
         }
       }
     }
-    
+
     // Fallback to getRealtimeMcap if PumpPortal WS doesn't have data
     if (!Number.isFinite(mcap) || mcap <= 0) {
       mcap = await tradingEngine.getRealtimeMcap(mint);
     }
-    
+
     if (!Number.isFinite(mcap) || mcap <= 0) return null;
 
     // Only filter by percentage change if configured (default 0% = always update)
@@ -888,10 +892,10 @@ async function broadcastRealtimeMcaps() {
     if (data.address && data.realtime_mcap) {
       tokenStore.updateAthIfHigher(data.address, data.realtime_mcap);
     }
-    
+
     // Send to authenticated clients
     broadcast({ type: 'token_update', data });
-    
+
     // Also send to public clients if token is 5+ minutes old
     if (publicClients.size > 0) {
       const token = tokenStore.getToken(data.address);
@@ -917,12 +921,12 @@ setTimeout(pollStalkFun, 1000);
 setInterval(() => {
   if (api.authMode === 'privy' && api.tokenExpiry) {
     const timeLeft = api.tokenExpiry - Date.now();
-    
+
     // Warn in console 10 minutes before expiry
     if (timeLeft > 0 && timeLeft < 600000) {
       console.log(`⚠️  Auth expires in ${Math.floor(timeLeft / 60000)} minutes! Refresh token soon.`);
     }
-    
+
     // Switch to public mode when expired
     if (timeLeft <= 0) {
       console.log('❌ Auth tokens expired, falling back to public mode');
@@ -948,7 +952,7 @@ server.listen(PORT, () => {
 ╠═══════════════════════════════════════════════════════════╣
 ║  Server:    http://localhost:${PORT}                         ║
 ║  WebSocket: ws://localhost:${PORT}                           ║
-║  Polling:   Every ${POLL_INTERVAL/1000}s                                      ║
+║  Polling:   Every ${POLL_INTERVAL / 1000}s                                      ║
 ╚═══════════════════════════════════════════════════════════╝
   `);
   // Deployment trigger

@@ -19,7 +19,7 @@ export class TradingEngine extends EventEmitter {
     this.trailingStopPct = parseFloat(process.env.TRAILING_STOP_PCT || '25');
     this.autoExecutionEnabled = process.env.AUTO_EXECUTION_ENABLED !== 'false'; // Default: enabled
     this.realtimeMcapEnabled = process.env.REALTIME_MCAP !== 'false';
-    this.realtimeMcapTtlMs = parseInt(process.env.REALTIME_MCAP_TTL_MS || '1000', 10); // 1s cache
+    this.realtimeMcapTtlMs = parseInt(process.env.REALTIME_MCAP_TTL_MS || '2000', 10); // 2s cache - unified with pumpPortalWs
     this.realtimeMcapIntervalMs = parseInt(process.env.REALTIME_MCAP_INTERVAL_MS || '3000', 10); // 3s interval for accurate stop-loss
     this.pumpPortalUrl = process.env.PUMP_PORTAL_URL || 'https://pumpportal.fun/api/trade-local';
     this.pumpPortalPool = process.env.PUMP_PORTAL_POOL || 'auto';
@@ -137,14 +137,14 @@ export class TradingEngine extends EventEmitter {
   startRealtimeMonitor() {
     if (!this.realtimeMcapEnabled) return;
     this.log('info', `Realtime monitoring enabled (Helius). Interval: ${this.realtimeMcapIntervalMs}ms, Cache TTL: ${this.realtimeMcapTtlMs}ms`);
-    
+
     let cycleCount = 0;
     setInterval(async () => {
       if (this.realtimePausedUntil && Date.now() < this.realtimePausedUntil) return;
-      
+
       cycleCount++;
       const posCount = this.positions.size;
-      
+
       try {
         await this.updatePositionsRealtime();
       } catch (e) {
@@ -169,14 +169,14 @@ export class TradingEngine extends EventEmitter {
   startWalletSellMonitor() {
     // Monitor wallet for manual sells - only runs when active trades exist
     if (this.tradingMode !== 'live' || !this.walletAddress) return;
-    
+
     this.log('info', 'Wallet sell monitoring enabled - detecting manual sells');
-    
+
     // Check every 3 seconds for balance changes
     setInterval(async () => {
       // Only monitor when there are active positions
       if (this.positions.size === 0) return;
-      
+
       try {
         await this.checkWalletSells();
       } catch (e) {
@@ -191,23 +191,23 @@ export class TradingEngine extends EventEmitter {
       try {
         // Skip if position already has sell in progress flag
         if (position.sellInProgress) continue;
-        
+
         // Get current wallet token balance using Helius
         const currentBalance = await this.getTokenBalance(mint);
         const currentAmount = currentBalance.amount || 0;
-        
+
         // Get stored position amount
         const storedAmount = position.tokenAmount || 0;
-        
+
         // If current balance is less than stored, a sell occurred
         if (storedAmount > 0 && currentAmount < storedAmount) {
           const amountSold = storedAmount - currentAmount;
           const pctSold = (amountSold / storedAmount) * 100;
-          
+
           // Update position to reflect the manual sell
           position.tokenAmount = currentAmount;
           position.remainingPct = Math.max(0, position.remainingPct - pctSold);
-          
+
           // If fully sold (or near zero), close the position
           if (currentAmount <= 0 || position.remainingPct <= 0) {
             this.positions.delete(mint);
@@ -215,7 +215,7 @@ export class TradingEngine extends EventEmitter {
           } else {
             this.log('info', `Manual sell detected: ${position.symbol || mint.slice(0, 6)} - ${pctSold.toFixed(1)}% sold (${position.remainingPct.toFixed(1)}% remaining)`);
           }
-          
+
           this.emitPositions();
         } else if (currentAmount > storedAmount && storedAmount > 0) {
           // Balance increased - update stored amount (could be a rebuy or airdrop)
@@ -310,18 +310,46 @@ export class TradingEngine extends EventEmitter {
 
   async getRealtimeMcap(mint, forceRefresh = false) {
     if (!mint) return null;
-    
-    // PRIORITY 1: Always check PumpPortal WebSocket cache first (fastest, real-time)
-    // Even on forceRefresh, use PumpPortal WS if available to prevent stale data on refresh
-    // PumpPortal provides SOL market cap, convert to USD
+
+    // Check migration state first - DexScreener is more reliable for migrated tokens
+    const migrationState = this.getCachedMigrationState(mint);
+    const isMigrated = migrationState === false; // false = migration complete
+
+    // PRIORITY 0: For migrated tokens, always use DexScreener (most accurate post-migration)
+    if (isMigrated) {
+      try {
+        const dexMcap = await this.helius.getDexScreenerMcap(mint);
+        if (Number.isFinite(dexMcap) && dexMcap > 0) {
+          this.mcapCache.set(mint, { value: dexMcap, ts: Date.now() });
+          return dexMcap;
+        }
+      } catch {
+        // Fall through to other sources
+      }
+    }
+
+    // PRIORITY 1: Check PumpPortal WebSocket cache (fastest, real-time for bonding curve tokens)
     if (this.pumpPortalWs) {
       const wsMcapUsd = this.pumpPortalWs.getMarketCapUsd(mint);
       if (Number.isFinite(wsMcapUsd) && wsMcapUsd > 0) {
-        // Also cache in our internal cache for consistency
+        // Check if this indicates migration (mcap > 58K = migrated)
+        if (wsMcapUsd > 58000 && migrationState === null) {
+          this.setMigrationState(mint, false, 'mcap-inference');
+          // For newly detected migrated tokens, prefer DexScreener
+          try {
+            const dexMcap = await this.helius.getDexScreenerMcap(mint);
+            if (Number.isFinite(dexMcap) && dexMcap > 0) {
+              this.mcapCache.set(mint, { value: dexMcap, ts: Date.now() });
+              return dexMcap;
+            }
+          } catch {
+            // Fall back to WS value
+          }
+        }
         this.mcapCache.set(mint, { value: wsMcapUsd, ts: Date.now() });
         return wsMcapUsd;
       }
-      
+
       // If USD not available, try SOL market cap and convert to USD
       const wsMcapSol = this.pumpPortalWs.getMarketCapSol(mint);
       if (Number.isFinite(wsMcapSol) && wsMcapSol > 0) {
@@ -330,16 +358,29 @@ export class TradingEngine extends EventEmitter {
           if (Number.isFinite(solUsd) && solUsd > 0) {
             const mcapUsd = wsMcapSol * solUsd;
             if (Number.isFinite(mcapUsd) && mcapUsd > 0) {
+              // Check if this indicates migration
+              if (mcapUsd > 58000 && migrationState === null) {
+                this.setMigrationState(mint, false, 'mcap-inference');
+                try {
+                  const dexMcap = await this.helius.getDexScreenerMcap(mint);
+                  if (Number.isFinite(dexMcap) && dexMcap > 0) {
+                    this.mcapCache.set(mint, { value: dexMcap, ts: Date.now() });
+                    return dexMcap;
+                  }
+                } catch {
+                  // Fall back to converted value
+                }
+              }
               this.mcapCache.set(mint, { value: mcapUsd, ts: Date.now() });
               return mcapUsd;
             }
           }
         } catch {
-          // Fall through to API calls
+          // Fall through to cache/API calls
         }
       }
     }
-    
+
     // Skip cache if force refresh requested
     if (!forceRefresh) {
       const cached = this.mcapCache.get(mint);
@@ -354,8 +395,22 @@ export class TradingEngine extends EventEmitter {
     }
 
     const computePromise = (async () => {
-      // ACCURATE PATH: Jupiter quote (always use for accurate baseline)
-      // This ensures entry mcap and monitoring mcap are consistent
+      // PRIORITY 2: DexScreener first if no WS data (works for both bonding and migrated)
+      try {
+        const dexMcap = await this.helius.getDexScreenerMcap(mint);
+        if (Number.isFinite(dexMcap) && dexMcap > 0) {
+          // Auto-detect migration state from mcap
+          if (dexMcap > 58000 && migrationState === null) {
+            this.setMigrationState(mint, false, 'mcap-inference');
+          }
+          this.mcapCache.set(mint, { value: dexMcap, ts: Date.now() });
+          return dexMcap;
+        }
+      } catch {
+        // Fall through to Jupiter
+      }
+
+      // PRIORITY 3: Jupiter quote (accurate for bonding curve tokens)
       try {
         const supply = await this.helius.getTokenSupply(mint);
         if (supply?.uiAmount && supply.uiAmount > 0) {
@@ -370,6 +425,9 @@ export class TradingEngine extends EventEmitter {
                 const tokenPriceUsd = tokenPriceSol * solUsd;
                 const mcap = tokenPriceUsd * supply.uiAmount;
                 if (Number.isFinite(mcap) && mcap > 0) {
+                  if (mcap > 58000 && migrationState === null) {
+                    this.setMigrationState(mint, false, 'mcap-inference');
+                  }
                   this.mcapCache.set(mint, { value: mcap, ts: Date.now() });
                   return mcap;
                 }
@@ -378,16 +436,9 @@ export class TradingEngine extends EventEmitter {
           }
         }
       } catch {
-        // Fall through to DexScreener
+        // No more fallbacks
       }
-      
-      // FALLBACK: DexScreener
-      const dexMcap = await this.helius.getDexScreenerMcap(mint);
-      if (Number.isFinite(dexMcap) && dexMcap > 0) {
-        this.mcapCache.set(mint, { value: dexMcap, ts: Date.now() });
-        return dexMcap;
-      }
-      
+
       return null;
     })();
 
@@ -401,7 +452,7 @@ export class TradingEngine extends EventEmitter {
 
   async updatePositionsRealtime() {
     if (this.positions.size === 0) return;
-    
+
     // Fetch all mcaps in parallel for faster updates
     // PRIORITY: Use PumpPortal WS for active positions (100% reactive, real-time from every trade)
     const entries = Array.from(this.positions.entries());
@@ -430,33 +481,33 @@ export class TradingEngine extends EventEmitter {
               }
             }
           }
-          
+
           // Fallback to getRealtimeMcap if PumpPortal WS doesn't have data
           // This ensures we get the latest market cap every 3 seconds, same as ClaudeCash feed
           if (!Number.isFinite(mcap) || mcap <= 0) {
             mcap = await this.getRealtimeMcap(mint);
           }
-          
+
           return { mint, position, mcap, error: null };
         } catch (e) {
           return { mint, position, mcap: null, error: e };
         }
       })
     );
-    
+
     const realtimeTokens = [];
     const now = Date.now();
-    
+
     for (const { mint, position, mcap, error } of mcapResults) {
       let finalMcap = mcap;
-      
+
       // If fetch failed or returned null, use fallback to prevent stale data
       if (error || !finalMcap) {
         if (error && now - (position.lastMcapWarnAt || 0) > 60000) {
           position.lastMcapWarnAt = now;
           this.log('error', `Mcap fetch failed for ${position.symbol || mint.slice(0, 6)}: ${error?.message || 'null result'}`);
         }
-        
+
         // Fallback 1: Use token store latest_mcap (from ClaudeCash feed which refreshes every 2s)
         const tokenRecord = this.getTokenRecord(mint);
         const storeMcap = parseFloat(tokenRecord?.latest_mcap || tokenRecord?.realtime_mcap || 0);
@@ -484,12 +535,12 @@ export class TradingEngine extends EventEmitter {
           }
         }
       }
-      
+
       // Store last known mcap for future fallback
       if (finalMcap && Number.isFinite(finalMcap) && finalMcap > 0) {
         position.lastKnownMcap = finalMcap;
         realtimeTokens.push({ mint, latest_mcap: finalMcap });
-        
+
         // Log position P&L every 3s (same as monitoring interval)
         if (now - (position.lastMonitorLogAt || 0) > 3000) {
           position.lastMonitorLogAt = now;
@@ -499,7 +550,7 @@ export class TradingEngine extends EventEmitter {
         }
       }
     }
-    
+
     if (realtimeTokens.length > 0) {
       await this.updatePositions(realtimeTokens, 'realtime');
     }
@@ -507,26 +558,26 @@ export class TradingEngine extends EventEmitter {
 
   async handleRealtimeTrade({ mint, payload } = {}) {
     if (!mint || !this.positions.has(mint)) return;
-    
+
     // Extract market cap directly from PumpPortal WS payload (fastest path)
     // PumpPortal provides SOL market cap, convert to USD
     let mcap = null;
     if (payload) {
       // Try USD market cap first (if available)
-      const mcapUsd = payload?.usd_market_cap ?? 
-                      payload?.usdMarketCap ?? 
-                      payload?.data?.usd_market_cap ?? 
-                      payload?.data?.usdMarketCap;
-      
+      const mcapUsd = payload?.usd_market_cap ??
+        payload?.usdMarketCap ??
+        payload?.data?.usd_market_cap ??
+        payload?.data?.usdMarketCap;
+
       if (Number.isFinite(mcapUsd) && mcapUsd > 0) {
         mcap = mcapUsd;
       } else {
         // Convert SOL market cap to USD
-        const mcapSol = payload?.marketCapSol ?? 
-                        payload?.market_cap_sol ?? 
-                        payload?.data?.marketCapSol ?? 
-                        payload?.data?.market_cap_sol;
-        
+        const mcapSol = payload?.marketCapSol ??
+          payload?.market_cap_sol ??
+          payload?.data?.marketCapSol ??
+          payload?.data?.market_cap_sol;
+
         if (Number.isFinite(mcapSol) && mcapSol > 0) {
           try {
             const solUsd = await this.helius.getSolUsdPrice();
@@ -539,12 +590,12 @@ export class TradingEngine extends EventEmitter {
         }
       }
     }
-    
+
     // Fallback to getRealtimeMcap if payload doesn't have mcap
     if (!Number.isFinite(mcap) || mcap <= 0) {
       mcap = await this.getRealtimeMcap(mint);
     }
-    
+
     if (!Number.isFinite(mcap) || mcap <= 0) return;
     await this.updatePositions([{ mint, latest_mcap: mcap }], 'realtime');
   }
@@ -590,7 +641,7 @@ export class TradingEngine extends EventEmitter {
   async executeBuy(token, sourceLabel) {
     let entryMcap = parseFloat(token.latest_mcap || token.initial_mcap || 0);
     const mint = token.mint || token.token_address || token.address;
-    
+
     // Position should already be reserved in handleNewSignal - this is just a safety check
     const reservedPosition = this.positions.get(mint);
     if (!reservedPosition || !reservedPosition.buyInProgress) {
@@ -612,7 +663,7 @@ export class TradingEngine extends EventEmitter {
         });
       }
     }
-    
+
     const tokenRecord = this.getTokenRecord(mint);
     const migrationState =
       this.getCachedMigrationState(mint) ??
@@ -904,26 +955,26 @@ export class TradingEngine extends EventEmitter {
 
   async recordLiveProfit(position, pctToSell, reason) {
     if (this.tradingMode !== 'live') return;
-    
+
     // Measure actual SOL balance change (before/after sell)
     const balanceBefore = this.balanceSol;
     await this.refreshBalance();
     const balanceAfter = this.balanceSol;
     const solReceived = balanceAfter - balanceBefore;
-    
+
     // Calculate profit: SOL received - SOL originally invested in this portion
     const pct = pctToSell / 100;
     const solInvested = position.amountSol * pct;
     const profit = solReceived - solInvested;
-    
+
     this.realizedProfitSol += profit;
-    
+
     // Distribution pool (only if enabled)
     if (this.distributionEnabled && profit > 0) {
       const retained = profit * 0.25;
       const distributed = profit * 0.75;
       this.distributionPoolSol += distributed;
-      
+
       this.log('info', `P&L Recorded: ${profit >= 0 ? '+' : ''}${profit.toFixed(3)} SOL. Allocating resources...`, {
         retained: retained.toFixed(3),
         distributed: distributed.toFixed(3),
