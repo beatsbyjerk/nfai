@@ -30,17 +30,17 @@ export const Hero = () => {
                     </div>
 
                     <h1 className="hero-headline">
-                        Divine Market <br />
-                        <span className="gradient-text">Intelligence.</span>
+                        Athena, a trading <br />
+                        <span className="gradient-text">tool</span>
                     </h1>
 
                     <p className="hero-description">
-                        The protocol for autonomous trading signals. Athena analyzes <span className="highlight">10,000+ transactions</span> per minute to identify alpha before the crowd.
+                        Analyzing over <span className="highlight">10k transactions</span> per minute!
                     </p>
 
                     <div className="hero-actions">
                         <button className="btn-primary" onClick={scrollToContent}>
-                            Access Terminal <span className="arrow">→</span>
+                            (Get Calls!) <span className="arrow">↓</span>
                         </button>
                         <div className="hero-trust">
                             <span className="trust-item">🛡️ Non-Custodial</span>

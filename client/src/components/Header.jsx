@@ -29,6 +29,12 @@ export function Header({ connected, soundEnabled, onToggleSound, authWallet, lic
         </div>
 
         <div className="header-right">
+          {authWallet && (
+            <div className="license-status">
+              <span className="license-wallet">{authWallet.slice(0, 4)}...{authWallet.slice(-4)}</span>
+              {licenseExpiresAt && <span className="license-expiry">Active</span>}
+            </div>
+          )}
           <div className={`connection-status ${connected ? 'connected' : 'disconnected'}`}>
             <span className="status-dot"></span>
             <span className="status-text">{connected ? 'LIVE' : 'WAITING'}</span>
@@ -38,7 +44,7 @@ export function Header({ connected, soundEnabled, onToggleSound, authWallet, lic
 
       <style>{`
         .header {
-          background: rgba(5, 10, 20, 0.85); /* Deep Navy Glass */
+          background: rgba(13, 22, 35, 0.85); /* Lighter Navy Glass */
           backdrop-filter: blur(16px);
           -webkit-backdrop-filter: blur(16px);
           border-bottom: 1px solid rgba(255, 255, 255, 0.08);
