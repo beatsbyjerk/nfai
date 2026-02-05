@@ -35,7 +35,7 @@ export const Hero = () => {
                     </h1>
 
                     <p className="hero-description">
-                        Analyzing over <span className="highlight">10k transactions</span> per minute!
+                        Analyzing over <span className="highlight">100k transactions</span> per minute!
                     </p>
 
                     <div className="hero-actions">
