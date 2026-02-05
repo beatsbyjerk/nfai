@@ -4,6 +4,7 @@ import { Header } from './components/Header';
 import { TokenStream } from './components/TokenStream';
 import { TokenDetail } from './components/TokenDetail';
 import { Toast } from './components/Toast';
+import { Hero } from './components/Hero/Hero';
 
 function App() {
   const [tokens, setTokens] = useState([]);
@@ -1321,6 +1322,7 @@ function App() {
 
   return (
     <div className="app">
+      <Hero />
       <Header
         connected={connected}
         soundEnabled={soundEnabled}
@@ -1336,7 +1338,7 @@ function App() {
         </div>
       )}
 
-      <main className="main-content">
+      <main id="main-content" className="main-content">
         {/* <div className="hero">
           <h1>NFAi</h1>
           <p className="hero-sub">Athena Labs · Divine Market Intelligence · Solana</p>
