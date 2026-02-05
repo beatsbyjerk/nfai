@@ -2,6 +2,14 @@ import { Player } from '@remotion/player';
 import { RemotionComposition } from './RemotionComposition';
 import './Hero.css';
 
+const StatCard = ({ label, value, sub }) => (
+    <div className="stat-card">
+        <div className="stat-value">{value}</div>
+        <div className="stat-label">{label}</div>
+        {sub && <div className="stat-sub">{sub}</div>}
+    </div>
+);
+
 export const Hero = () => {
     const scrollToContent = () => {
         const content = document.getElementById('main-content');
@@ -11,42 +19,74 @@ export const Hero = () => {
     };
 
     return (
-        <div className="hero-container">
-            {/* Background Video Player */}
-            <div className="hero-video-wrapper">
-                <Player
-                    component={RemotionComposition}
-                    durationInFrames={300} // 5 seconds loop (assuming 60fps)
-                    compositionWidth={1920}
-                    compositionHeight={1080}
-                    fps={60}
-                    style={{
-                        width: '100%',
-                        height: '100%',
-                        objectFit: 'cover',
-                    }}
-                    autoPlay
-                    loop
-                    muted
-                    controls={false}
-                />
-            </div>
+        <section className="hero-section">
+            <div className="hero-content-wrapper">
 
-            {/* Content Overlay */}
-            <div className="hero-overlay">
-                <div className="hero-content">
-                    <h1 className="hero-title">
-                        <span className="text-gradient-gold">Athena</span>, a trading tool
+                {/* Left Column: Copy & Actions */}
+                <div className="hero-text-col">
+                    <div className="hero-badge-pill">
+                        <span className="dot-indicator"></span>
+                        <span>Athena Intelligence v2.0</span>
+                    </div>
+
+                    <h1 className="hero-headline">
+                        Divine Market <br />
+                        <span className="gradient-text">Intelligence.</span>
                     </h1>
-                    <p className="hero-subtitle">
-                        Analyzing over <span className="highlight-green">10k transactions</span> per minute!
+
+                    <p className="hero-description">
+                        The protocol for autonomous trading signals. Athena analyzes <span className="highlight">10,000+ transactions</span> per minute to identify alpha before the crowd.
                     </p>
 
-                    <button className="hero-cta" onClick={scrollToContent}>
-                        Get Calls!
-                    </button>
+                    <div className="hero-actions">
+                        <button className="btn-primary" onClick={scrollToContent}>
+                            Access Terminal <span className="arrow">→</span>
+                        </button>
+                        <div className="hero-trust">
+                            <span className="trust-item">🛡️ Non-Custodial</span>
+                            <span className="trust-item">⚡ < 100ms Latency</span>
+                        </div>
+                    </div>
+
+                    <div className="hero-stats-grid">
+                        <StatCard label="Volume Analyzed" value="$4.2B+" sub="Last 24h" />
+                        <StatCard label="Signal Accuracy" value="87%" sub="Verified On-Chain" />
+                        <StatCard label="Active Nodes" value="1,240" sub="Global Network" />
+                    </div>
                 </div>
+
+                {/* Right Column: The Visual (Oracle Core) */}
+                <div className="hero-visual-col">
+                    <div className="visual-container">
+                        <Player
+                            component={RemotionComposition}
+                            durationInFrames={300}
+                            compositionWidth={800} // Square/Portrait aspect for the column
+                            compositionHeight={800}
+                            fps={60}
+                            style={{
+                                width: '100%',
+                                height: '100%',
+                                backgroundColor: 'transparent'
+                            }}
+                            autoPlay
+                            loop
+                            muted
+                            controls={false}
+                        />
+                        {/* Floating UI Elements Overlay */}
+                        <div className="floating-card card-top-right">
+                            <div className="card-label">Status</div>
+                            <div className="card-value active">ONLINE</div>
+                        </div>
+                        <div className="floating-card card-bottom-left">
+                            <div className="card-label">Target</div>
+                            <div className="card-value font-mono">SOL/USDC</div>
+                        </div>
+                    </div>
+                </div>
+
             </div>
-        </div>
+        </section>
     );
 };

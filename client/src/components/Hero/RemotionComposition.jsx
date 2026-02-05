@@ -1,129 +1,97 @@
-import { AbsoluteFill, Img, interpolate, useCurrentFrame, useVideoConfig, random } from 'remotion';
-import dashboardScreenshot from '/dashboard-screenshot.png';
+import { AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig } from 'remotion';
 
-const Grid = () => {
+const Ring = ({ radius, speed, color, thickness, dashArray, opacity }) => {
+    const frame = useCurrentFrame();
+    const rotation = (frame * speed) % 360;
+
     return (
-        <AbsoluteFill
-            style={{
-                backgroundImage: 'linear-gradient(rgba(0, 255, 157, 0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(0, 255, 157, 0.1) 1px, transparent 1px)',
-                backgroundSize: '80px 80px',
-                opacity: 0.3,
-                transform: 'perspective(500px) rotateX(20deg) scale(1.5)',
-                transformOrigin: 'bottom'
-            }}
-        />
+        <div style={{
+            position: 'absolute',
+            width: radius * 2,
+            height: radius * 2,
+            borderRadius: '50%',
+            border: `${thickness}px solid ${color}`,
+            borderStyle: dashArray ? 'dashed' : 'solid',
+            opacity: opacity,
+            transform: `rotate(${rotation}deg) rotateX(60deg) scaleY(0.6)`,
+            boxShadow: `0 0 15px ${color}`,
+            filter: 'blur(0.5px)'
+        }} />
     );
 };
 
-const RadarLine = () => {
+const DataParticle = ({ delay, speed, radius }) => {
     const frame = useCurrentFrame();
-    const rotate = (frame * 2) % 360;
+    const t = (frame - delay) * speed;
+    if (t < 0) return null;
+
+    const y = interpolate(t % 100, [0, 100], [100, -100]);
+    const opacity = interpolate(t % 100, [0, 20, 80, 100], [0, 1, 1, 0]);
 
     return (
-        <AbsoluteFill style={{ alignItems: 'center', justifyContent: 'center' }}>
-            <div style={{
-                width: '600px',
-                height: '600px',
-                borderRadius: '50%',
-                border: '1px solid rgba(0, 255, 157, 0.1)',
-                position: 'absolute',
-            }} />
-            <div style={{
-                width: '400px',
-                height: '400px',
-                borderRadius: '50%',
-                border: '1px solid rgba(212, 175, 55, 0.1)', // Gold accent
-                position: 'absolute',
-            }} />
-            <div style={{
-                width: '800px',
-                height: '2px',
-                background: 'linear-gradient(90deg, rgba(0,255,157,0), rgba(0,255,157,0.8), rgba(0,255,157,0))',
-                position: 'absolute',
-                transform: `rotate(${rotate}deg)`,
-                opacity: 0.4
-            }} />
-        </AbsoluteFill>
+        <div style={{
+            position: 'absolute',
+            left: '50%',
+            top: '50%',
+            width: '4px',
+            height: '4px',
+            borderRadius: '50%',
+            background: '#00FF9D',
+            transform: `translate(-50%, ${y}px) rotate(${frame}deg) translateX(${radius}px)`,
+            opacity,
+            boxShadow: '0 0 10px #00FF9D'
+        }} />
+    );
+};
+
+const Core = () => {
+    const frame = useCurrentFrame();
+    const pulse = interpolate(Math.sin(frame / 10), [-1, 1], [0.8, 1.2]);
+
+    return (
+        <div style={{
+            position: 'absolute',
+            width: '80px',
+            height: '80px',
+            borderRadius: '50%',
+            background: 'radial-gradient(circle, #D4AF37 0%, rgba(212, 175, 55, 0) 70%)',
+            transform: `scale(${pulse})`,
+            boxShadow: '0 0 40px rgba(212, 175, 55, 0.6)',
+            opacity: 0.9
+        }} />
     );
 };
 
 export const RemotionComposition = () => {
-    const frame = useCurrentFrame();
-    const { durationInFrames, width } = useVideoConfig();
-
-    // Cinematic Pan Effect
-    const pan = interpolate(
-        frame,
-        [0, durationInFrames],
-        [-20, -50],
-        { extrapolateRight: 'clamp' }
-    );
-
-    // Subtle Zoom Out
-    const scale = interpolate(
-        frame,
-        [0, durationInFrames],
-        [1.15, 1.05],
-        { extrapolateRight: 'clamp' }
-    );
-
-    // Scanning Line Position (Vertical scan)
-    const scanLineY = interpolate(
-        frame % 180,
-        [0, 180],
-        [0, 100],
-        { extrapolateRight: 'loop' }
-    );
-
     return (
-        <AbsoluteFill style={{ backgroundColor: '#050c18', overflow: 'hidden' }}>
-            {/* Background Dashboard Image - heavily styled */}
-            <AbsoluteFill style={{ transform: `scale(${scale})` }}>
-                <Img
-                    src={dashboardScreenshot}
-                    style={{
-                        width: '120%',
-                        height: '100%',
-                        objectFit: 'cover',
-                        transform: `translateX(${pan}px)`,
-                        opacity: 0.25, // Very dark background
-                        filter: 'grayscale(60%) contrast(120%) brightness(0.8) hue-rotate(180deg)' // Techno blue look
-                    }}
-                />
-            </AbsoluteFill>
+        <AbsoluteFill style={{
+            backgroundColor: 'transparent', // Transparent background for integration
+            alignItems: 'center',
+            justifyContent: 'center',
+            perspective: '1000px'
+        }}>
+            {/* The Oracle Eye / Core */}
+            <Core />
 
-            {/* Procedural Layers */}
-            <Grid />
-            <RadarLine />
+            {/* Orbital Rings representing Market Cycles */}
+            <Ring radius={120} speed={0.5} color="rgba(0, 255, 157, 0.3)" thickness={1} dashArray={false} opacity={0.6} />
+            <Ring radius={160} speed={-0.3} color="rgba(212, 175, 55, 0.2)" thickness={2} dashArray={true} opacity={0.4} />
+            <Ring radius={220} speed={0.2} color="rgba(0, 255, 157, 0.1)" thickness={1} dashArray={false} opacity={0.3} />
 
-            {/* Scanning Line Effect */}
-            <AbsoluteFill>
-                <div style={{
-                    position: 'absolute',
-                    top: `${scanLineY}%`,
-                    left: 0,
-                    width: '100%',
-                    height: '4px',
-                    background: 'linear-gradient(90deg, transparent, rgba(0, 255, 157, 0.6), transparent)',
-                    boxShadow: '0 0 20px rgba(0, 255, 157, 0.4)',
-                    opacity: 0.6
-                }} />
-            </AbsoluteFill>
+            {/* Floating Data Particles */}
+            {Array.from({ length: 12 }).map((_, i) => (
+                <DataParticle key={i} delay={i * 5} speed={0.5} radius={140} />
+            ))}
 
-            {/* Vignette & Cinematic Tint */}
-            <AbsoluteFill
-                style={{
-                    background: 'radial-gradient(circle at center, transparent 30%, #050c18 90%)',
-                }}
-            />
+            {/* Central Glow */}
+            <div style={{
+                position: 'absolute',
+                width: '400px',
+                height: '400px',
+                background: 'radial-gradient(circle, rgba(11, 26, 47, 0) 0%, rgba(11, 26, 47, 0.8) 100%)', // Vignette to blend edges
+                pointerEvents: 'none'
+            }} />
 
-            {/* Subtle Blue Tint Overlay */}
-            <AbsoluteFill
-                style={{
-                    background: 'linear-gradient(to bottom, rgba(5, 12, 24, 0.3) 0%, rgba(5, 12, 24, 0.8) 100%)',
-                    mixBlendMode: 'overlay'
-                }}
-            />
         </AbsoluteFill>
     );
 };
