@@ -1,54 +1,53 @@
-/* Helvetica Font Family */
+@import url('https://fonts.googleapis.com/css2?family=Uncut+Sans:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap');
 
 :root {
-  /* NFAi Athena Unified Glass Theme - Roman Blue & Gold */
+  /* NFAi Athena Protocol Theme */
 
-  /* Backgrounds: Glassy Transparencies */
-  --bg-primary: rgba(11, 26, 47, 0.6);
-  --bg-secondary: rgba(14, 25, 41, 0.4);
-  --bg-card: rgba(14, 25, 41, 0.65);
-  /* Fixes White Windows */
-  --bg-hover: rgba(255, 255, 255, 0.08);
+  /* Backgrounds: Deep Professional Navy */
+  --bg-primary: #050A14;
+  --bg-secondary: #0B1624;
+  --bg-card: rgba(11, 22, 36, 0.7);
+  --bg-hover: rgba(255, 255, 255, 0.05);
 
-  /* Text: High Contrast White & Gold */
+  /* Text: Clean & High Contrast */
   --text-primary: #ffffff;
-  --text-secondary: rgba(255, 255, 255, 0.85);
-  /* Brighter for readability */
-  --text-muted: rgba(255, 255, 255, 0.6);
+  --text-secondary: #94A3B8;
+  /* Slate gray/blue for pro look */
+  --text-muted: #64748B;
 
-  /* Borders: Gold */
-  --border-color: rgba(255, 215, 0, 0.25);
-  --border-active: #ffd700;
+  /* Borders: Subtle & Refined */
+  --border-color: rgba(255, 255, 255, 0.1);
+  --border-active: #D4AF37;
+  /* Gold */
 
   /* Accents */
-  --accent-primary: #ffd700;
-  /* Bright Gold */
-  --accent-secondary: #e6c200;
+  --accent-primary: #D4AF37;
+  /* Athena Gold */
+  --accent-secondary: #00FF9D;
+  /* Neon Green Signal */
 
   /* Highlights */
-  --highlight-new: rgba(255, 215, 0, 0.15);
-  --highlight-border: #ffd700;
+  --highlight-new: rgba(0, 255, 157, 0.1);
+  --highlight-border: #00FF9D;
 
-  /* Typography - Helvetica Family */
-  --font-serif: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-  --font-sans: 'Helvetica Neue', Helvetica, Arial, -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-mono: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Mono', 'Droid Sans Mono', monospace;
+  /* Typography - Modern SaaS Stack */
+  --font-serif: 'Uncut Sans', sans-serif;
+  /* Using Sans for Headlines now for modern look */
+  --font-sans: 'Uncut Sans', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
 
   /* Shadows */
-  --shadow-sm: 0 4px 6px rgba(0, 0, 0, 0.2);
-  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.3);
+  --shadow-sm: 0 4px 6px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.5);
 
-  --gold-gradient: linear-gradient(135deg, #ffd700 0%, #ffeb3b 50%, #d4af37 100%);
+  --gold-gradient: linear-gradient(135deg, #D4AF37 0%, #F59E0B 100%);
 }
 
 [data-theme="dark"] {
-  /* Dark mode enhances the glass opacity slightly */
-  --bg-primary: rgba(9, 21, 38, 0.7);
-  --bg-secondary: rgba(12, 22, 36, 0.5);
-  --bg-card: rgba(12, 22, 36, 0.75);
-  --bg-hover: rgba(255, 255, 255, 0.12);
+  --bg-primary: #050A14;
+  --bg-secondary: #0B1624;
 }
-
 
 * {
   margin: 0;
@@ -58,23 +57,18 @@
 
 body {
   font-family: var(--font-sans);
-  background: url('/athena_bg.png') no-repeat center center fixed;
-  background-size: cover;
+  background: var(--bg-primary);
+  /* Global Mesh Gradient */
+  background-image:
+    radial-gradient(at 100% 0%, rgba(212, 175, 55, 0.03) 0px, transparent 50%),
+    radial-gradient(at 0% 100%, rgba(0, 255, 157, 0.03) 0px, transparent 50%);
+  background-attachment: fixed;
   color: var(--text-primary);
   min-height: 100vh;
-  transition: color 0.3s ease;
   -webkit-font-smoothing: antialiased;
 }
 
-/* Dark overlay for readability */
-body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background: rgba(11, 26, 47, 0.45);
-  /* Reduced opacity to show Temple */
-  z-index: -1;
-}
+
 
 h1,
 h2,

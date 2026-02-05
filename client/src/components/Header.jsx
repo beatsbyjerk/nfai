@@ -18,18 +18,6 @@ export function Header({ connected, soundEnabled, onToggleSound, authWallet, lic
     }
   }, [theme]);
 
-  const toggleTheme = () => {
-    setTheme(prev => prev === 'light' ? 'dark' : 'light');
-  };
-
-  const formatTimeRemaining = (ms) => {
-    if (!ms || ms <= 0) return 'Expired';
-    const mins = Math.floor(ms / 60000);
-    const hours = Math.floor(mins / 60);
-    if (hours > 0) return `${hours}h ${mins % 60}m`;
-    return `${mins}m`;
-  };
-
   return (
     <header className="header">
       <div className="header-content">
@@ -41,178 +29,94 @@ export function Header({ connected, soundEnabled, onToggleSound, authWallet, lic
         </div>
 
         <div className="header-right">
-          {/* {authWallet && (
-            <div className="license-status">
-              <div className="license-wallet">{authWallet.slice(0, 4)}…{authWallet.slice(-4)}</div>
-              {licenseExpiresAt && (
-                <div className="license-expiry">
-                  {formatTimeRemaining(new Date(licenseExpiresAt).getTime() - Date.now())}
-                </div>
-              )}
-              {onLogout && (
-                <button className="license-logout" onClick={onLogout}>
-                  Logout
-                </button>
-              )}
-            </div>
-          )} */}
-<div className={`connection-status ${connected ? 'connected' : 'disconnected'}`}>
+          <div className={`connection-status ${connected ? 'connected' : 'disconnected'}`}>
             <span className="status-dot"></span>
             <span className="status-text">{connected ? 'LIVE' : 'WAITING'}</span>
           </div>
         </div>
       </div>
 
-
       <style>{`
         .header {
-          background: rgba(11, 26, 47, 0.7);
-          backdrop-filter: blur(10px);
-          -webkit-backdrop-filter: blur(10px);
-          border-bottom: 1px solid rgba(212, 175, 55, 0.3);
+          background: rgba(5, 10, 20, 0.85); /* Deep Navy Glass */
+          backdrop-filter: blur(16px);
+          -webkit-backdrop-filter: blur(16px);
+          border-bottom: 1px solid rgba(255, 255, 255, 0.08);
           padding: 1rem 2rem;
           position: sticky;
           top: 0;
           z-index: 50;
-          transition: background 0.3s ease;
+          transition: all 0.3s ease;
         }
-        
+
         .header-content {
+          max-width: 1400px;
+          margin: 0 auto;
           width: 100%;
           display: flex;
           justify-content: space-between;
           align-items: center;
         }
-        
+
         .logo-section {
           display: flex;
           align-items: center;
           gap: 1rem;
         }
-        
+
         .logo {
           display: flex;
           align-items: center;
-          gap: 0.75rem;
-          font-family: var(--font-serif);
-          font-size: 1.6rem;
+          gap: 0.8rem;
+          font-family: var(--font-sans); /* Uncut Sans */
+          font-size: 1.4rem;
           font-weight: 700;
-          color: #f5f0e8;
-          letter-spacing: 0.05em;
-          text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+          color: var(--text-primary);
+          letter-spacing: -0.02em;
         }
-        
+
         .logo-img {
-          width: 36px;
-          height: 36px;
-          border-radius: 4px;
+          width: 32px;
+          height: 32px;
+          border-radius: 8px;
           object-fit: cover;
-          border: 1px solid rgba(212, 175, 55, 0.5);
+          border: 1px solid rgba(255, 255, 255, 0.1);
         }
-        
+
         .header-right {
           display: flex;
           align-items: center;
           gap: 1.25rem;
         }
 
-        .license-status {
-          display: flex;
-          align-items: center;
-          gap: 0.75rem;
-          padding: 0.4rem 0.8rem;
-          border: 1px solid rgba(212, 175, 55, 0.3);
-          border-radius: 4px; /* Roman Sharpness */
-          background: rgba(14, 25, 41, 0.6);
-          font-size: 0.85rem;
-          color: #f5f0e8;
-        }
-
-        .license-wallet {
-          color: #d4af37;
-          font-weight: 600;
-          font-family: var(--font-mono);
-        }
-
-        .license-expiry {
-          color: rgba(245, 240, 232, 0.7);
-        }
-
-        .license-logout {
-          border: 1px solid rgba(212, 175, 55, 0.5);
-          background: rgba(212, 175, 55, 0.1);
-          color: #d4af37;
-          padding: 0.2rem 0.6rem;
-          border-radius: 2px;
-          cursor: pointer;
-          font-size: 0.75rem;
-          font-family: var(--font-serif);
-          text-transform: uppercase;
-          transition: all 0.2s ease;
-        }
-        
-        .license-logout:hover {
-            background: rgba(212, 175, 55, 0.3);
-            color: #f5f0e8;
-        }
-        
-        .theme-toggle,
-        .sound-toggle {
-          background: transparent;
-          border: 1px solid rgba(212, 175, 55, 0.3);
-          color: #d4af37;
-          width: 40px;
-          height: 40px;
-          border-radius: 50%; /* Medallion Style */
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          cursor: pointer;
-          transition: all 0.2s ease;
-          font-size: 1.1rem;
-        }
-        
-        .theme-toggle:hover,
-        .sound-toggle:hover {
-          background: rgba(212, 175, 55, 0.2);
-          border-color: #d4af37;
-          color: #f5f0e8;
-          box-shadow: 0 0 10px rgba(212, 175, 55, 0.2);
-          transform: translateY(-1px);
-        }
-
-        .sound-toggle.on {
-          color: #f5f0e8;
-          background: rgba(212, 175, 55, 0.15);
-          border-color: #d4af37;
-        }
-        
         .connection-status {
           display: flex;
           align-items: center;
           gap: 0.6rem;
           padding: 0.4rem 1rem;
-          border: 1px solid rgba(212, 175, 55, 0.4);
-          border-radius: 2px; /* Sharp/Roman */
-          font-family: var(--font-serif);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          border-radius: 100px; /* Pill shape */
+          font-family: var(--font-mono);
           font-size: 0.75rem;
           font-weight: 600;
-          letter-spacing: 0.1em;
-          background: rgba(14, 25, 41, 0.6);
-          color: #f5f0e8;
-          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          background: rgba(255, 255, 255, 0.03);
+          color: var(--text-secondary);
         }
-        
-        .status-dot {
+
+        .connected .status-dot {
           width: 6px;
           height: 6px;
-          transform: rotate(45deg); /* Diamond Dot */
-          background: rgba(245, 240, 232, 0.3);
+          border-radius: 50%;
+          background: var(--accent-secondary);
+          box-shadow: 0 0 8px var(--accent-secondary);
         }
-        
-        .connected .status-dot {
-          background: #00ff9d;
-          box-shadow: 0 0 8px #00ff9d;
+
+        .status-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.2);
         }
       `}</style>
     </header>

@@ -44,7 +44,7 @@ export const Hero = () => {
                         </button>
                         <div className="hero-trust">
                             <span className="trust-item">🛡️ Non-Custodial</span>
-                            <span className="trust-item">⚡ < 100ms Latency</span>
+                            <span className="trust-item">⚡ &lt; 100ms Latency</span>
                         </div>
                     </div>
 
