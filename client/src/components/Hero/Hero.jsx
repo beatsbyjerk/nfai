@@ -40,7 +40,7 @@ export const Hero = () => {
 
                     <div className="hero-actions">
                         <button className="btn-primary" onClick={scrollToContent}>
-                            (Get Calls!) <span className="arrow">↓</span>
+                            Get Calls <span className="arrow">↓</span>
                         </button>
                         <div className="hero-trust">
                             <span className="trust-item">🛡️ Non-Custodial</span>

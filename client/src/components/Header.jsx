@@ -29,7 +29,7 @@ export function Header({ connected, soundEnabled, onToggleSound, authWallet, lic
         </div>
 
         <div className="header-right">
-          {authWallet && (
+          {authWallet && authWallet !== 'GUEST_ACCESS' && (
             <div className="license-status">
               <span className="license-wallet">{authWallet.slice(0, 4)}...{authWallet.slice(-4)}</span>
               {licenseExpiresAt && <span className="license-expiry">Active</span>}
@@ -44,7 +44,7 @@ export function Header({ connected, soundEnabled, onToggleSound, authWallet, lic
 
       <style>{`
         .header {
-          background: rgba(13, 22, 35, 0.85); /* Lighter Navy Glass */
+          background: rgba(5, 10, 20, 0.85); /* Deep Navy Glass */
           backdrop-filter: blur(16px);
           -webkit-backdrop-filter: blur(16px);
           border-bottom: 1px solid rgba(255, 255, 255, 0.08);
@@ -56,8 +56,6 @@ export function Header({ connected, soundEnabled, onToggleSound, authWallet, lic
         }
 
         .header-content {
-          max-width: 1400px;
-          margin: 0 auto;
           width: 100%;
           display: flex;
           justify-content: space-between;

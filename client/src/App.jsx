@@ -34,7 +34,7 @@ function App() {
   const [authState, setAuthState] = useState({
     loading: false, // No loading, instant access
     authenticated: true, // Bypassed paywall
-    wallet: null,
+    wallet: 'GUEST_ACCESS',
     plan: 'admin', // Grant admin features
     expiresAt: null,
     sessionToken: 'public-session',
@@ -965,7 +965,11 @@ function App() {
               <img src="/logo.png" alt="NFAi" className="landing-logo-img" />
               <span className="landing-logo-text">NFAi</span>
             </div>
-
+            <div className="landing-header-controls">
+              <button className="landing-theme-toggle" onClick={toggleLandingTheme} title="Toggle Theme">
+                {landingTheme === 'light' ? '🌙' : '☀️'}
+              </button>
+            </div>
           </div>
 
           <div className="auth-hero">

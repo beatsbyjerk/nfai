@@ -13,12 +13,20 @@
     position: relative;
     width: 100%;
     min-height: 90vh;
-    background: transparent;
+    background: var(--hero-bg);
+    /* Subtle background grid/mesh */
+    background-image:
+        radial-gradient(at 100% 0%, rgba(212, 175, 55, 0.05) 0px, transparent 50%),
+        radial-gradient(at 0% 100%, rgba(0, 255, 157, 0.05) 0px, transparent 50%),
+        linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+    background-size: 100% 100%, 100% 100%, 40px 40px, 40px 40px;
     display: flex;
     align-items: center;
     justify-content: center;
     overflow: hidden;
     padding-top: 80px;
+    /* Space for fixed header if any */
 }
 
 .hero-content-wrapper {
@@ -243,6 +251,7 @@
     }
 }
 
+/* Mobile Responsiveness */
 @media (max-width: 1024px) {
     .hero-content-wrapper {
         grid-template-columns: 1fr;
