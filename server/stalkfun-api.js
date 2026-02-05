@@ -8,7 +8,7 @@ export class StalkFunAPI {
     this.bearer = process.env.PRIVY_BEARER || process.env.PRIVY_ACCESS_TOKEN || null;
     this.tokenExpiry = null;
     this.authMode = 'public'; // 'public' = no auth, 'privy' = with auth
-    
+
     // Check if we have cookies with privy-token
     if (this.cookies && this.cookies.includes('privy-token=')) {
       try {
@@ -64,7 +64,7 @@ export class StalkFunAPI {
 
   async fetchAPI(endpoint, options = {}, requiresAuth = false) {
     const url = `${STALK_FUN_BASE}${endpoint}`;
-    
+
     const headers = {
       'Accept': '*/*',
       'Accept-Language': 'en-US,en;q=0.9',
@@ -72,12 +72,12 @@ export class StalkFunAPI {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36',
       ...options.headers
     };
-    
+
     // Add cookies if we have them and endpoint requires auth
     if (requiresAuth && this.cookies && this.authMode === 'privy') {
       Object.assign(headers, this.getAuthHeaders());
     }
-    
+
     const response = await fetch(url, {
       ...options,
       headers
@@ -114,7 +114,7 @@ export class StalkFunAPI {
   }
 
   async fetchMemeRadar(sortBy = 'recency', limit = 200) {
-    return this.fetchAPI(`/api/meme-radar?sortBy=${sortBy}&limit=${limit}`, {}, true);
+    return this.fetchAPI(`/api/meme-radar?sortBy=${sortBy}&limit=${limit}&refresh=true`, {}, true);
   }
 
   async fetchLiveScan(limit = 100, timeWindow = '1h') {
