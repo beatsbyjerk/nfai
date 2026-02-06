@@ -75,7 +75,7 @@ export function WalletConnect({ onConnect, onGenerate, onClose, loading, error }
             </div>
 
             <p className="modal-subtitle">
-              Import your wallet or generate a new one to start auto-trading NFAi signals.
+              Import your wallet or generate a new one to start auto-trading Cyphoai signals.
             </p>
 
             {/* Mode Toggle */}
@@ -99,7 +99,7 @@ export function WalletConnect({ onConnect, onGenerate, onClose, loading, error }
                 <div className="feature-list">
                   <div className="feature-item">
                     <span className="feature-icon">⚡</span>
-                    <span>Auto-snipe NFAi signals</span>
+                    <span>Auto-snipe Cyphoai calls</span>
                   </div>
                   <div className="feature-item">
                     <span className="feature-icon">🎯</span>
@@ -257,7 +257,7 @@ export function WalletConnect({ onConnect, onGenerate, onClose, loading, error }
         .wallet-connect-overlay {
           position: fixed;
           inset: 0;
-          background: rgba(0, 0, 0, 0.7);
+          background: rgba(0, 0, 0, 0.4);
           backdrop-filter: blur(8px);
           display: flex;
           align-items: center;
@@ -273,14 +273,14 @@ export function WalletConnect({ onConnect, onGenerate, onClose, loading, error }
         }
 
         .wallet-connect-modal {
-          background: linear-gradient(135deg, rgba(11, 22, 36, 0.98), rgba(5, 10, 20, 0.98));
-          border: 1px solid rgba(212, 175, 55, 0.3);
-          border-radius: 16px;
+          background: #ffffff;
+          border: 1px solid #e2e8f0;
+          border-radius: 20px;
           padding: 2rem;
           width: 100%;
           max-width: 440px;
           position: relative;
-          box-shadow: 0 24px 48px rgba(0, 0, 0, 0.5);
+          box-shadow: 0 24px 48px rgba(0, 0, 0, 0.15);
           animation: slideUp 0.3s ease-out;
         }
 
@@ -293,10 +293,10 @@ export function WalletConnect({ onConnect, onGenerate, onClose, loading, error }
           position: absolute;
           top: 1rem;
           right: 1rem;
-          background: none;
+          background: #f1f5f9;
           border: none;
-          color: var(--text-secondary);
-          font-size: 1.5rem;
+          color: #64748b;
+          font-size: 1.25rem;
           cursor: pointer;
           width: 32px;
           height: 32px;
@@ -308,8 +308,8 @@ export function WalletConnect({ onConnect, onGenerate, onClose, loading, error }
         }
 
         .modal-close:hover {
-          background: rgba(255, 255, 255, 0.1);
-          color: var(--text-primary);
+          background: #e2e8f0;
+          color: #0f172a;
         }
 
         .modal-header {
@@ -320,23 +320,23 @@ export function WalletConnect({ onConnect, onGenerate, onClose, loading, error }
         }
 
         .modal-header.success .modal-icon {
-          color: var(--accent-secondary);
+          color: #10b981;
         }
 
         .modal-icon {
           font-size: 1.5rem;
-          color: var(--accent-primary);
+          color: #2563eb;
         }
 
         .modal-header h2 {
-          font-size: 1.5rem;
+          font-size: 1.4rem;
           font-weight: 700;
-          color: var(--text-primary);
+          color: #0f172a;
           margin: 0;
         }
 
         .modal-subtitle {
-          color: var(--text-secondary);
+          color: #64748b;
           font-size: 0.95rem;
           margin-bottom: 1.5rem;
           line-height: 1.5;
@@ -346,7 +346,7 @@ export function WalletConnect({ onConnect, onGenerate, onClose, loading, error }
           display: flex;
           gap: 0.5rem;
           margin-bottom: 1.5rem;
-          background: rgba(0, 0, 0, 0.3);
+          background: #f1f5f9;
           padding: 4px;
           border-radius: 10px;
         }
@@ -357,7 +357,7 @@ export function WalletConnect({ onConnect, onGenerate, onClose, loading, error }
           background: transparent;
           border: none;
           border-radius: 8px;
-          color: var(--text-secondary);
+          color: #64748b;
           font-size: 0.85rem;
           font-weight: 600;
           cursor: pointer;
@@ -365,12 +365,13 @@ export function WalletConnect({ onConnect, onGenerate, onClose, loading, error }
         }
 
         .mode-btn:hover {
-          color: var(--text-primary);
+          color: #0f172a;
         }
 
         .mode-btn.active {
-          background: rgba(212, 175, 55, 0.2);
-          color: var(--accent-primary);
+          background: #ffffff;
+          color: #2563eb;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.08);
         }
 
         .feature-list {
@@ -384,7 +385,7 @@ export function WalletConnect({ onConnect, onGenerate, onClose, loading, error }
           display: flex;
           align-items: center;
           gap: 0.75rem;
-          color: var(--text-secondary);
+          color: #475569;
           font-size: 0.9rem;
         }
 
@@ -398,10 +399,10 @@ export function WalletConnect({ onConnect, onGenerate, onClose, loading, error }
 
         .input-group label {
           display: block;
-          color: var(--text-secondary);
+          color: #475569;
           font-size: 0.85rem;
           margin-bottom: 0.5rem;
-          font-weight: 500;
+          font-weight: 600;
         }
 
         .input-wrapper {
@@ -411,10 +412,10 @@ export function WalletConnect({ onConnect, onGenerate, onClose, loading, error }
         .input-group input {
           width: 100%;
           padding: 0.85rem 3rem 0.85rem 1rem;
-          background: rgba(0, 0, 0, 0.4);
-          border: 1px solid rgba(255, 255, 255, 0.1);
+          background: #f8fafc;
+          border: 1px solid #e2e8f0;
           border-radius: 10px;
-          color: var(--text-primary);
+          color: #0f172a;
           font-family: var(--font-mono);
           font-size: 0.85rem;
           transition: all 0.2s;
@@ -422,12 +423,12 @@ export function WalletConnect({ onConnect, onGenerate, onClose, loading, error }
 
         .input-group input:focus {
           outline: none;
-          border-color: var(--accent-primary);
-          box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.1);
+          border-color: #2563eb;
+          box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
         }
 
         .input-group input::placeholder {
-          color: var(--text-muted);
+          color: #94a3b8;
         }
 
         .toggle-visibility {
@@ -443,21 +444,22 @@ export function WalletConnect({ onConnect, onGenerate, onClose, loading, error }
         }
 
         .error-message {
-          color: #ff6b6b;
+          color: #ef4444;
           font-size: 0.85rem;
           margin-bottom: 1rem;
-          padding: 0.5rem;
-          background: rgba(255, 107, 107, 0.1);
-          border-radius: 6px;
+          padding: 0.75rem;
+          background: #fef2f2;
+          border: 1px solid #fecaca;
+          border-radius: 8px;
         }
 
         .connect-btn {
           width: 100%;
           padding: 0.9rem;
-          background: linear-gradient(135deg, #D4AF37, #F59E0B);
+          background: linear-gradient(135deg, #2563eb, #1d4ed8);
           border: none;
           border-radius: 10px;
-          color: #000;
+          color: #fff;
           font-size: 1rem;
           font-weight: 700;
           cursor: pointer;
@@ -466,11 +468,12 @@ export function WalletConnect({ onConnect, onGenerate, onClose, loading, error }
           justify-content: center;
           gap: 0.5rem;
           transition: all 0.2s;
+          box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
         }
 
         .connect-btn:hover:not(:disabled) {
           transform: translateY(-2px);
-          box-shadow: 0 8px 20px rgba(212, 175, 55, 0.3);
+          box-shadow: 0 8px 20px rgba(37, 99, 235, 0.35);
         }
 
         .connect-btn:disabled {
@@ -479,11 +482,11 @@ export function WalletConnect({ onConnect, onGenerate, onClose, loading, error }
         }
 
         .connect-btn.generate {
-          background: linear-gradient(135deg, #00FF9D, #00CC7D);
+          background: linear-gradient(135deg, #10b981, #059669);
         }
 
         .connect-btn.confirm {
-          background: linear-gradient(135deg, #00FF9D, #00CC7D);
+          background: linear-gradient(135deg, #10b981, #059669);
         }
 
         .loading-spinner {
@@ -497,7 +500,7 @@ export function WalletConnect({ onConnect, onGenerate, onClose, loading, error }
 
         .security-note {
           margin-top: 1rem;
-          color: var(--text-muted);
+          color: #64748b;
           font-size: 0.8rem;
           text-align: center;
         }
@@ -506,8 +509,8 @@ export function WalletConnect({ onConnect, onGenerate, onClose, loading, error }
           display: flex;
           gap: 0.75rem;
           padding: 1rem;
-          background: rgba(255, 193, 7, 0.1);
-          border: 1px solid rgba(255, 193, 7, 0.3);
+          background: #fffbeb;
+          border: 1px solid #fde68a;
           border-radius: 10px;
           margin-bottom: 1.5rem;
         }
@@ -517,13 +520,13 @@ export function WalletConnect({ onConnect, onGenerate, onClose, loading, error }
         }
 
         .warning-box strong {
-          color: #FFC107;
+          color: #b45309;
           display: block;
           margin-bottom: 0.25rem;
         }
 
         .warning-box p {
-          color: var(--text-secondary);
+          color: #78716c;
           font-size: 0.85rem;
           margin: 0;
         }
@@ -538,8 +541,8 @@ export function WalletConnect({ onConnect, onGenerate, onClose, loading, error }
         }
 
         .critical-warning {
-          background: rgba(255, 0, 0, 0.1);
-          border: 2px solid rgba(255, 0, 0, 0.4);
+          background: #fef2f2;
+          border: 2px solid #fecaca;
           border-radius: 12px;
           padding: 1rem;
           margin-bottom: 1.5rem;
@@ -552,12 +555,12 @@ export function WalletConnect({ onConnect, onGenerate, onClose, loading, error }
         }
 
         .critical-warning strong {
-          color: #ff6b6b;
+          color: #dc2626;
           font-size: 1rem;
         }
 
         .critical-warning p {
-          color: var(--text-secondary);
+          color: #64748b;
           font-size: 0.85rem;
           margin: 0.5rem 0 0;
         }
@@ -568,7 +571,7 @@ export function WalletConnect({ onConnect, onGenerate, onClose, loading, error }
         }
 
         .wallet-info label {
-          color: var(--text-secondary);
+          color: #64748b;
           font-size: 0.8rem;
           display: block;
           margin-bottom: 0.25rem;
@@ -577,11 +580,12 @@ export function WalletConnect({ onConnect, onGenerate, onClose, loading, error }
         .wallet-address {
           font-family: var(--font-mono);
           font-size: 0.85rem;
-          color: var(--accent-secondary);
+          color: #10b981;
           word-break: break-all;
-          background: rgba(0, 255, 157, 0.05);
+          background: #f0fdf4;
           padding: 0.5rem;
           border-radius: 6px;
+          border: 1px solid #bbf7d0;
         }
 
         .private-key-box {
@@ -590,7 +594,7 @@ export function WalletConnect({ onConnect, onGenerate, onClose, loading, error }
         }
 
         .private-key-box label {
-          color: #ff6b6b;
+          color: #dc2626;
           font-size: 0.85rem;
           font-weight: 600;
           display: block;
@@ -598,8 +602,8 @@ export function WalletConnect({ onConnect, onGenerate, onClose, loading, error }
         }
 
         .key-display {
-          background: rgba(0, 0, 0, 0.5);
-          border: 2px solid rgba(255, 193, 7, 0.3);
+          background: #fffbeb;
+          border: 2px solid #fde68a;
           border-radius: 8px;
           padding: 0.75rem;
           margin-bottom: 0.5rem;
@@ -610,24 +614,25 @@ export function WalletConnect({ onConnect, onGenerate, onClose, loading, error }
         .key-display code {
           font-family: var(--font-mono);
           font-size: 0.75rem;
-          color: #FFC107;
+          color: #b45309;
           word-break: break-all;
         }
 
         .copy-btn {
           width: 100%;
           padding: 0.6rem;
-          background: rgba(255, 193, 7, 0.1);
-          border: 1px solid rgba(255, 193, 7, 0.3);
+          background: #fef3c7;
+          border: 1px solid #fde68a;
           border-radius: 6px;
-          color: #FFC107;
+          color: #b45309;
           font-size: 0.85rem;
+          font-weight: 600;
           cursor: pointer;
           transition: all 0.2s;
         }
 
         .copy-btn:hover {
-          background: rgba(255, 193, 7, 0.2);
+          background: #fde68a;
         }
 
         .confirm-saved {
@@ -639,19 +644,19 @@ export function WalletConnect({ onConnect, onGenerate, onClose, loading, error }
           align-items: center;
           gap: 0.5rem;
           cursor: pointer;
-          color: var(--text-secondary);
+          color: #475569;
           font-size: 0.85rem;
         }
 
         .checkbox-label input {
           width: 18px;
           height: 18px;
-          accent-color: var(--accent-secondary);
+          accent-color: #10b981;
         }
 
         .fund-note {
           margin-top: 1rem;
-          color: var(--text-muted);
+          color: #64748b;
           font-size: 0.85rem;
         }
       `}</style>

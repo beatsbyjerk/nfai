@@ -6,7 +6,8 @@ import { TokenDetail } from './components/TokenDetail';
 import { Toast } from './components/Toast';
 import { UserDashboard } from './components/UserDashboard';
 import { WalletConnect } from './components/WalletConnect';
-import { RemotionPlayer } from './components/RemotionPlayer';
+import { HeroStats } from './components/HeroStats';
+import { HeroBackground } from './components/HeroBackground';
 
 function App() {
   const [tokens, setTokens] = useState([]);
@@ -1525,6 +1526,62 @@ function App() {
         </div>
       )}
 
+      {/* Hero Section */}
+      <section className="hero-section">
+        {/* Remotion Animated Background */}
+        <HeroBackground />
+        
+        <div className="hero-content">
+          <img src="/cyphoai-logo.jpg" alt="Cyphoai" className="hero-logo" />
+          <h1 className="hero-title">Cyphoai</h1>
+          <p className="hero-tagline">
+            We call winners. Check the stats, check the history. The results don't lie.
+          </p>
+          <div className="hero-stats-animated">
+            <HeroStats 
+              winRate={successRate} 
+              totalCalls={tradeCount} 
+              avgPeak={averageAthX} 
+            />
+          </div>
+          <button 
+            className="hero-cta"
+            onClick={() => document.getElementById('main-content')?.scrollIntoView({ behavior: 'smooth' })}
+          >
+            See Live Calls
+          </button>
+          
+          {/* Additional content below CTA */}
+          <div className="hero-features">
+            <div className="hero-feature">
+              <span className="feature-icon">◎</span>
+              <span>Solana Native</span>
+            </div>
+            <div className="hero-feature">
+              <span className="feature-icon">⚡</span>
+              <span>Real-time Signals</span>
+            </div>
+            <div className="hero-feature">
+              <span className="feature-icon">◈</span>
+              <span>Proven Track Record</span>
+            </div>
+          </div>
+        </div>
+        <div className="hero-video-container">
+          <video 
+            src="/hero-video.mp4" 
+            autoPlay 
+            loop 
+            muted 
+            playsInline
+            className="hero-video"
+          />
+        </div>
+        <div className="hero-scroll-indicator">
+          <span>↓</span>
+        </div>
+      </section>
+
       {/* When dashboard is shown, show dashboard page. Otherwise show main content */}
       {showUserDashboard && userWallet ? (
         <main className="dashboard-page-content">
@@ -1563,30 +1620,30 @@ function App() {
             </div>
           </div>
 
-          <div className="dashboard-grid">
-            {/* Main Area: Navigation & Feed */}
-            <div className="main-area">
-              <div className="feed-header">
-                <div className="tab-nav-clean">
-                  {tabs.map((tab) => (
-                    <button
-                      key={tab.key}
-                      className={`clean-tab ${activeTab === tab.key ? 'active' : ''}`}
-                      onClick={() => {
-                        setActiveTab(tab.key);
-                        try {
-                          localStorage.setItem('activeTab', tab.key);
-                        } catch {
-                          // Ignore storage errors
-                        }
-                      }}
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
-                </div>
+          {/* Token Feed Section */}
+          <div className="feed-section">
+            <div className="feed-header">
+              <div className="tab-nav-clean">
+                {tabs.map((tab) => (
+                  <button
+                    key={tab.key}
+                    className={`clean-tab ${activeTab === tab.key ? 'active' : ''}`}
+                    onClick={() => {
+                      setActiveTab(tab.key);
+                      try {
+                        localStorage.setItem('activeTab', tab.key);
+                      } catch {
+                        // Ignore storage errors
+                      }
+                    }}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
               </div>
+            </div>
 
+            <div className="feed-with-detail">
               <div className="stream-wrapper">
                 {(() => {
                   const current = tabs.find(t => t.key === activeTab);
@@ -1603,83 +1660,81 @@ function App() {
                   );
                 })()}
               </div>
+
+              {/* Detail Panel (if selected) */}
+              {selectedToken && (
+                <div className="detail-panel desktop-only">
+                  <TokenDetail
+                    token={selectedToken}
+                    onClose={() => setSelectedTokenAddress(null)}
+                  />
+                </div>
+              )}
             </div>
+          </div>
 
-            {/* Sidebar Area: Critical Info */}
-            <div className="sidebar-area">
-              {/* Active Trades - Top Priority */}
-              <div className="info-card active-positions-card">
-                <div className="card-header">
-                  <h3>Active Positions</h3>
-                  <span className="badge">{positions.length}</span>
-                </div>
-                <div className="positions-list">
-                  {activePositions.length === 0 ? (
-                    <div className="empty-state">No active positions</div>
-                  ) : (
-                    activePositions.map((position) => {
-                      const symbol = position.symbol || position.mint?.slice(0, 6) || 'UNKNOWN';
-                      const pnl = Number.isFinite(position.pnlPct) ? position.pnlPct : 0;
-                      return (
-                        <div key={position.mint} className="position-row">
-                          <span className="pos-symbol">{symbol}</span>
-                          <span className={`pos-pnl ${pnl >= 0 ? 'positive' : 'negative'}`}>
-                            {pnl >= 0 ? '+' : ''}{pnl.toFixed(1)}%
-                          </span>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
+          {/* Bottom Panels - Horizontal Layout */}
+          <div className="bottom-panels">
+            {/* Active Positions */}
+            <div className="panel-card active-positions-card">
+              <div className="panel-header">
+                <h3>Active Positions</h3>
+                <span className="panel-badge">{positions.length}</span>
               </div>
-
-              {/* Profit Share */}
-              <div className="info-card profit-share-card">
-                <div className="card-header">
-                   <h3>Profit Share (Top 50)</h3>
-                </div>
-                <div className="holders-list-clean">
-                   {holders.slice(0, 50).map((h, index) => (
-                      <div key={h.address || index} className="holder-row-clean">
-                         <span className="rank">#{index + 1}</span>
-                         <span className="address">{h.address ? `${h.address.slice(0,4)}...${h.address.slice(-4)}` : 'Unknown'}</span>
-                         <span className="amount">{(h.uiAmount || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+              <div className="positions-list">
+                {activePositions.length === 0 ? (
+                  <div className="empty-state">No active positions</div>
+                ) : (
+                  activePositions.map((position) => {
+                    const symbol = position.symbol || position.mint?.slice(0, 6) || 'UNKNOWN';
+                    const pnl = Number.isFinite(position.pnlPct) ? position.pnlPct : 0;
+                    return (
+                      <div key={position.mint} className="position-row">
+                        <span className="pos-symbol">{symbol}</span>
+                        <span className={`pos-pnl ${pnl >= 0 ? 'positive' : 'negative'}`}>
+                          {pnl >= 0 ? '+' : ''}{pnl.toFixed(1)}%
+                        </span>
                       </div>
-                   ))}
-                </div>
-              </div>
-
-              {/* System Console - Terminal Style */}
-              <div className="info-card console-card terminal-style">
-                <div className="card-header">
-                  <h3>System Intelligence</h3>
-                </div>
-                <div className="console-body">
-                  {activity.length === 0 ? (
-                    <div className="console-line typing">System initializing...</div>
-                  ) : (
-                    activity.slice(0, 10).map((entry, i) => (
-                      <div key={i} className="console-line">
-                        <span className="time">{new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                        <span className="msg">{entry.message}</span>
-                      </div>
-                    ))
-                  )}
-                </div>
+                    );
+                  })
+                )}
               </div>
             </div>
 
-            {/* Detail Panel Overlay (if selected) */}
-            {selectedToken && (
-              <div className="detail-column desktop-only">
-                <div className="sticky-detail">
-                   <TokenDetail
-                     token={selectedToken}
-                     onClose={() => setSelectedTokenAddress(null)}
-                   />
-                </div>
+            {/* System Activity */}
+            <div className="panel-card console-card">
+              <div className="panel-header">
+                <h3>Activity Log</h3>
               </div>
-            )}
+              <div className="console-body">
+                {activity.length === 0 ? (
+                  <div className="console-line">Waiting for activity...</div>
+                ) : (
+                  activity.slice(0, 8).map((entry, i) => (
+                    <div key={i} className="console-line">
+                      <span className="time">{new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                      <span className="msg">{entry.message}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* Profit Share */}
+            <div className="panel-card profit-share-card">
+              <div className="panel-header">
+                <h3>Top Holders</h3>
+              </div>
+              <div className="holders-list-clean">
+                {holders.slice(0, 10).map((h, index) => (
+                  <div key={h.address || index} className="holder-row-clean">
+                    <span className="rank">#{index + 1}</span>
+                    <span className="address">{h.address ? `${h.address.slice(0,4)}...${h.address.slice(-4)}` : 'Unknown'}</span>
+                    <span className="amount">{(h.uiAmount || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
 
           {selectedToken && (
@@ -1706,11 +1761,197 @@ function App() {
           flex-direction: column;
         }
 
-        .main-content {
-          max-width: 1400px;
-          margin: 0 auto;
-          padding: 1.5rem;
+        /* --- Hero Section --- */
+        .hero-section {
+          height: 100vh;
+          min-height: 100vh;
+          max-height: 100vh;
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 4rem;
+          padding: 4rem 6rem;
           width: 100%;
+          align-items: center;
+          background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 50%, #f1f5f9 100%);
+          position: relative;
+          overflow: hidden;
+          box-sizing: border-box;
+        }
+
+        .hero-section::before {
+          content: '';
+          position: absolute;
+          top: -50%;
+          right: -20%;
+          width: 80%;
+          height: 200%;
+          background: radial-gradient(circle, rgba(37, 99, 235, 0.08) 0%, transparent 70%);
+          pointer-events: none;
+        }
+
+        .hero-stats-animated {
+          margin: 2rem 0;
+        }
+
+        .hero-features {
+          display: flex;
+          gap: 2rem;
+          margin-top: 1rem;
+        }
+
+        .hero-feature {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          font-size: 0.9rem;
+          color: #64748b;
+        }
+
+        .hero-feature .feature-icon {
+          color: #2563eb;
+          font-size: 1.1rem;
+        }
+
+        .video-caption {
+          text-align: center;
+          margin-top: 1rem;
+          font-size: 0.85rem;
+          color: #94a3b8;
+          font-style: italic;
+        }
+
+        .hero-content {
+          display: flex;
+          flex-direction: column;
+          gap: 1.5rem;
+          z-index: 1;
+          padding-left: 2rem;
+        }
+
+        .hero-logo {
+          width: 100px;
+          height: 100px;
+          border-radius: 20px;
+          object-fit: cover;
+          box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+        }
+
+        .hero-title {
+          font-size: 4.5rem;
+          font-weight: 800;
+          color: #0f172a;
+          margin: 0;
+          letter-spacing: -0.04em;
+          font-family: var(--font-sans);
+          line-height: 1.1;
+        }
+
+        .hero-tagline {
+          font-size: 1.35rem;
+          color: #475569;
+          margin: 0;
+          line-height: 1.6;
+          max-width: 500px;
+        }
+
+        .hero-stats {
+          display: flex;
+          gap: 2rem;
+          margin-top: 1rem;
+        }
+
+        .hero-stat {
+          display: flex;
+          flex-direction: column;
+          gap: 0.25rem;
+        }
+
+        .hero-stat-value {
+          font-family: var(--font-mono);
+          font-size: 2rem;
+          font-weight: 700;
+          color: #2563eb;
+        }
+
+        .hero-stat-label {
+          font-size: 0.8rem;
+          color: #64748b;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+        }
+
+        .hero-cta {
+          margin-top: 1rem;
+          padding: 1.1rem 2.5rem;
+          background: linear-gradient(135deg, #2563eb, #1d4ed8);
+          color: white;
+          border: none;
+          border-radius: 12px;
+          font-weight: 700;
+          font-size: 1.1rem;
+          cursor: pointer;
+          width: fit-content;
+          transition: all 0.3s ease;
+          box-shadow: 0 8px 24px rgba(37, 99, 235, 0.35);
+        }
+
+        .hero-cta:hover {
+          transform: translateY(-3px);
+          box-shadow: 0 12px 32px rgba(37, 99, 235, 0.45);
+        }
+
+        .hero-video-container {
+          width: 100%;
+          border-radius: 24px;
+          overflow: hidden;
+          box-shadow: 0 30px 60px rgba(0, 0, 0, 0.2);
+          border: 1px solid rgba(255, 255, 255, 0.5);
+          z-index: 1;
+        }
+
+        .hero-video {
+          width: 100%;
+          height: auto;
+          display: block;
+        }
+
+        .hero-scroll-indicator {
+          position: absolute;
+          bottom: 2rem;
+          left: 50%;
+          transform: translateX(-50%);
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 0.5rem;
+          color: #64748b;
+          font-size: 0.75rem;
+          animation: bounce 2s infinite;
+        }
+
+        @keyframes bounce {
+          0%, 100% { transform: translateX(-50%) translateY(0); }
+          50% { transform: translateX(-50%) translateY(8px); }
+        }
+
+        @media (max-width: 1024px) {
+          .hero-section {
+            grid-template-columns: 1fr;
+            gap: 2rem;
+            padding: 2rem;
+            min-height: auto;
+          }
+          .hero-title {
+            font-size: 3rem;
+          }
+          .hero-content {
+            padding-left: 0;
+          }
+        }
+
+        .main-content {
+          width: 100%;
+          padding: 2rem;
           flex: 1;
           display: flex;
           flex-direction: column;
@@ -1962,11 +2203,92 @@ function App() {
           box-shadow: 0 0 8px var(--accent-secondary);
         }
 
+        /* Feed Section */
+        .feed-section {
+          display: flex;
+          flex-direction: column;
+          gap: 1rem;
+        }
+
+        .feed-with-detail {
+          display: grid;
+          grid-template-columns: 1fr;
+          gap: 1.5rem;
+        }
+
+        .feed-with-detail:has(.detail-panel) {
+          grid-template-columns: 1fr 400px;
+        }
+
+        .stream-wrapper {
+          min-height: 500px;
+          max-height: 70vh;
+          overflow-y: auto;
+        }
+
+        .detail-panel {
+          position: sticky;
+          top: 1rem;
+          max-height: calc(100vh - 200px);
+          overflow-y: auto;
+        }
+
+        /* Bottom Panels - Horizontal */
+        .bottom-panels {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 1.5rem;
+          margin-top: 2rem;
+          padding-top: 2rem;
+          border-top: 1px solid var(--border-color);
+        }
+
+        .panel-card {
+          border-radius: 16px;
+          padding: 1.25rem;
+          min-height: 280px;
+        }
+
+        .panel-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 1rem;
+          padding-bottom: 0.75rem;
+          border-bottom: 1px solid var(--border-color);
+        }
+
+        .panel-header h3 {
+          font-size: 0.85rem;
+          margin: 0;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.03em;
+        }
+
+        .panel-badge {
+          background: #10b981;
+          color: white;
+          padding: 0.2rem 0.6rem;
+          border-radius: 12px;
+          font-size: 0.7rem;
+          font-weight: 700;
+        }
+
+        @media (max-width: 1024px) {
+          .bottom-panels {
+            grid-template-columns: 1fr;
+          }
+          .feed-with-detail {
+            grid-template-columns: 1fr;
+          }
+        }
+
         .dashboard-grid {
           display: grid;
-          grid-template-columns: 1fr 380px;
-          gap: 1.5rem;
-          height: calc(100vh - 200px);
+          grid-template-columns: 1fr 400px;
+          gap: 2rem;
+          min-height: calc(100vh - 200px);
         }
 
         /* Detail column (3 columns layout) */
@@ -2029,9 +2351,198 @@ function App() {
         .sidebar-area {
           display: flex;
           flex-direction: column;
-          gap: 1.5rem;
+          gap: 1.25rem;
           overflow-y: auto;
           padding-right: 0.25rem;
+        }
+
+        /* Active Positions Card - Green accent */
+        .active-positions-card {
+          background: linear-gradient(135deg, #f0fdf4 0%, #ffffff 100%);
+          border: 1px solid #bbf7d0;
+          box-shadow: 0 4px 12px rgba(16, 185, 129, 0.08);
+        }
+
+        .active-positions-card .panel-header {
+          border-bottom-color: #dcfce7;
+        }
+
+        .active-positions-card .panel-header h3 {
+          color: #166534;
+        }
+
+        .active-positions-card .panel-badge {
+          background: #10b981;
+        }
+
+        .positions-list {
+           display: flex;
+           flex-direction: column;
+           gap: 0.5rem;
+        }
+
+        .position-row {
+           display: flex;
+           justify-content: space-between;
+           align-items: center;
+           padding: 0.75rem 1rem;
+           background: white;
+           border-radius: 10px;
+           border: 1px solid #e2e8f0;
+           transition: all 0.2s;
+        }
+
+        .position-row:hover {
+           border-color: #10b981;
+           box-shadow: 0 2px 8px rgba(16, 185, 129, 0.1);
+        }
+        
+        .pos-symbol {
+           font-weight: 700;
+           color: #0f172a;
+           font-size: 0.9rem;
+        }
+        
+        .pos-pnl {
+           font-family: var(--font-mono);
+           font-weight: 700;
+           font-size: 0.9rem;
+           padding: 0.25rem 0.5rem;
+           border-radius: 6px;
+        }
+        
+        .pos-pnl.positive { 
+          color: #10b981; 
+          background: rgba(16, 185, 129, 0.1);
+        }
+        .pos-pnl.negative { 
+          color: #ef4444; 
+          background: rgba(239, 68, 68, 0.1);
+        }
+
+        /* Profit Share Card - Blue accent */
+        .profit-share-card {
+          background: linear-gradient(135deg, #eff6ff 0%, #ffffff 100%);
+          border: 1px solid #bfdbfe;
+          box-shadow: 0 4px 12px rgba(59, 130, 246, 0.08);
+        }
+
+        .profit-share-card .panel-header {
+          border-bottom-color: #dbeafe;
+        }
+
+        .profit-share-card .panel-header h3 {
+          color: #1e40af;
+        }
+
+        .holders-list-clean {
+           display: flex;
+           flex-direction: column;
+           gap: 0.35rem;
+           max-height: 280px;
+           overflow-y: auto;
+        }
+        
+        .holder-row-clean {
+           display: grid;
+           grid-template-columns: 35px 1fr 90px;
+           align-items: center;
+           padding: 0.6rem 0.75rem;
+           background: white;
+           border-radius: 8px;
+           font-size: 0.8rem;
+           border: 1px solid transparent;
+           transition: all 0.15s;
+        }
+
+        .holder-row-clean:hover {
+           border-color: #3b82f6;
+           background: #f8fafc;
+        }
+
+        .holder-row-clean:nth-child(-n+3) {
+           background: linear-gradient(90deg, rgba(59, 130, 246, 0.08), transparent);
+        }
+        
+        .holder-row-clean .rank {
+           color: #3b82f6;
+           font-weight: 700;
+           font-size: 0.75rem;
+        }
+
+        .holder-row-clean:nth-child(1) .rank { color: #f59e0b; }
+        .holder-row-clean:nth-child(2) .rank { color: #94a3b8; }
+        .holder-row-clean:nth-child(3) .rank { color: #cd7f32; }
+        
+        .holder-row-clean .address {
+           font-family: var(--font-mono);
+           color: #64748b;
+           font-size: 0.75rem;
+        }
+        
+        .holder-row-clean .amount {
+           text-align: right;
+           font-family: var(--font-mono);
+           color: #0f172a;
+           font-weight: 600;
+        }
+
+        /* System Intelligence Card - Purple/Dark accent */
+        .console-card {
+          background: linear-gradient(135deg, #1e1b4b 0%, #0f172a 100%);
+          border: 1px solid #312e81;
+          box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+        }
+
+        .console-card .panel-header {
+          border-bottom-color: #312e81;
+        }
+
+        .console-card .panel-header h3 {
+          color: #a5b4fc;
+        }
+
+        .console-card .panel-header h3::before {
+          content: '● ';
+          color: #10b981;
+          animation: blink 1.5s infinite;
+        }
+
+        @keyframes blink {
+          0%, 50%, 100% { opacity: 1; }
+          25%, 75% { opacity: 0.3; }
+        }
+        
+        .console-body {
+           font-family: 'JetBrains Mono', monospace;
+           font-size: 0.75rem;
+           display: flex;
+           flex-direction: column;
+           gap: 0.4rem;
+           max-height: 220px;
+           overflow-y: auto;
+        }
+        
+        .console-line {
+           display: flex;
+           gap: 0.75rem;
+           padding: 0.4rem 0.5rem;
+           border-radius: 4px;
+           background: rgba(255, 255, 255, 0.03);
+        }
+
+        .console-line:hover {
+           background: rgba(255, 255, 255, 0.06);
+        }
+        
+        .console-line .time {
+           color: #6366f1;
+           min-width: 55px;
+           font-size: 0.7rem;
+        }
+        
+        .console-line .msg {
+           color: #e2e8f0;
         }
 
         .info-card {
@@ -2063,97 +2574,6 @@ function App() {
           font-size: 0.75rem;
           font-weight: 600;
           border: 1px solid var(--border-color);
-        }
-
-        .positions-list {
-           display: flex;
-           flex-direction: column;
-           gap: 0.75rem;
-        }
-
-        .position-row {
-           display: flex;
-           justify-content: space-between;
-           padding: 0.75rem;
-           background: var(--bg-secondary);
-           border-radius: 8px;
-           border: 1px solid var(--border-color);
-        }
-        
-        .pos-symbol {
-           font-weight: 600;
-           color: var(--text-primary);
-        }
-        
-        .pos-pnl {
-           font-family: var(--font-mono);
-           font-weight: 600;
-        }
-        
-        .pos-pnl.positive { color: var(--accent-secondary); }
-        .pos-pnl.negative { color: #ef4444; }
-
-        .console-card {
-           min-height: 250px;
-        }
-        
-        .console-body {
-           font-family: 'JetBrains Mono', monospace;
-           font-size: 0.8rem;
-           color: var(--text-secondary);
-           display: flex;
-           flex-direction: column;
-           gap: 0.5rem;
-           max-height: 250px;
-           overflow-y: auto;
-        }
-        
-        .console-line {
-           display: flex;
-           gap: 0.75rem;
-        }
-        
-        .console-line .time {
-           color: var(--text-muted);
-           min-width: 60px;
-        }
-        
-        .console-line .msg {
-           color: var(--text-primary);
-        }
-
-        .holders-list-clean {
-           display: flex;
-           flex-direction: column;
-           gap: 0.5rem;
-           max-height: 350px;
-           overflow-y: auto;
-        }
-        
-        .holder-row-clean {
-           display: grid;
-           grid-template-columns: 30px 1fr 80px;
-           align-items: center;
-           padding: 0.5rem;
-           background: var(--bg-secondary);
-           border-radius: 6px;
-           font-size: 0.85rem;
-        }
-        
-        .holder-row-clean .rank {
-           color: var(--accent-primary);
-           font-weight: 600;
-        }
-        
-        .holder-row-clean .address {
-           font-family: var(--font-mono);
-           color: var(--text-secondary);
-        }
-        
-        .holder-row-clean .amount {
-           text-align: right;
-           font-family: var(--font-mono);
-           color: var(--text-primary);
         }
 
         .detail-column {

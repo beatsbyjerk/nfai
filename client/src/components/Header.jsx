@@ -29,6 +29,19 @@ export function Header({ connected, soundEnabled, onToggleSound, authWallet, lic
         </div>
 
         <div className="header-right">
+          {/* X (Twitter) Link */}
+          <a 
+            href="https://x.com/cypho_ai" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="social-link"
+            aria-label="Follow us on X"
+          >
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+              <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+            </svg>
+          </a>
+
           {/* User Wallet Trading Button */}
           {userWallet ? (
             <button className="user-wallet-btn connected" onClick={onOpenDashboard}>
@@ -101,6 +114,27 @@ export function Header({ connected, soundEnabled, onToggleSound, authWallet, lic
           display: flex;
           align-items: center;
           gap: 1rem;
+        }
+
+        .social-link {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 36px;
+          height: 36px;
+          border-radius: 8px;
+          background: var(--bg-secondary);
+          border: 1px solid var(--border-color);
+          color: var(--text-secondary);
+          transition: all 0.2s ease;
+        }
+
+        .social-link:hover {
+          background: #0f172a;
+          border-color: #0f172a;
+          color: white;
+          transform: translateY(-2px);
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
         }
 
         /* User Wallet Button Styles */
