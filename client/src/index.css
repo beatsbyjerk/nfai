@@ -489,7 +489,7 @@ h6 {
 }
 
 .mobile-only {
-    display: none;
+    display: none !important;
 }
 
 @media (max-width: 900px) {
@@ -498,7 +498,7 @@ h6 {
     }
 
     .mobile-only {
-        display: block !important;
+        display: flex !important;
     }
 }
 
