@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 
-export function Header({ connected, soundEnabled, onToggleSound, authWallet, licenseExpiresAt, onLogout }) {
+export function Header({ connected, soundEnabled, onToggleSound, authWallet, licenseExpiresAt, onLogout, userWallet, onOpenWalletConnect, onOpenDashboard }) {
   const [theme, setTheme] = useState(() => {
     try {
       return localStorage.getItem('theme') || 'light';
@@ -29,6 +29,20 @@ export function Header({ connected, soundEnabled, onToggleSound, authWallet, lic
         </div>
 
         <div className="header-right">
+          {/* User Wallet Trading Button */}
+          {userWallet ? (
+            <button className="user-wallet-btn connected" onClick={onOpenDashboard}>
+              <span className="wallet-indicator"></span>
+              <span className="wallet-text">{userWallet.slice(0, 4)}...{userWallet.slice(-4)}</span>
+              <span className="dashboard-icon">📊</span>
+            </button>
+          ) : (
+            <button className="user-wallet-btn" onClick={onOpenWalletConnect}>
+              <span className="connect-icon">◈</span>
+              <span className="connect-text">Connect Wallet</span>
+            </button>
+          )}
+
           {authWallet && authWallet !== 'GUEST_ACCESS' && (
             <div className="license-status">
               <span className="license-wallet">{authWallet.slice(0, 4)}...{authWallet.slice(-4)}</span>
@@ -75,37 +89,6 @@ export function Header({ connected, soundEnabled, onToggleSound, authWallet, lic
           letter-spacing: -0.02em;
         }
 
-        .header-logo {
-          font-family: var(--font-serif);
-          font-size: 1.5rem;
-          font-weight: 700;
-          color: var(--text-primary);
-          letter-spacing: -0.02em;
-        }
-
-        .header-x-btn {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          width: 36px;
-          height: 36px;
-          margin-left: 1rem;
-          background: transparent;
-          border: 1px solid rgba(255, 255, 255, 0.1);
-          border-radius: 6px;
-          color: var(--text-primary);
-          text-decoration: none;
-          font-size: 1.2rem;
-          transition: all 0.2s ease;
-        }
-
-        .header-x-btn:hover {
-          background: rgba(255, 255, 255, 0.05);
-          border-color: var(--accent-primary);
-          color: var(--accent-primary);
-          transform: translateY(-1px);
-        }
-
         .logo-img {
           width: 32px;
           height: 32px;
@@ -117,37 +100,96 @@ export function Header({ connected, soundEnabled, onToggleSound, authWallet, lic
         .header-right {
           display: flex;
           align-items: center;
-          gap: 1.25rem;
+          gap: 1rem;
         }
 
-        .connection-status {
+        /* User Wallet Button Styles */
+        .user-wallet-btn {
           display: flex;
           align-items: center;
-          gap: 0.6rem;
-          padding: 0.4rem 1rem;
-          border: 1px solid rgba(255, 255, 255, 0.1);
-          border-radius: 100px; /* Pill shape */
+          gap: 0.5rem;
+          padding: 0.55rem 1rem;
+          background: linear-gradient(135deg, rgba(212, 175, 55, 0.15), rgba(212, 175, 55, 0.05));
+          border: 1px solid rgba(212, 175, 55, 0.35);
+          border-radius: 8px;
+          color: var(--accent-primary);
+          font-size: 0.85rem;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.2s ease;
+        }
+
+        .user-wallet-btn:hover {
+          background: linear-gradient(135deg, rgba(212, 175, 55, 0.25), rgba(212, 175, 55, 0.1));
+          border-color: var(--accent-primary);
+          transform: translateY(-1px);
+          box-shadow: 0 4px 16px rgba(212, 175, 55, 0.2);
+        }
+
+        .user-wallet-btn.connected {
+          background: rgba(0, 255, 157, 0.08);
+          border-color: rgba(0, 255, 157, 0.3);
+          color: var(--accent-secondary);
+        }
+
+        .user-wallet-btn.connected:hover {
+          background: rgba(0, 255, 157, 0.15);
+          border-color: var(--accent-secondary);
+          box-shadow: 0 4px 16px rgba(0, 255, 157, 0.2);
+        }
+
+        .wallet-indicator {
+          width: 8px;
+          height: 8px;
+          background: var(--accent-secondary);
+          border-radius: 50%;
+          box-shadow: 0 0 8px var(--accent-secondary);
+          animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.5; }
+        }
+
+        .wallet-text {
+          font-family: var(--font-mono);
+          font-size: 0.8rem;
+        }
+
+        .connect-icon {
+          font-size: 1rem;
+        }
+
+        .connect-text {
+          font-weight: 600;
+        }
+
+        .dashboard-icon {
+          font-size: 0.9rem;
+          margin-left: 0.2rem;
+        }
+
+        .license-status {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          padding: 0.4rem 0.75rem;
+          background: rgba(255, 255, 255, 0.03);
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          border-radius: 6px;
+        }
+
+        .license-wallet {
           font-family: var(--font-mono);
           font-size: 0.75rem;
-          font-weight: 600;
-          letter-spacing: 0.05em;
-          background: rgba(255, 255, 255, 0.03);
           color: var(--text-secondary);
         }
 
-        .connected .status-dot {
-          width: 6px;
-          height: 6px;
-          border-radius: 50%;
-          background: var(--accent-secondary);
-          box-shadow: 0 0 8px var(--accent-secondary);
-        }
-
-        .status-dot {
-            width: 6px;
-            height: 6px;
-            border-radius: 50%;
-            background: rgba(255, 255, 255, 0.2);
+        .license-expiry {
+          font-size: 0.7rem;
+          color: var(--accent-secondary);
+          font-weight: 600;
         }
       `}</style>
     </header>

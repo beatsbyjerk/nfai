@@ -5,6 +5,8 @@ import { TokenStream } from './components/TokenStream';
 import { TokenDetail } from './components/TokenDetail';
 import { Toast } from './components/Toast';
 import { Hero } from './components/Hero/Hero';
+import { UserDashboard } from './components/UserDashboard';
+import { WalletConnect } from './components/WalletConnect';
 
 function App() {
   const [tokens, setTokens] = useState([]);
@@ -59,6 +61,22 @@ function App() {
     }
   });
   const [soundPermissionNeeded, setSoundPermissionNeeded] = useState(false);
+
+  // User wallet trading state
+  const [userWallet, setUserWallet] = useState(() => {
+    try {
+      return localStorage.getItem('userWallet') || null;
+    } catch {
+      return null;
+    }
+  });
+  const [userConfig, setUserConfig] = useState(null);
+  const [userPositions, setUserPositions] = useState([]);
+  const [userStats, setUserStats] = useState(null);
+  const [showWalletConnect, setShowWalletConnect] = useState(false);
+  const [showUserDashboard, setShowUserDashboard] = useState(false);
+  const [walletConnecting, setWalletConnecting] = useState(false);
+  const [walletError, setWalletError] = useState('');
 
   // Public feed state (for unauthenticated landing page)
   const [publicToasts, setPublicToasts] = useState([]);
@@ -401,6 +419,114 @@ function App() {
       sessionToken: null,
     });
   };
+
+  // ==== USER WALLET TRADING HANDLERS ====
+
+  // Connect user wallet
+  const handleConnectUserWallet = async (walletAddress) => {
+    setWalletConnecting(true);
+    setWalletError('');
+
+    try {
+      const res = await fetch('/api/user/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ wallet: walletAddress }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to connect wallet');
+      }
+
+      // Store wallet and update state
+      localStorage.setItem('userWallet', walletAddress);
+      setUserWallet(walletAddress);
+      setUserConfig(data.config);
+      setUserPositions(data.positions || []);
+      setUserStats(data.stats);
+      setShowWalletConnect(false);
+      setShowUserDashboard(true);
+    } catch (err) {
+      setWalletError(err.message || 'Connection failed');
+    } finally {
+      setWalletConnecting(false);
+    }
+  };
+
+  // Load user state on mount if wallet exists
+  const loadUserState = useCallback(async (wallet) => {
+    if (!wallet) return;
+
+    try {
+      const res = await fetch(`/api/user/state/${wallet}`);
+      if (!res.ok) {
+        // User not found, clear storage
+        localStorage.removeItem('userWallet');
+        setUserWallet(null);
+        return;
+      }
+
+      const data = await res.json();
+      setUserConfig(data.config);
+      setUserPositions(data.positions || []);
+      setUserStats(data.stats);
+    } catch (err) {
+      console.error('Failed to load user state:', err);
+    }
+  }, []);
+
+  // Update user configuration
+  const handleUpdateUserConfig = async (updates) => {
+    if (!userWallet) return;
+
+    try {
+      const res = await fetch(`/api/user/config/${userWallet}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to update config');
+      }
+
+      setUserConfig(data.config);
+    } catch (err) {
+      console.error('Failed to update config:', err);
+      throw err;
+    }
+  };
+
+  // Disconnect user wallet
+  const handleDisconnectUserWallet = async () => {
+    if (!userWallet) return;
+
+    try {
+      await fetch('/api/user/logout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ wallet: userWallet }),
+      });
+    } catch {
+      // ignore
+    }
+
+    localStorage.removeItem('userWallet');
+    setUserWallet(null);
+    setUserConfig(null);
+    setUserPositions([]);
+    setUserStats(null);
+    setShowUserDashboard(false);
+  };
+
+  // Load user state on mount
+  useEffect(() => {
+    if (userWallet) {
+      loadUserState(userWallet);
+    }
+  }, [userWallet, loadUserState]);
 
   const hasPrintScanSource = useCallback((token) => {
     const sources = (token?.sources || token?.source || '')
@@ -1330,7 +1456,36 @@ function App() {
         authWallet={authState.wallet}
         licenseExpiresAt={authState.expiresAt}
         onLogout={handleLogout}
+        userWallet={userWallet}
+        onOpenWalletConnect={() => setShowWalletConnect(true)}
+        onOpenDashboard={() => setShowUserDashboard(true)}
       />
+
+      {/* User Wallet Connect Modal */}
+      {showWalletConnect && (
+        <WalletConnect
+          onConnect={handleConnectUserWallet}
+          onClose={() => { setShowWalletConnect(false); setWalletError(''); }}
+          loading={walletConnecting}
+          error={walletError}
+        />
+      )}
+
+      {/* User Dashboard Modal */}
+      {showUserDashboard && userWallet && (
+        <div className="user-dashboard-overlay" onClick={(e) => { if (e.target === e.currentTarget) setShowUserDashboard(false); }}>
+          <UserDashboard
+            userWallet={userWallet}
+            userConfig={userConfig}
+            userPositions={userPositions}
+            userStats={userStats}
+            onUpdateConfig={handleUpdateUserConfig}
+            onLogout={handleDisconnectUserWallet}
+            onClose={() => setShowUserDashboard(false)}
+          />
+        </div>
+      )}
+
       {soundEnabled && soundPermissionNeeded && (
         <div className="sound-permission">
           <span>Enable sound for new NFAi tokens.</span>

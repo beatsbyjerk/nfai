@@ -10,6 +10,7 @@ import { TokenStore } from './token-store.js';
 import { TradingEngine } from './trading-engine.js';
 import { PumpPortalWebSocket } from './pump-portal-ws.js';
 import { AuthService } from './auth-service.js';
+import { UserTradingEngine } from './user-trading-engine.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -175,6 +176,12 @@ const pumpPortalWs = new PumpPortalWebSocket({
 
 const tradingEngine = new TradingEngine({ tokenStore, pumpPortalWs });
 tradingEngine.start();
+
+// Initialize User Trading Engine (handles user wallets with 1s delay after AI trades)
+const userTradingEngine = new UserTradingEngine({ tradingEngine });
+userTradingEngine.initialize().catch(err => {
+  console.error('UserTradingEngine initialization error:', err?.message || err);
+});
 
 // Update PumpPortal accountKeys after tradingEngine is initialized
 pumpPortalWs.accountKeys = (tradingEngine.walletAddress || '')
@@ -578,6 +585,110 @@ app.post('/api/refresh', async (req, res) => {
   }
 });
 
+// ========== USER WALLET API ENDPOINTS ==========
+
+// Register/import user wallet
+app.post('/api/user/register', async (req, res) => {
+  const { wallet } = req.body || {};
+  if (!wallet) {
+    return res.status(400).json({ error: 'Missing wallet address' });
+  }
+
+  // Validate Solana wallet address format
+  const walletRegex = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+  if (!walletRegex.test(wallet.trim())) {
+    return res.status(400).json({ error: 'Invalid Solana wallet address' });
+  }
+
+  const result = await userTradingEngine.registerUser(wallet.trim());
+  if (!result.ok) {
+    return res.status(400).json({ error: result.error });
+  }
+
+  // Return user state including config, positions, stats
+  const userState = userTradingEngine.getUserState(wallet.trim());
+  return res.json({ ok: true, ...userState, isNew: result.isNew });
+});
+
+// Get user configuration
+app.get('/api/user/config/:wallet', async (req, res) => {
+  const { wallet } = req.params;
+  if (!wallet) {
+    return res.status(400).json({ error: 'Missing wallet address' });
+  }
+
+  const result = await userTradingEngine.getUserConfig(wallet);
+  if (!result.ok) {
+    return res.status(404).json({ error: result.error });
+  }
+  return res.json(result.config);
+});
+
+// Update user configuration
+app.put('/api/user/config/:wallet', async (req, res) => {
+  const { wallet } = req.params;
+  const updates = req.body || {};
+
+  if (!wallet) {
+    return res.status(400).json({ error: 'Missing wallet address' });
+  }
+
+  const result = await userTradingEngine.updateUserConfig(wallet, updates);
+  if (!result.ok) {
+    return res.status(400).json({ error: result.error });
+  }
+  return res.json({ ok: true, config: result.config });
+});
+
+// Get user positions
+app.get('/api/user/positions/:wallet', (req, res) => {
+  const { wallet } = req.params;
+  if (!wallet) {
+    return res.status(400).json({ error: 'Missing wallet address' });
+  }
+
+  const positions = userTradingEngine.getUserPositions(wallet);
+  return res.json({ positions });
+});
+
+// Get user statistics
+app.get('/api/user/stats/:wallet', async (req, res) => {
+  const { wallet } = req.params;
+  if (!wallet) {
+    return res.status(400).json({ error: 'Missing wallet address' });
+  }
+
+  const result = await userTradingEngine.getUserStats(wallet);
+  if (!result.ok) {
+    return res.status(400).json({ error: result.error });
+  }
+  return res.json(result.stats || {});
+});
+
+// Get full user state
+app.get('/api/user/state/:wallet', (req, res) => {
+  const { wallet } = req.params;
+  if (!wallet) {
+    return res.status(400).json({ error: 'Missing wallet address' });
+  }
+
+  const userState = userTradingEngine.getUserState(wallet);
+  return res.json(userState);
+});
+
+// User logout
+app.post('/api/user/logout', async (req, res) => {
+  const { wallet } = req.body || {};
+  if (!wallet) {
+    return res.status(400).json({ error: 'Missing wallet address' });
+  }
+
+  const result = await userTradingEngine.logoutUser(wallet);
+  if (!result.ok) {
+    return res.status(400).json({ error: result.error });
+  }
+  return res.json({ ok: true });
+});
 
 // Polling function to fetch new data
 let initialized = false;
