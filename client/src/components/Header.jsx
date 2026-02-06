@@ -23,8 +23,8 @@ export function Header({ connected, soundEnabled, onToggleSound, authWallet, lic
       <div className="header-content">
         <div className="logo-section">
           <div className="logo">
-            <img src="/logo.png" alt="NFAi" className="logo-img" />
-            <span className="logo-text">NFAi</span>
+            <img src="/cyphoai-logo.jpg" alt="Cyphoai" className="logo-img" />
+            <span className="logo-text">Cyphoai</span>
           </div>
         </div>
 
@@ -54,10 +54,10 @@ export function Header({ connected, soundEnabled, onToggleSound, authWallet, lic
 
       <style>{`
         .header {
-          background: rgba(5, 10, 20, 0.85); /* Deep Navy Glass */
+          background: rgba(255, 255, 255, 0.9);
           backdrop-filter: blur(16px);
           -webkit-backdrop-filter: blur(16px);
-          border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+          border-bottom: 1px solid var(--border-color);
           padding: 1rem 2rem;
           position: sticky;
           top: 0;
@@ -109,10 +109,10 @@ export function Header({ connected, soundEnabled, onToggleSound, authWallet, lic
           align-items: center;
           gap: 0.5rem;
           padding: 0.55rem 1rem;
-          background: linear-gradient(135deg, rgba(212, 175, 55, 0.15), rgba(212, 175, 55, 0.05));
-          border: 1px solid rgba(212, 175, 55, 0.35);
+          background: var(--bg-secondary);
+          border: 1px solid var(--border-color);
           border-radius: 8px;
-          color: var(--accent-primary);
+          color: var(--text-primary);
           font-size: 0.85rem;
           font-weight: 500;
           cursor: pointer;
@@ -120,23 +120,23 @@ export function Header({ connected, soundEnabled, onToggleSound, authWallet, lic
         }
 
         .user-wallet-btn:hover {
-          background: linear-gradient(135deg, rgba(212, 175, 55, 0.25), rgba(212, 175, 55, 0.1));
+          background: var(--bg-hover);
           border-color: var(--accent-primary);
+          color: var(--accent-primary);
           transform: translateY(-1px);
-          box-shadow: 0 4px 16px rgba(212, 175, 55, 0.2);
+          box-shadow: var(--shadow-sm);
         }
 
         .user-wallet-btn.connected {
-          background: linear-gradient(135deg, rgba(0, 255, 157, 0.2), rgba(0, 200, 100, 0.1));
-          border: 2px solid rgba(0, 255, 157, 0.5);
+          background: var(--bg-card);
+          border: 1px solid var(--accent-secondary);
           color: var(--accent-secondary);
           padding: 0.6rem 1.2rem;
         }
 
         .user-wallet-btn.connected:hover {
-          background: linear-gradient(135deg, rgba(0, 255, 157, 0.3), rgba(0, 200, 100, 0.15));
-          border-color: var(--accent-secondary);
-          box-shadow: 0 4px 20px rgba(0, 255, 157, 0.3);
+          background: var(--bg-hover);
+          box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2);
         }
 
         .wallet-indicator {
@@ -156,17 +156,18 @@ export function Header({ connected, soundEnabled, onToggleSound, authWallet, lic
         .dashboard-label {
           font-weight: 700;
           font-size: 0.9rem;
-          color: #00FF9D;
+          color: var(--accent-secondary);
           letter-spacing: 0.02em;
         }
 
         .wallet-text {
           font-family: var(--font-mono);
           font-size: 0.75rem;
-          color: rgba(255, 255, 255, 0.6);
-          background: rgba(0, 0, 0, 0.2);
+          color: var(--text-secondary);
+          background: var(--bg-secondary);
           padding: 0.15rem 0.4rem;
           border-radius: 4px;
+          border: 1px solid var(--border-color);
         }
 
         .connect-icon {
@@ -187,8 +188,8 @@ export function Header({ connected, soundEnabled, onToggleSound, authWallet, lic
           align-items: center;
           gap: 0.5rem;
           padding: 0.4rem 0.75rem;
-          background: rgba(255, 255, 255, 0.03);
-          border: 1px solid rgba(255, 255, 255, 0.08);
+          background: var(--bg-secondary);
+          border: 1px solid var(--border-color);
           border-radius: 6px;
         }
 

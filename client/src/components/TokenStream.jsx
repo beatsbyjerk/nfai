@@ -174,10 +174,10 @@ export function TokenStream({ tokens, onSelect, selectedId, highlightedId, label
                   <span className="metric-label">Mcap X</span>
                   <span
                     className={`metric-value ${currentMultiple(token) !== null && currentMultiple(token) > 1
-                        ? 'metric-positive'
-                        : currentMultiple(token) !== null && currentMultiple(token) < 1
-                          ? 'metric-negative'
-                          : ''
+                      ? 'metric-positive'
+                      : currentMultiple(token) !== null && currentMultiple(token) < 1
+                        ? 'metric-negative'
+                        : ''
                       }`}
                   >
                     {formatMultiple(currentMultiple(token))}
@@ -267,14 +267,14 @@ export function TokenStream({ tokens, onSelect, selectedId, highlightedId, label
           display: flex;
           flex-direction: column;
           padding: 1.5rem;
-          background: rgba(14, 25, 41, 0.65); /* Glassy Blue */
+          background: var(--bg-card);
           backdrop-filter: blur(10px);
           -webkit-backdrop-filter: blur(10px);
-          border: 1px solid rgba(212, 175, 55, 0.25); /* Gold Border */
+          border: 1px solid var(--border-color);
           border-radius: 16px;
           cursor: pointer;
           transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-          box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+          box-shadow: var(--shadow-sm);
           position: relative;
           overflow: hidden;
           height: 100%;
@@ -291,21 +291,21 @@ export function TokenStream({ tokens, onSelect, selectedId, highlightedId, label
         
         .token-card:hover {
           transform: translateY(-6px);
-          box-shadow: 0 12px 24px rgba(0, 0, 0, 0.3);
-          background: rgba(14, 25, 41, 0.8);
+          box-shadow: var(--shadow-lg);
+          background: var(--bg-hover);
           border-color: var(--accent-primary);
         }
         
         .token-card.selected {
           border-color: var(--accent-primary);
-          background: rgba(212, 175, 55, 0.08);
-          box-shadow: 0 0 0 2px rgba(212, 175, 55, 0.3);
+          background: var(--bg-hover);
+          box-shadow: 0 0 0 2px var(--accent-highlight);
         }
 
         .token-card.new-call-highlight {
            animation: newCallEnter 0.6s backwards;
            border: 1px solid var(--accent-primary);
-           box-shadow: 0 0 20px rgba(212, 175, 55, 0.3);
+           box-shadow: 0 0 20px var(--accent-highlight);
         }
         
         .card-left {
@@ -319,22 +319,22 @@ export function TokenStream({ tokens, onSelect, selectedId, highlightedId, label
           height: 56px;
           border-radius: 12px;
           object-fit: cover;
-          border: 2px solid rgba(212, 175, 55, 0.3);
-          box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+          border: 2px solid var(--border-color);
+          box-shadow: var(--shadow-sm);
         }
         
         .token-logo-placeholder {
           width: 56px;
           height: 56px;
           border-radius: 12px;
-          background: rgba(255,255,255,0.05);
+          background: var(--bg-secondary);
           display: flex;
           align-items: center;
           justify-content: center;
           font-weight: 700;
           font-size: 1.5rem;
           color: var(--accent-primary);
-          border: 1px dashed rgba(212, 175, 55, 0.3);
+          border: 1px dashed var(--border-color);
         }
         
         .card-main {
@@ -354,7 +354,7 @@ export function TokenStream({ tokens, onSelect, selectedId, highlightedId, label
           font-family: var(--font-serif);
           font-weight: 700;
           font-size: 1.4rem;
-          color: var(--accent-primary); /* Gold Symbol */
+          color: var(--text-primary);
           letter-spacing: 0.02em;
         }
         
@@ -379,10 +379,10 @@ export function TokenStream({ tokens, onSelect, selectedId, highlightedId, label
         }
 
         .token-meta .label {
-          background: rgba(212, 175, 55, 0.1);
+          background: var(--bg-secondary);
           padding: 0.2rem 0.5rem;
           border-radius: 4px;
-          border: 1px solid rgba(212, 175, 55, 0.2);
+          border: 1px solid var(--border-color);
           color: var(--accent-primary);
           font-weight: 600;
         }
@@ -398,7 +398,7 @@ export function TokenStream({ tokens, onSelect, selectedId, highlightedId, label
         .card-right {
           margin-top: auto;
           padding-top: 1rem;
-          border-top: 1px solid rgba(255, 255, 255, 0.1);
+          border-top: 1px solid var(--border-color);
           width: 100%;
         }
  
@@ -428,7 +428,7 @@ export function TokenStream({ tokens, onSelect, selectedId, highlightedId, label
         }
 
         .metric-positive {
-          color: var(--success, #23c55e);
+          color: var(--success, #10b981);
         }
 
         .metric-negative {

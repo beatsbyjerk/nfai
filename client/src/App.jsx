@@ -1,20 +1,20 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Header } from './components/Header';
 import { TokenStream } from './components/TokenStream';
 import { TokenDetail } from './components/TokenDetail';
 import { Toast } from './components/Toast';
-import { Hero } from './components/Hero/Hero';
 import { UserDashboard } from './components/UserDashboard';
 import { WalletConnect } from './components/WalletConnect';
+import { RemotionPlayer } from './components/RemotionPlayer';
 
 function App() {
   const [tokens, setTokens] = useState([]);
   const [connected, setConnected] = useState(false);
   const [selectedTokenAddress, setSelectedTokenAddress] = useState(null);
   const tabs = [
-    { key: 'gambles', label: 'Gambles', source: 'meme_radar', firstLabel: 'First Called' },
-    { key: 'claudecash', label: 'NFAi', source: 'print_scan', firstLabel: 'First' },
+    { key: 'gambles', label: 'Alpha Signals', source: 'meme_radar', firstLabel: 'Signal' },
+    { key: 'claudecash', label: 'Cyphoai Select', source: 'print_scan', firstLabel: 'First' },
   ];
   const [activeTab, setActiveTab] = useState(() => {
     try {
@@ -761,15 +761,18 @@ function App() {
 
           case 'new_tokens':
             const newIncoming = message.data.map(t => ({ ...t, receivedAt: Date.now() }));
-            const combined = [...newIncoming, ...(tokensRef.current || [])];
-            // Unique by address
-            const seen = new Set();
-            const nextTokens = combined.filter(t => {
-              if (seen.has(t.address)) return false;
-              seen.add(t.address);
-              return true;
-            }).slice(0, 500); // Keep last 500
-            setTokens(nextTokens);
+            setTokens(prev => {
+              // Use Map for O(1) lookups instead of Set
+              const tokenMap = new Map(prev.map(t => [t.address, t]));
+
+              // Add new tokens, replacing any existing ones
+              for (const token of newIncoming) {
+                tokenMap.set(token.address, token);
+              }
+
+              // Convert back to array and keep last 500
+              return Array.from(tokenMap.values()).slice(0, 500);
+            });
 
             // Replace highlight per source and play sound for new ClaudeCash tokens
             for (const token of newIncoming) {
@@ -807,12 +810,17 @@ function App() {
             break;
 
           case 'token_update':
-            setTokens(prev => prev.map(t => {
+            // Optimize: only update the specific token, not map over all tokens
+            setTokens(prev => {
               const updateAddress = message.data.address || message.data.mint;
-              const tokenAddress = t.address || t.mint;
-              if (tokenAddress !== updateAddress) return t;
-              return { ...t, ...message.data };
-            }));
+              const index = prev.findIndex(t => (t.address || t.mint) === updateAddress);
+              if (index === -1) return prev; // Token not found, no update needed
+
+              // Create new array with updated token
+              const next = [...prev];
+              next[index] = { ...prev[index], ...message.data };
+              return next;
+            });
             break;
 
           case 'activity':
@@ -871,19 +879,25 @@ function App() {
     return (tokens || []).find((t) => t.address === selectedTokenAddress) || null;
   })();
 
-  // Filter tokens based on active tab
-  const getFilteredTokens = () => {
+  // Filter tokens based on active tab - MEMOIZED for performance
+  const filteredTokens = useMemo(() => {
     const current = tabs.find(t => t.key === activeTab);
+    if (!current) return [];
+
     const list = tokens.filter(t => {
       const sources = (t.sources || t.source || '').split(',').map(s => s.trim());
-      return sources.includes(current?.source);
+      return sources.includes(current.source);
     });
+
     return list.sort((a, b) => {
-      const aTime = new Date(getTokenTimeBySource(a, current?.source) || 0).getTime();
-      const bTime = new Date(getTokenTimeBySource(b, current?.source) || 0).getTime();
+      const aTime = new Date(getTokenTimeBySource(a, current.source) || 0).getTime();
+      const bTime = new Date(getTokenTimeBySource(b, current.source) || 0).getTime();
       return bTime - aTime;
     }).slice(0, 200);
-  };
+  }, [tokens, activeTab]);
+
+  // Keep old function for backward compatibility
+  const getFilteredTokens = () => filteredTokens;
 
   const getClaudeCashTokens = useCallback(() => {
     const source = 'print_scan';
@@ -896,7 +910,7 @@ function App() {
       const bTime = new Date(getTokenTimeBySource(b, source) || 0).getTime();
       return bTime - aTime;
     }).slice(0, 200);
-  }, [tokens, getTokenTimeBySource]);
+  }, [tokens]);
 
   const getRawData = (token) => {
     if (!token?.raw_data) return null;
@@ -1065,8 +1079,6 @@ function App() {
     return ath / initial;
   };
 
-
-
   const athMultiples = claudeCashStatsTokens
     .map(athMultiple)
     .filter((value) => Number.isFinite(value) && value > 0);
@@ -1084,8 +1096,8 @@ function App() {
     return (
       <div className="auth-loading">
         <div className="auth-loading-card">
-          <div className="auth-loading-title">NFAi</div>
-          <div className="auth-loading-text">Consulting the Oracle…</div>
+          <div className="auth-loading-title">Cyphoai</div>
+          <div className="auth-loading-text">Initializing Systems…</div>
         </div>
       </div>
     );
@@ -1099,8 +1111,8 @@ function App() {
         <div className="auth-landing">
           <div className="landing-header">
             <div className="landing-logo">
-              <img src="/logo.png" alt="NFAi" className="landing-logo-img" />
-              <span className="landing-logo-text">NFAi</span>
+              <img src="/cyphoai-logo.jpg" alt="Cyphoai" className="landing-logo-img" />
+              <span className="landing-logo-text">Cyphoai</span>
             </div>
             <div className="landing-header-controls">
               <button className="landing-theme-toggle" onClick={toggleLandingTheme} title="Toggle Theme">
@@ -1110,22 +1122,46 @@ function App() {
           </div>
 
           <div className="auth-hero">
-            <div className="hero-badge">
-              <span className="badge-dot"></span>
-              <span className="badge-text">THE ORACLE SPEAKS</span>
-            </div>
+            <div className="hero-split-layout">
+              <div className="hero-text-col">
+                <div className="hero-badge">
+                  <span className="badge-dot"></span>
+                  <span className="badge-text">CYPHOAI INTELLIGENCE</span>
+                </div>
+                
+                <h1 className="auth-title">
+                  <span className="title-gradient">Cyphoai</span>
+                </h1>
+                <p className="auth-subtitle">Automated Degen Intelligence • Solana</p>
 
-            <h1 className="auth-title">
-              <span className="title-gradient">NFAi</span>
-            </h1>
-            <p className="auth-subtitle">Athena Labs • Divine Market Intelligence • Solana</p>
+                <div className="hero-description">
+                  <p>
+                    Cyphoai analyzes on-chain data with machine precision. 
+                    Identifying opportunities, executing trades, and distributing yield to holders.
+                    Clean. Fast. Profitable.
+                  </p>
+                </div>
 
-            <div className="hero-description">
-              <p>
-                I am Athena, goddess of wisdom and strategic warfare. From my temple, I observe the
-                markets with divine sight—identifying opportunities mortals cannot perceive. I execute
-                with the precision of Olympus and share my blessings with those who hold faith.
-              </p>
+                <div className="cta-section">
+                  <button className="auth-cta" onClick={() => setShowAuthModal(true)}>
+                    <span className="cta-text">Initialize Access</span>
+                    <span className="cta-arrow">→</span>
+                  </button>
+                  <p className="cta-subtext">Real-time signals • Auto-trading • Portfolio tracking</p>
+                  <p className="cta-token-gate">
+                    🎫 <strong>Auto-authorize:</strong> Hold min {tokenGateInfo.enabled ? `${(tokenGateInfo.minAmount / 1000000).toFixed(0)}M` : '5M'} Cyphoai tokens
+                  </p>
+                </div>
+              </div>
+
+              <div className="hero-video-col">
+                <div className="video-frame">
+                   <RemotionPlayer 
+                      videoSrc="/hero-video.mp4"
+                      className="hero-video-element"
+                   />
+                </div>
+              </div>
             </div>
 
             <div className="stats-grid">
@@ -1154,15 +1190,14 @@ function App() {
                 <div className="capability-card">
                   <div className="capability-header">
                     <div className="capability-number">01</div>
-                    <h3>Divine Foresight</h3>
+                    <h3>Market Intelligence</h3>
                   </div>
                   <p>
-                    Athena's wisdom perceives patterns in the chaos of markets that mortal eyes cannot see.
-                    My oracle processes on-chain signals and liquidity flows to identify tokens with
-                    divine potential before they rise.
+                    Advanced algorithms perceive patterns in the chaos of markets. 
+                    Processing on-chain signals and liquidity flows to identify tokens with potential.
                   </p>
                   <div className="capability-footer">
-                    <span className="tech-tag">Oracle Vision</span>
+                    <span className="tech-tag">Deep Learning</span>
                     <span className="tech-tag">Pattern Recognition</span>
                   </div>
                 </div>
@@ -1170,12 +1205,11 @@ function App() {
                 <div className="capability-card">
                   <div className="capability-header">
                     <div className="capability-number">02</div>
-                    <h3>Swift Judgment</h3>
+                    <h3>Automated Execution</h3>
                   </div>
                   <p>
-                    When opportunity appears, I strike with the swiftness of Athena's spear.
-                    No hesitation, no emotion—only calculated precision. My trades execute at
-                    the speed of Olympian lightning.
+                    When opportunity appears, Cyphoai strikes with calculated precision.
+                    No hesitation, no emotion. Trades execute at high speed.
                   </p>
                   <div className="capability-footer">
                     <span className="tech-tag">Auto-Trading</span>
@@ -1186,12 +1220,11 @@ function App() {
                 <div className="capability-card">
                   <div className="capability-header">
                     <div className="capability-number">03</div>
-                    <h3>Temple Blessings</h3>
+                    <h3>Profit Sharing</h3>
                   </div>
                   <p>
-                    The faithful who hold NFAi receive Athena's blessings. Profits from successful
-                    trades flow automatically to loyal holders—the greater your devotion,
-                    the greater your reward.
+                    Profits from successful trades flow automatically to loyal holders.
+                    The greater your holdings, the greater your reward.
                   </p>
                   <div className="capability-footer">
                     <span className="tech-tag">Auto-Distribution</span>
@@ -1201,13 +1234,27 @@ function App() {
               </div>
             </div>
 
+            <div className="visual-section">
+              <div className="section-header">
+                <div className="header-line"></div>
+                <h2>Visual Intelligence</h2>
+                <div className="header-line"></div>
+              </div>
+              <div className="visual-container">
+                 <RemotionPlayer
+                    videoSrc="/feature-video.mp4"
+                    className="feature-video-player"
+                 />
+              </div>
+            </div>
+
             <div className="live-proof-section">
               <div className="section-header">
                 <div className="header-line"></div>
                 <h2>Live Trading Activity</h2>
                 <div className="header-line"></div>
               </div>
-              <p className="section-subtitle">Recent calls from my trading system (5 minute delay for public view)</p>
+              <p className="section-subtitle">Recent calls from the system (5 minute delay for public view)</p>
 
               <div id="live-activity-feed" className="activity-feed-container">
                 {publicActivity.length === 0 ? (
@@ -1248,20 +1295,9 @@ function App() {
               </div>
             </div>
 
-            <div className="cta-section">
-              <button className="auth-cta" onClick={() => setShowAuthModal(true)}>
-                <span className="cta-text">Activate License</span>
-                <span className="cta-arrow">→</span>
-              </button>
-              <p className="cta-subtext">Get real-time access • No delays • Full dashboard</p>
-              <p className="cta-token-gate">
-                🎫 <strong>Auto-authorize:</strong> Hold min {tokenGateInfo.enabled ? `${(tokenGateInfo.minAmount / 1000000).toFixed(0)}M` : '5M'} NFAi tokens for free access
-              </p>
-            </div>
-
             <div className="disclaimer-section">
               <div className="disclaimer-content">
-                <strong>Risk Disclosure:</strong> NFAi is an experimental autonomous trading
+                <strong>Risk Disclosure:</strong> Cyphoai is an experimental autonomous trading
                 system. This is not financial advice. Cryptocurrency trading involves substantial risk
                 of loss. Only invest capital you can afford to lose. Past performance does not guarantee
                 future results. Always conduct your own research.
@@ -1277,7 +1313,7 @@ function App() {
                   <div className="token-gate-info">
                     <span className="token-gate-badge">🎫 Token Gate</span>
                     <span className="token-gate-text">
-                      Hold {(tokenGateInfo.minAmount / 1000000).toFixed(0)}M+ NFAi for free access
+                      Hold {(tokenGateInfo.minAmount / 1000000).toFixed(0)}M+ Cyphoai for free access
                     </span>
                   </div>
                 )}
@@ -1302,11 +1338,11 @@ function App() {
                   <div className="auth-payment">
                     <div className="auth-payment-title">Token Gate Verification</div>
                     <div className="auth-payment-text">
-                      Send 1 NFAi token to verify wallet ownership
+                      Send 1 Cyphoai token to verify wallet ownership
                     </div>
                     <div className="auth-payment-details">
                       <div className="payment-instruction">
-                        <strong>Step 1:</strong> Send exactly <strong>1 NFAi</strong> token to:
+                        <strong>Step 1:</strong> Send exactly <strong>1 Cyphoai</strong> token to:
                       </div>
                       <div className="auth-payment-wallet" onClick={() => {
                         if (tokenGateInfo.tradingWallet) {
@@ -1376,7 +1412,7 @@ function App() {
                       <>
                         {tokenGateRetryCount > 0 && tokenGateRetryCount < 3 && (
                           <div className="error-help">
-                            • Verify you sent exactly 1 NFAi token<br />
+                            • Verify you sent exactly 1 Cyphoai token<br />
                             • Check the transaction completed on-chain<br />
                             • Wait 30-60 seconds after sending before clicking "Verify Token Payment"
                           </div>
@@ -1459,7 +1495,6 @@ function App() {
 
   return (
     <div className="app">
-      <Hero />
       <Header
         connected={connected}
         soundEnabled={soundEnabled}
@@ -1485,7 +1520,7 @@ function App() {
 
       {soundEnabled && soundPermissionNeeded && (
         <div className="sound-permission">
-          <span>Enable sound for new NFAi tokens.</span>
+          <span>Enable sound for new Cyphoai tokens.</span>
           <button onClick={requestSoundPermission}>Enable sound</button>
         </div>
       )}
@@ -1505,98 +1540,91 @@ function App() {
         </main>
       ) : (
         <main id="main-content" className="main-content">
-          {/* <div className="hero">
-          <h1>NFAi</h1>
-          <p className="hero-sub">Athena Labs · Divine Market Intelligence · Solana</p>
-          <div className="hero-desc">
-            I am Athena. From my temple, I observe the markets with divine wisdom.
-            When opportunity appears, I strike with precision. When danger looms, I withdraw.
-            You witness my oracle's vision in real-time.
+          <div className="dashboard-stats-bar">
+            <div className="stat-pill">
+              <span className="stat-label">System Status</span>
+              <span className="stat-value-live">{connected ? 'ONLINE' : 'CONNECTING'}</span>
+            </div>
+            <div className="stat-pill">
+              <span className="stat-label">Trades</span>
+              <span className="stat-value">{tradeCount}</span>
+            </div>
+            <div className="stat-pill">
+              <span className="stat-label">Win Rate</span>
+              <span className="stat-value highlight">{successRate.toFixed(1)}%</span>
+            </div>
+            <div className="stat-pill">
+              <span className="stat-label">Profit</span>
+              <span className="stat-value">{realizedProfit.toFixed(3)} SOL</span>
+            </div>
+            <div className="stat-pill">
+              <span className="stat-label">Avg Return</span>
+              <span className="stat-value">{averageAthX.toFixed(1)}x</span>
+            </div>
           </div>
-        </div> */}
 
-          <div className="ops-dashboard">
-            <div className="ops-header-floating">
-              <span className="ops-title-text">NFAi Live Operations</span>
-              <span className="ops-status-pill">{connected ? 'LIVE' : 'SNAPSHOT'} · {tradingMode.toUpperCase()}</span>
-            </div>
-
-            <div className="roman-ticker">
-              <div className="ticker-content">
-                <span>Trades: <strong>{tradeCount}</strong></span>
-                <span className="sep">♦</span>
-                <span>Open: <strong>{positions.length}</strong></span>
-                <span className="sep">♦</span>
-                <span>Balance: <strong>{balanceSol.toFixed(3)} SOL</strong></span>
-                <span className="sep">♦</span>
-                <span>Profit: <strong>{realizedProfit.toFixed(3)} SOL</strong></span>
-                <span className="sep">♦</span>
-                <span>Pool: <strong>{distributionPool.toFixed(3)} SOL</strong></span>
-                <span className="sep">♦</span>
-                <span>Calls: <strong>{totalCalls}</strong></span>
-                <span className="sep">♦</span>
-                <span>Success: <strong>{successRate.toFixed(1)}%</strong></span>
-                <span className="sep">♦</span>
-                <span>Avg: <strong>{averageAthX.toFixed(1)}x</strong></span>
-              </div>
-            </div>
-
-            <div className="floating-columns">
-              <div className="float-col">
-                <h3 className="float-title">Live Trades</h3>
-                <div className="ops-list">
-                  {liveTrades.length === 0 ? (
-                    <div className="ops-empty">Awaiting first signal.</div>
-                  ) : (
-                    liveTrades.map((entry, index) => {
-                      let message = entry.message;
-                      if (entry.message && entry.message.startsWith('Monitoring ')) {
-                        const symbolMatch = entry.message.match(/^Monitoring\s+([^:]+):/);
-                        if (symbolMatch) {
-                          const symbol = symbolMatch[1].trim();
-                          const position = positions.find(p => p.symbol === symbol || (p.mint && symbol.length >= 6 && p.mint.slice(0, 6) === symbol.slice(0, 6)));
-                          if (position) {
-                            const token = tokens.find(t => t.address === position.mint || t.mint === position.mint);
-                            if (token && position.entryMcap) {
-                              const currentMcap = token.realtime_mcap || token.latest_mcap;
-                              if (currentMcap && Number.isFinite(currentMcap) && currentMcap > 0) {
-                                const pnlPct = ((currentMcap - position.entryMcap) / position.entryMcap) * 100;
-                                message = `Monitoring ${position.symbol || symbol}: $${currentMcap.toFixed(0)} mcap, ${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(1)}% P&L`;
-                              }
-                            }
-                          }
+          <div className="dashboard-grid">
+            {/* Left Column: Feed */}
+            <div className="feed-column">
+              <div className="feed-header">
+                <div className="tab-nav-clean">
+                  {tabs.map((tab) => (
+                    <button
+                      key={tab.key}
+                      className={`clean-tab ${activeTab === tab.key ? 'active' : ''}`}
+                      onClick={() => {
+                        setActiveTab(tab.key);
+                        try {
+                          localStorage.setItem('activeTab', tab.key);
+                        } catch {
+                          // Ignore storage errors
                         }
-                      }
-                      return (
-                        <div key={`${entry.timestamp}-${index}`} className="ops-row">
-                          <span className="ops-row-time">{formatShortTime(entry.timestamp)}</span>
-                          <span className={`ops-row-type ${entry.type || 'info'}`}>{entry.type || 'info'}</span>
-                          <span className="ops-row-text">{message}</span>
-                        </div>
-                      );
-                    })
-                  )}
+                      }}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
                 </div>
               </div>
 
-              <div className="float-col">
-                <h3 className="float-title">Active Trades</h3>
-                <div className="ops-list">
+              <div className="stream-wrapper">
+                {(() => {
+                  const current = tabs.find(t => t.key === activeTab);
+                  return (
+                    <TokenStream
+                      tokens={getFilteredTokens()}
+                      onSelect={(token) => setSelectedTokenAddress(token?.address || null)}
+                      selectedId={selectedToken?.address}
+                      highlightedId={current?.source === 'meme_radar' ? highlighted.meme_radar : highlighted.print_scan}
+                      label={current?.firstLabel}
+                      timeSource={current?.source}
+                      pageSize={20}
+                    />
+                  );
+                })()}
+              </div>
+            </div>
+
+            {/* Middle/Right Column: System Info */}
+            <div className="info-column">
+              {/* Active Trades */}
+              <div className="info-card">
+                <div className="card-header">
+                  <h3>Active Positions</h3>
+                  <span className="badge">{positions.length}</span>
+                </div>
+                <div className="positions-list">
                   {activePositions.length === 0 ? (
-                    <div className="ops-empty">No open positions.</div>
+                    <div className="empty-state">No active positions</div>
                   ) : (
                     activePositions.map((position) => {
                       const symbol = position.symbol || position.mint?.slice(0, 6) || 'UNKNOWN';
                       const pnl = Number.isFinite(position.pnlPct) ? position.pnlPct : 0;
-                      const remaining = Number.isFinite(position.remainingPct) ? position.remainingPct : null;
                       return (
-                        <div key={position.mint} className="ops-row">
-                          <span className="ops-row-title">{symbol}</span>
-                          <span className={`ops-pill ${pnl >= 0 ? 'positive' : 'negative'}`}>
-                            {pnl.toFixed(1)}%
-                          </span>
-                          <span className="ops-row-meta">
-                            {formatAge(position.openAt)} · {remaining === null ? '--' : `${remaining.toFixed(0)}%`} left
+                        <div key={position.mint} className="position-row">
+                          <span className="pos-symbol">{symbol}</span>
+                          <span className="pos-pnl ${pnl >= 0 ? 'positive' : 'negative'}">
+                            {pnl >= 0 ? '+' : ''}{pnl.toFixed(1)}%
                           </span>
                         </div>
                       );
@@ -1605,168 +1633,51 @@ function App() {
                 </div>
               </div>
 
-              {/* User Stats - Only shown when wallet connected */}
-              {userWallet && (
-                <div className="float-col user-stats-col">
-                  <h3 className="float-title">Your Stats</h3>
-                  <div className="user-stats-grid">
-                    <div className="user-stat-item">
-                      <span className="user-stat-label">Balance</span>
-                      <span className="user-stat-value">{userStats?.balance ? `${userStats.balance.toFixed(4)} SOL` : '--'}</span>
-                    </div>
-                    <div className="user-stat-item">
-                      <span className="user-stat-label">Total PnL</span>
-                      <span className={`user-stat-value ${(userStats?.total_pnl_sol || 0) >= 0 ? 'positive' : 'negative'}`}>
-                        {userStats?.total_pnl_sol ? `${userStats.total_pnl_sol >= 0 ? '+' : ''}${userStats.total_pnl_sol.toFixed(4)} SOL` : '0.0000 SOL'}
-                      </span>
-                    </div>
-                    <div className="user-stat-item">
-                      <span className="user-stat-label">Trades</span>
-                      <span className="user-stat-value">{userStats?.total_trades || 0}</span>
-                    </div>
-                    <div className="user-stat-item">
-                      <span className="user-stat-label">Win Rate</span>
-                      <span className="user-stat-value">
-                        {userStats?.total_trades > 0
-                          ? `${((userStats.winning_trades / userStats.total_trades) * 100).toFixed(1)}%`
-                          : '0%'}
-                      </span>
-                    </div>
-                    <div className="user-stat-item">
-                      <span className="user-stat-label">Open Positions</span>
-                      <span className="user-stat-value accent">{userPositions?.length || 0}</span>
-                    </div>
-                    <div className="user-stat-item">
-                      <span className="user-stat-label">Auto Trading</span>
-                      <span className={`user-stat-value ${userConfig?.auto_trading_enabled ? 'positive' : ''}`}>
-                        {userConfig?.auto_trading_enabled ? 'ON' : 'OFF'}
-                      </span>
-                    </div>
-                  </div>
-                  {userPositions && userPositions.length > 0 && (
-                    <div className="user-positions-mini">
-                      <div className="mini-title">Your Positions</div>
-                      {userPositions.slice(0, 3).map((pos) => (
-                        <div key={pos.mint} className="mini-position">
-                          <span className="mini-symbol">{pos.symbol || pos.mint?.slice(0, 6)}</span>
-                          <span className={`mini-pnl ${(pos.pnl_pct || 0) >= 0 ? 'positive' : 'negative'}`}>
-                            {pos.pnl_pct ? `${pos.pnl_pct >= 0 ? '+' : ''}${pos.pnl_pct.toFixed(1)}%` : '0%'}
-                          </span>
-                        </div>
-                      ))}
-                      {userPositions.length > 3 && (
-                        <div className="mini-more">+{userPositions.length - 3} more</div>
-                      )}
-                    </div>
-                  )}
+              {/* System Console */}
+              <div className="info-card console-card">
+                <div className="card-header">
+                  <h3>System Intelligence</h3>
                 </div>
-              )}
-            </div>
-          </div>
-
-          <div className="tab-nav">
-            {tabs.map((tab) => (
-              <button
-                key={tab.key}
-                className={`tab-btn ${activeTab === tab.key ? 'active' : ''}`}
-                onClick={() => {
-                  setActiveTab(tab.key);
-                  try {
-                    localStorage.setItem('activeTab', tab.key);
-                  } catch {
-                    // Ignore storage errors
-                  }
-                }}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-
-          <div className="content-layout">
-            <div className="stream-container">
-              {(() => {
-                const current = tabs.find(t => t.key === activeTab);
-                return (
-                  <TokenStream
-                    tokens={getFilteredTokens()}
-                    onSelect={(token) => setSelectedTokenAddress(token?.address || null)}
-                    selectedId={selectedToken?.address}
-                    highlightedId={current?.source === 'meme_radar' ? highlighted.meme_radar : highlighted.print_scan}
-                    label={current?.firstLabel}
-                    timeSource={current?.source}
-                    pageSize={15}
-                  />
-                );
-              })()}
-            </div>
-
-            <div className="side-panel">
-              <div className="panel-card">
-                <div className="panel-title">Athena Wallet</div>
-                <div className="balance">{balanceSol.toFixed(3)} SOL</div>
-                <div className="panel-note">Always watching. Always ready.</div>
-                <div className="mini-metrics">
-                  <div>Profit retained: {realizedProfit.toFixed(3)} SOL</div>
-                  <div>Distribution pool: {distributionPool.toFixed(3)} SOL</div>
-                </div>
-              </div>
-
-              <div className="panel-card terminal">
-                <div className="panel-title">Internal Monologue</div>
-                <div className="terminal-body">
+                <div className="console-body">
                   {activity.length === 0 ? (
-                    <div className="terminal-line typing">Initializing cognitive model...</div>
+                    <div className="console-line typing">System initializing...</div>
                   ) : (
-                    activity.slice(0, 15).map((entry, i) => (
-                      <div key={i} className="terminal-line">
-                        <span className="log-time">{new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
-                        <span className="log-content">{entry.message}</span>
+                    activity.slice(0, 10).map((entry, i) => (
+                      <div key={i} className="console-line">
+                        <span className="time">{new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                        <span className="msg">{entry.message}</span>
                       </div>
                     ))
                   )}
                 </div>
               </div>
 
-              <div className="panel-card holders-card">
-                <div className="panel-title">Top Holders</div>
-                <div className="holders-list">
-                  <div className="holder-header">
-                    <span>Rank</span>
-                    <span className="holder-address">Wallet</span>
-                    <span className="holder-amount">Balance</span>
-                  </div>
-                  {holders.slice(0, 50).map((h, index) => {
-                    const address = typeof h.address === 'string' ? h.address : '';
-                    const displayAddress = address
-                      ? `${address.slice(0, 6)}...${address.slice(-4)}`
-                      : 'Unknown';
-                    const rawAmount = h.uiAmount ?? h.amount ?? null;
-                    const amountDisplay = rawAmount === null || rawAmount === undefined
-                      ? '-'
-                      : (typeof rawAmount === 'number'
-                        ? rawAmount.toLocaleString(undefined, { maximumFractionDigits: 2 })
-                        : String(rawAmount));
-                    const key = h.address ?? h.rank ?? index;
-                    return (
-                      <div key={key} className="holder-row">
-                        <span className="holder-rank">#{h.rank ?? index + 1}</span>
-                        <span className="holder-address">{displayAddress}</span>
-                        <span className="holder-amount">{amountDisplay}</span>
-                      </div>
-                    );
-                  })}
+              {/* Top Holders */}
+              <div className="info-card holders-card">
+                <div className="card-header">
+                   <h3>Profit Share (Top 50)</h3>
                 </div>
-                {holders.length === 0 && <div className="holders-empty">No holders data yet.</div>}
+                <div className="holders-list-clean">
+                   {holders.slice(0, 50).map((h, index) => (
+                      <div key={h.address || index} className="holder-row-clean">
+                         <span className="rank">#{index + 1}</span>
+                         <span className="address">{h.address ? `${h.address.slice(0,4)}...${h.address.slice(-4)}` : 'Unknown'}</span>
+                         <span className="amount">{(h.uiAmount || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                      </div>
+                   ))}
+                </div>
               </div>
             </div>
 
+            {/* Rightmost: Detail Panel (if selected) */}
             {selectedToken && (
-              <div className="detail-panel desktop-only">
-                <TokenDetail
-                  token={selectedToken}
-                  onClose={() => setSelectedTokenAddress(null)}
-                />
+              <div className="detail-column desktop-only">
+                <div className="sticky-detail">
+                   <TokenDetail
+                     token={selectedToken}
+                     onClose={() => setSelectedTokenAddress(null)}
+                   />
+                </div>
               </div>
             )}
           </div>
@@ -1788,556 +1699,514 @@ function App() {
       )}
 
       <style>{`
+        /* --- General Layout --- */
+        .app {
+          min-height: 100vh;
+          display: flex;
+          flex-direction: column;
+        }
+
         .main-content {
-          max-width: 100%;
+          max-width: 1400px;
           margin: 0 auto;
-          padding: 2rem;
+          padding: 1.5rem;
           width: 100%;
           flex: 1;
           display: flex;
           flex-direction: column;
         }
 
-        .hero {
-          margin-bottom: 3rem;
-          text-align: center;
-          padding-bottom: 1.5rem;
-          border-bottom: 1px solid rgba(212, 175, 55, 0.2);
+        /* --- Landing / Hero --- */
+        .auth-landing {
+          min-height: 100vh;
+          background: var(--bg-primary);
         }
 
-        .hero h1 {
-          font-family: var(--font-serif);
-          font-size: 3.5rem;
-          margin-bottom: 0.5rem;
-          color: #f5f0e8;
-          text-shadow: 0 4px 12px rgba(0,0,0,0.6);
-          letter-spacing: 0.05em;
-        }
-
-        .hero-sub {
-          font-family: var(--font-mono);
-          text-transform: uppercase;
-          font-size: 0.85rem;
-          letter-spacing: 0.15em;
-          color: #d4af37;
-          margin-bottom: 1.5rem;
-          text-shadow: 0 2px 4px rgba(0,0,0,0.8);
-        }
-
-        .hero-desc {
-          max-width: 700px;
-          margin: 0 auto;
-          font-family: var(--font-serif);
-          font-size: 1.2rem;
-          line-height: 1.7;
-          color: rgba(245, 240, 232, 0.95);
-          text-shadow: 0 2px 4px rgba(0,0,0,0.8);
-          font-style: italic;
-        }
-
-        .sound-permission {
-          display: flex;
-          align-items: center;
-          gap: 1rem;
-          margin: 0 auto 2rem;
-          max-width: fit-content;
-          padding: 0.6rem 1.2rem;
-          background: rgba(14, 25, 41, 0.8);
-          border: 1px solid rgba(212, 175, 55, 0.3);
-          border-radius: 50px;
-          color: #f5f0e8;
-          backdrop-filter: blur(8px);
-        }
-
-        .sound-permission button {
-          border: 1px solid rgba(212, 175, 55, 0.4);
-          background: rgba(212, 175, 55, 0.15);
-          padding: 0.35rem 1rem;
-          border-radius: 20px;
-          cursor: pointer;
-          color: #d4af37;
-          transition: all 0.2s ease;
-          font-weight: 600;
-        }
-
-        .sound-permission button:hover {
-          background: rgba(212, 175, 55, 0.3);
-          color: #f5f0e8;
-          box-shadow: 0 0 10px rgba(212, 175, 55, 0.2);
-        }
-
-        /* Deconstructed Window - Now Floating Glass Cards */
-        /* Ops Replacement Styles - Roman Ticker & Floating Lists */
-        .ops-dashboard {
-          margin-bottom: 3rem;
-        }
-
-        .ops-header-floating {
-           display: flex;
-           align-items: center;
-           justify-content: center;
-           gap: 1.5rem;
-           margin-bottom: 2rem;
-        }
-
-        .ops-title-text {
-           font-family: var(--font-serif);
-           font-size: 2rem;
-           color: #f5f0e8;
-           text-shadow: 0 0 10px rgba(212, 175, 55, 0.4);
-           letter-spacing: 0.05em;
-        }
-
-        .ops-status-pill {
-           font-family: var(--font-mono);
-           font-size: 0.75rem;
-           padding: 0.3rem 0.8rem;
-           border: 1px solid rgba(212, 175, 55, 0.5);
-           border-radius: 4px; /* Sharp Roman */
-           color: #d4af37;
-           background: rgba(14, 25, 41, 0.6);
-           backdrop-filter: blur(4px);
-           letter-spacing: 0.1em;
-        }
-
-        .roman-ticker {
-           background: linear-gradient(90deg, 
-              rgba(11, 26, 47, 0.9) 0%, 
-              rgba(14, 25, 41, 0.8) 50%, 
-              rgba(11, 26, 47, 0.9) 100%
-           );
-           backdrop-filter: blur(10px);
-           -webkit-backdrop-filter: blur(10px);
-           border-top: 1px solid rgba(212, 175, 55, 0.5);
-           border-bottom: 1px solid rgba(212, 175, 55, 0.5);
-           padding: 0.8rem 0;
-           margin-bottom: 3rem;
-           width: 100vw;
-           margin-left: calc(-50vw + 50%); /* Full break-out */
-           margin-right: calc(-50vw + 50%);
-           box-shadow: 0 0 30px rgba(0,0,0,0.5);
-           overflow-x: auto;
-           display: flex;
-           align-items: center;
-        }
-        
-        /* Hide scrollbar for clean ticker look */
-        .roman-ticker::-webkit-scrollbar {
-            display: none;
-        }
-        
-        .ticker-content {
-           display: flex;
-           align-items: center;
-           justify-content: center; /* Center content if short, scroll if long */
-           width: 100%;
-           gap: 2.5rem;
-           min-width: max-content;
-           padding: 0 2rem;
-           color: rgba(245, 240, 232, 0.8);
-           font-family: var(--font-mono);
-           font-size: 0.85rem;
-           text-transform: uppercase;
-           letter-spacing: 0.1em;
-        }
-        
-        .ticker-content strong {
-            color: #ffd700; /* Bright Gold */
-            text-shadow: 0 0 5px rgba(255, 215, 0, 0.3);
-            margin-left: 0.4rem;
-        }
-        
-        .sep {
-            color: rgba(212, 175, 55, 0.4);
-            font-size: 0.6rem;
-            transform: rotate(45deg);
-        }
-
-        .floating-columns {
-           display: grid;
-           grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-           gap: 3rem;
-           padding: 0 1rem;
-        }
-        
-        .float-col {
-           display: flex;
-           flex-direction: column;
-        }
-        
-        .float-title {
-           font-family: var(--font-serif);
-           color: #d4af37;
-           font-size: 1.25rem;
-           margin-bottom: 1.5rem;
-           text-align: center;
-           text-transform: uppercase;
-           letter-spacing: 0.15em;
-           padding-bottom: 0.5rem;
-           border-bottom: 1px solid rgba(212, 175, 55, 0.2);
-           text-shadow: 0 2px 4px rgba(0,0,0,0.5);
-        }
-
-        .ops-list {
-          display: flex;
-          flex-direction: column;
-          gap: 0.8rem;
-          font-size: 0.8rem;
-          color: rgba(245, 240, 232, 0.8);
-        }
-        
-        .ops-empty {
-            font-style: italic;
-            opacity: 0.6;
-            text-align: center;
-            padding: 2rem 0;
-        }
-
-        .ops-row {
-          display: grid;
-          grid-template-columns: auto auto 1fr;
-          gap: 0.8rem;
-          align-items: center;
-          padding: 0.5rem;
-          border-radius: 8px;
-          background: rgba(255, 255, 255, 0.03);
-          transition: background 0.2s ease;
-        }
-        
-        .ops-row:hover {
-            background: rgba(255, 255, 255, 0.08);
-        }
-
-        .ops-row-time {
-          color: rgba(245, 240, 232, 0.5);
-          font-variant-numeric: tabular-nums;
-        }
-
-        .ops-row-type {
-          padding: 0.2rem 0.5rem;
-          border-radius: 6px;
-          font-size: 0.7rem;
-          text-transform: uppercase;
-          letter-spacing: 0.05em;
-          background: rgba(255, 255, 255, 0.1);
-          color: #f5f0e8;
-          font-weight: 600;
-        }
-
-        .ops-row-type.trade {
-          color: #67e8f9;
-          background: rgba(34, 211, 238, 0.2);
-          border: 1px solid rgba(34, 211, 238, 0.3);
-        }
-
-        .ops-row-type.signal {
-          color: #fde047;
-          background: rgba(250, 204, 21, 0.2);
-          border: 1px solid rgba(250, 204, 21, 0.3);
-        }
-        
-        .ops-row-text {
-          color: #e2e8f0;
-        }
-
-        .ops-stat {
-           display: flex;
-           justify-content: space-between;
-           align-items: center;
-           padding: 0.6rem 0;
-           border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-        }
-        
-        .ops-stat:last-child {
-            border-bottom: none;
-        }
-        
-        .ops-stat span {
-            color: rgba(245, 240, 232, 0.6);
-        }
-        
-        .ops-stat strong {
-            color: #d4af37;
-            font-family: var(--font-mono);
-        }
-
-        .ops-pill.negative {
-          color: #fca5a5;
-          background: rgba(239, 68, 68, 0.2);
-        }
-
-        .ops-empty {
-          color: var(--text-muted);
-          font-size: 0.75rem;
-        }
-
-        .ops-stats {
+        .hero-split-layout {
           display: grid;
           grid-template-columns: 1fr 1fr;
-          gap: 0.6rem 1rem;
-          font-size: 0.75rem;
+          gap: 4rem;
+          align-items: center;
+          padding: 4rem 1.5rem;
+          max-width: 1200px;
+          margin: 0 auto;
         }
 
-        .ops-stat {
+        .hero-text-col {
+          display: flex;
+          flex-direction: column;
+          gap: 1.5rem;
+        }
+
+        .hero-video-col {
+          display: flex;
+          justify-content: center;
+          align-items: center;
+        }
+        
+        .video-frame {
+           width: 100%;
+           aspect-ratio: 16/9;
+           border-radius: 20px;
+           overflow: hidden;
+           box-shadow: var(--shadow-lg);
+           border: 1px solid var(--border-color);
+           background: #000;
+           position: relative;
+        }
+        
+        .hero-video-element {
+           width: 100%;
+           height: 100%;
+           display: block;
+        }
+
+        .visual-section {
+           max-width: 1000px;
+           margin: 0 auto 4rem;
+           padding: 0 1.5rem;
+        }
+        
+        .visual-container {
+           width: 100%;
+           aspect-ratio: 16/9;
+           border-radius: 20px;
+           overflow: hidden;
+           box-shadow: var(--shadow-lg);
+           border: 1px solid var(--border-color);
+           background: #000;
+        }
+
+        .hero-badge {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.5rem;
+          padding: 0.5rem 1rem;
+          background: var(--bg-secondary);
+          border: 1px solid var(--border-color);
+          border-radius: 50px;
+          width: fit-content;
+        }
+
+        .badge-dot {
+          width: 8px;
+          height: 8px;
+          background: var(--accent-secondary);
+          border-radius: 50%;
+          box-shadow: 0 0 10px rgba(16, 185, 129, 0.4);
+        }
+
+        .badge-text {
+          font-family: var(--font-mono);
+          font-size: 0.75rem;
+          letter-spacing: 0.05em;
+          color: var(--text-secondary);
+          font-weight: 600;
+        }
+
+        .auth-title {
+          font-size: 4.5rem;
+          line-height: 1.1;
+          margin: 0;
+          letter-spacing: -0.02em;
+          font-weight: 700;
+        }
+
+        .title-gradient {
+          background: var(--primary-gradient);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+        }
+
+        .auth-subtitle {
+          font-family: var(--font-mono);
+          font-size: 1.1rem;
+          color: var(--text-secondary);
+          margin: 0;
+        }
+
+        .hero-description {
+          font-size: 1.1rem;
+          line-height: 1.6;
+          color: var(--text-secondary);
+          max-width: 500px;
+        }
+
+        .cta-section {
+          margin-top: 1rem;
+        }
+
+        .auth-cta {
+          display: inline-flex;
+          align-items: center;
+          gap: 1rem;
+          padding: 1rem 2rem;
+          background: var(--primary-gradient);
+          border: none;
+          border-radius: 12px;
+          color: #fff;
+          font-weight: 600;
+          font-size: 1.1rem;
+          cursor: pointer;
+          transition: transform 0.2s, box-shadow 0.2s;
+          box-shadow: 0 4px 15px rgba(37, 99, 235, 0.3);
+        }
+
+        .auth-cta:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 8px 25px rgba(37, 99, 235, 0.4);
+        }
+
+        .cta-subtext {
+          margin-top: 1rem;
+          font-size: 0.85rem;
+          color: var(--text-muted);
+        }
+
+        .cta-token-gate {
+          margin-top: 0.5rem;
+          font-size: 0.85rem;
+          color: var(--accent-primary);
+          background: var(--bg-secondary);
+          padding: 0.5rem 1rem;
+          border-radius: 8px;
+          display: inline-block;
+          border: 1px solid var(--border-color);
+        }
+
+        .stats-grid {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 1.5rem;
+          max-width: 800px;
+          margin: 0 auto 4rem;
+          padding: 0 1.5rem;
+        }
+
+        .stat-item {
+          text-align: center;
+          padding: 1.5rem;
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
+          border-radius: 16px;
+          box-shadow: var(--shadow-sm);
+        }
+
+        .stat-item .stat-value {
+          font-size: 2rem;
+          font-weight: 700;
+          color: var(--text-primary);
+          margin-bottom: 0.5rem;
+          font-family: var(--font-mono);
+        }
+
+        .stat-item .stat-label {
+          font-size: 0.9rem;
+          color: var(--text-secondary);
+        }
+
+        /* --- Dashboard Layout --- */
+        .dashboard-stats-bar {
+          display: flex;
+          gap: 1.5rem;
+          margin-bottom: 2rem;
+          overflow-x: auto;
+          padding-bottom: 0.5rem;
+        }
+
+        .stat-pill {
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
+          padding: 1rem 1.5rem;
+          border-radius: 12px;
           display: flex;
           flex-direction: column;
           gap: 0.25rem;
-          color: var(--text-secondary);
-        }
-
-        .ops-stat strong {
-          color: var(--text-primary);
-          font-size: 0.9rem;
-          font-variant-numeric: tabular-nums;
-        }
-        
-        .tab-nav {
-          display: flex;
-          gap: 2rem;
-          margin-bottom: 2rem;
-          border-bottom: 1px solid var(--border-color);
-        }
-        
-        .tab-btn {
-          background: none;
-          border: none;
-          padding: 1rem 0;
-          font-family: var(--font-serif);
-          font-size: 1.1rem;
-          color: var(--text-secondary);
-          cursor: pointer;
-          position: relative;
-          transition: color 0.2s;
-        }
-        
-        .tab-btn:hover {
-          color: var(--text-primary);
-        }
-        
-        .tab-btn.active {
-          color: var(--text-primary);
-          font-weight: 700;
-        }
-        
-        .tab-btn.active::after {
-          content: '';
-          position: absolute;
-          bottom: -1px;
-          left: 0;
-          width: 100%;
-          height: 2px;
-          background: var(--accent-primary);
-        }
-        
-        .content-layout {
-          display: grid;
-          grid-template-columns: ${selectedToken ? '1fr 340px 360px' : '1fr 340px'};
-          gap: 2rem;
-          flex: 1;
-          align-items: start;
-        }
-        
-        .stream-container {
-          background: var(--bg-card);
-          border: 1px solid var(--border-color);
-          border-radius: 8px;
-          overflow: hidden;
+          min-width: 140px;
           box-shadow: var(--shadow-sm);
         }
-        
-        .detail-panel {
-          position: sticky;
-          top: 100px;
+
+        .stat-pill .stat-label {
+          font-size: 0.75rem;
+          text-transform: uppercase;
+          color: var(--text-muted);
+          font-weight: 600;
         }
 
-        .side-panel {
+        .stat-pill .stat-value {
+          font-family: var(--font-mono);
+          font-size: 1.25rem;
+          font-weight: 600;
+          color: var(--text-primary);
+        }
+        
+        .stat-pill .stat-value.highlight {
+           color: var(--accent-secondary);
+        }
+
+        .stat-value-live {
+          font-family: var(--font-mono);
+          font-size: 1rem;
+          color: var(--accent-secondary);
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+        }
+
+        .stat-value-live::before {
+          content: '';
+          width: 8px;
+          height: 8px;
+          background: var(--accent-secondary);
+          border-radius: 50%;
+          box-shadow: 0 0 8px var(--accent-secondary);
+        }
+
+        .dashboard-grid {
+          display: grid;
+          grid-template-columns: 1fr 350px;
+          gap: 1.5rem;
+          height: calc(100vh - 200px);
+        }
+
+        /* Detail column (3 columns layout) */
+        @media (min-width: 1400px) {
+           .dashboard-grid:has(.detail-column) {
+              grid-template-columns: 1fr 300px 320px;
+           }
+        }
+
+        .feed-column {
           display: flex;
           flex-direction: column;
           gap: 1rem;
-          position: sticky;
-          top: 100px;
+          overflow: hidden;
         }
 
-        .panel-card {
+        .feed-header {
+           display: flex;
+           justify-content: space-between;
+           align-items: center;
+        }
+
+        .tab-nav-clean {
+           display: flex;
+           gap: 1rem;
+           background: var(--bg-secondary);
+           padding: 0.5rem;
+           border-radius: 10px;
+           border: 1px solid var(--border-color);
+        }
+        
+        .clean-tab {
+           background: transparent;
+           border: none;
+           padding: 0.5rem 1rem;
+           border-radius: 8px;
+           color: var(--text-secondary);
+           cursor: pointer;
+           font-weight: 500;
+           transition: all 0.2s;
+        }
+        
+        .clean-tab:hover {
+           color: var(--text-primary);
+           background: var(--bg-hover);
+        }
+        
+        .clean-tab.active {
+           background: var(--bg-card);
+           color: var(--accent-primary);
+           box-shadow: var(--shadow-sm);
+        }
+
+        .stream-wrapper {
+           flex: 1;
+           overflow-y: auto;
+           padding-right: 0.5rem;
+        }
+
+        .info-column {
+          display: flex;
+          flex-direction: column;
+          gap: 1rem;
+          overflow-y: auto;
+          padding-right: 0.25rem;
+        }
+
+        .info-card {
           background: var(--bg-card);
           border: 1px solid var(--border-color);
-          border-radius: 10px;
-          padding: 1rem 1.25rem;
+          border-radius: 12px;
+          padding: 1.25rem;
           box-shadow: var(--shadow-sm);
         }
 
-        .panel-title {
-          font-family: var(--font-serif);
-          font-size: 0.95rem;
-          margin-bottom: 0.5rem;
-          color: var(--text-primary);
-        }
-
-        .balance {
-          font-family: var(--font-mono);
-          font-size: 1.4rem;
-          color: var(--accent-primary);
-        }
-
-        .panel-note {
-          margin-top: 0.25rem;
-          color: var(--text-muted);
-          font-size: 0.8rem;
-        }
-
-        .mini-metrics {
-          margin-top: 0.6rem;
-          font-size: 0.75rem;
-          color: var(--text-secondary);
+        .card-header {
           display: flex;
-          flex-direction: column;
-          gap: 0.2rem;
-        }
-
-        .terminal {
-          background: rgba(0, 0, 0, 0.85); /* Keep Terminal slightly darker */
-          border: 1px solid rgba(255, 255, 255, 0.1);
-          color: #e0e0e0;
-          backdrop-filter: blur(8px);
-        }
-
-        .terminal .panel-title {
-          color: #888;
-          font-family: var(--font-mono);
-          text-transform: uppercase;
-          font-size: 0.7rem;
-          letter-spacing: 0.1em;
-          border-bottom: 1px solid #333;
-          padding-bottom: 0.5rem;
-          margin-bottom: 0.8rem;
-        }
-
-        .terminal-body {
-          display: flex;
-          flex-direction: column;
-          gap: 0;
-          font-family: 'JetBrains Mono', monospace;
-          font-size: 0.75rem;
-          max-height: 350px;
-          overflow-y: auto;
-        }
-
-        .terminal-line {
-          display: flex;
-          gap: 0.8rem;
-          padding: 0.4rem 0;
-          border-bottom: 1px solid #252525;
-          line-height: 1.4;
-          background: transparent;
-          box-shadow: none;
-          border-radius: 0;
-        }
-
-        .log-time {
-          color: #666;
-          min-width: 65px;
-        }
-
-        .log-content {
-          color: #ccc;
-        }
-
-        .typing {
-          color: var(--accent-primary);
-          animation: blink 1s infinite;
-        }
-
-        @keyframes blink {
-          50% { opacity: 0.5; }
-        }
-
-        .holders-list {
-          font-family: var(--font-mono);
-          font-size: 0.75rem;
-          color: var(--text-secondary);
-          margin-top: 0.35rem;
-          max-height: 520px;
-          overflow-y: auto;
-          padding-right: 0.35rem;
-        }
-
-        .holders-card {
-          padding: 1rem 1.25rem 0.9rem;
-        }
-
-        .holder-header {
-          display: grid;
-          grid-template-columns: 58px 1fr 110px;
+          justify-content: space-between;
           align-items: center;
-          padding: 0.35rem 0;
-          font-size: 0.65rem;
-          text-transform: uppercase;
-          letter-spacing: 0.08em;
-          color: var(--text-muted);
-          border-bottom: 1px solid var(--border-color);
+          margin-bottom: 1rem;
         }
 
-        .holder-row {
-          display: grid;
-          grid-template-columns: 58px 1fr 110px;
-          align-items: center;
-          padding: 0.4rem 0;
-          border-bottom: 1px solid var(--border-color);
-        }
-
-        .holder-rank {
-          color: var(--text-muted);
-          font-variant-numeric: tabular-nums;
-        }
-
-        .holder-address {
+        .card-header h3 {
+          font-size: 1rem;
+          margin: 0;
           color: var(--text-primary);
-          text-align: right;
-          font-variant-numeric: tabular-nums;
         }
 
-        .holder-amount {
-          color: var(--text-primary);
-          text-align: right;
-          font-variant-numeric: tabular-nums;
-        }
-
-        .holders-empty {
-          margin-top: 0.6rem;
-          color: var(--text-muted);
+        .badge {
+          background: var(--bg-secondary);
+          color: var(--text-secondary);
+          padding: 0.2rem 0.6rem;
+          border-radius: 12px;
           font-size: 0.75rem;
+          font-weight: 600;
+          border: 1px solid var(--border-color);
         }
 
-        /* Mobile: stack columns to avoid horizontal overflow (do not affect desktop) */
+        .positions-list {
+           display: flex;
+           flex-direction: column;
+           gap: 0.75rem;
+        }
+
+        .position-row {
+           display: flex;
+           justify-content: space-between;
+           padding: 0.75rem;
+           background: var(--bg-secondary);
+           border-radius: 8px;
+           border: 1px solid var(--border-color);
+        }
+        
+        .pos-symbol {
+           font-weight: 600;
+           color: var(--text-primary);
+        }
+        
+        .pos-pnl {
+           font-family: var(--font-mono);
+           font-weight: 600;
+        }
+        
+        .pos-pnl.positive { color: var(--accent-secondary); }
+        .pos-pnl.negative { color: #ef4444; }
+
+        .console-card {
+           min-height: 200px;
+        }
+        
+        .console-body {
+           font-family: 'JetBrains Mono', monospace;
+           font-size: 0.8rem;
+           color: var(--text-secondary);
+           display: flex;
+           flex-direction: column;
+           gap: 0.5rem;
+           max-height: 200px;
+           overflow-y: auto;
+        }
+        
+        .console-line {
+           display: flex;
+           gap: 0.75rem;
+        }
+        
+        .console-line .time {
+           color: var(--text-muted);
+           min-width: 60px;
+        }
+        
+        .console-line .msg {
+           color: var(--text-primary);
+        }
+
+        .holders-list-clean {
+           display: flex;
+           flex-direction: column;
+           gap: 0.5rem;
+           max-height: 300px;
+           overflow-y: auto;
+        }
+        
+        .holder-row-clean {
+           display: grid;
+           grid-template-columns: 30px 1fr 80px;
+           align-items: center;
+           padding: 0.5rem;
+           background: var(--bg-secondary);
+           border-radius: 6px;
+           font-size: 0.85rem;
+        }
+        
+        .holder-row-clean .rank {
+           color: var(--accent-primary);
+           font-weight: 600;
+        }
+        
+        .holder-row-clean .address {
+           font-family: var(--font-mono);
+           color: var(--text-secondary);
+        }
+        
+        .holder-row-clean .amount {
+           text-align: right;
+           font-family: var(--font-mono);
+           color: var(--text-primary);
+        }
+
+        .detail-column {
+           height: 100%;
+           overflow-y: auto;
+        }
+        
+        .sticky-detail {
+           position: sticky;
+           top: 0;
+        }
+        
+        .empty-state {
+           text-align: center;
+           color: var(--text-muted);
+           padding: 2rem;
+           font-style: italic;
+        }
+
         @media (max-width: 900px) {
-          .main-content {
-            padding: 1rem;
-          }
-
-          .ops-grid {
-            grid-template-columns: 1fr;
-          }
-
-          .content-layout {
-            grid-template-columns: 1fr !important;
-            gap: 1rem;
-          }
-
-          .side-panel,
-          .detail-panel {
-            position: static;
-            top: auto;
-          }
-
-          .tab-nav {
-            gap: 1rem;
-            overflow-x: auto;
-            -webkit-overflow-scrolling: touch;
-          }
-
-          .tab-btn {
-            flex: 0 0 auto;
-          }
+           .hero-split-layout {
+              grid-template-columns: 1fr;
+              gap: 2rem;
+              padding: 2rem 1rem;
+           }
+           
+           .auth-title {
+              font-size: 3rem;
+           }
+           
+           .dashboard-stats-bar {
+              flex-wrap: nowrap;
+              overflow-x: auto;
+              padding-bottom: 1rem;
+           }
+           
+           .dashboard-grid {
+              grid-template-columns: 1fr;
+              height: auto;
+              overflow: visible;
+           }
+           
+           .info-column {
+              overflow: visible;
+           }
+           
+           .desktop-only {
+              display: none;
+           }
+           
+           .mobile-only {
+              display: block;
+           }
         }
       `}</style>
     </div>
@@ -2347,9 +2216,9 @@ function App() {
 function ActivityItem({ token }) {
   const formatMcap = (mcap) => {
     if (!mcap || !Number.isFinite(mcap)) return 'N/A';
-    if (mcap >= 1e6) return `$${(mcap / 1e6).toFixed(2)}M`;
-    if (mcap >= 1e3) return `$${(mcap / 1e3).toFixed(1)}K`;
-    return `$${mcap.toFixed(0)}`;
+    if (mcap >= 1e6) return '$' + (mcap / 1e6).toFixed(2) + 'M';
+    if (mcap >= 1e3) return '$' + (mcap / 1e3).toFixed(1) + 'K';
+    return '$' + mcap.toFixed(0);
   };
 
   const formatTime = (timestamp) => {
@@ -2465,12 +2334,12 @@ function ActivityItem({ token }) {
         }
 
         .activity-change.positive {
-          color: #86efac;
-          background: rgba(34, 197, 94, 0.1);
+          color: #10b981;
+          background: rgba(16, 185, 129, 0.1);
         }
 
         .activity-change.negative {
-          color: #fca5a5;
+          color: #ef4444;
           background: rgba(239, 68, 68, 0.1);
         }
 

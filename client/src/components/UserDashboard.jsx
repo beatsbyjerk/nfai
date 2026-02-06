@@ -579,16 +579,17 @@ export function UserDashboard({
 
       <style>{`
         .user-dashboard {
-          background: rgba(11, 22, 36, 0.95);
+          background: var(--bg-card);
           backdrop-filter: blur(20px);
-          border: 1px solid rgba(255, 255, 255, 0.1);
+          border: 1px solid var(--border-color);
           border-radius: 16px;
           padding: 1.5rem;
           max-width: 700px;
           width: 100%;
           max-height: 85vh;
           overflow-y: auto;
-          box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
+          box-shadow: var(--shadow-lg);
+          color: var(--text-primary);
         }
 
         .dashboard-header {
@@ -597,7 +598,7 @@ export function UserDashboard({
           align-items: center;
           margin-bottom: 1.5rem;
           padding-bottom: 1rem;
-          border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+          border-bottom: 1px solid var(--border-color);
         }
 
         .dashboard-title-section {
@@ -619,8 +620,8 @@ export function UserDashboard({
           align-items: center;
           gap: 0.4rem;
           padding: 0.3rem 0.7rem;
-          background: linear-gradient(135deg, rgba(212, 175, 55, 0.15), rgba(212, 175, 55, 0.05));
-          border: 1px solid rgba(212, 175, 55, 0.3);
+          background: var(--bg-secondary);
+          border: 1px solid var(--border-color);
           border-radius: 6px;
           font-family: var(--font-mono);
           font-size: 0.75rem;
@@ -646,7 +647,7 @@ export function UserDashboard({
           width: 36px;
           height: 36px;
           background: transparent;
-          border: 1px solid rgba(255, 255, 255, 0.1);
+          border: 1px solid var(--border-color);
           border-radius: 8px;
           color: var(--text-secondary);
           cursor: pointer;
@@ -654,15 +655,15 @@ export function UserDashboard({
         }
 
         .btn-icon:hover {
-          background: rgba(255, 255, 255, 0.05);
+          background: var(--bg-hover);
           border-color: var(--accent-primary);
           color: var(--accent-primary);
         }
 
         /* Balance Display */
         .balance-display {
-          background: linear-gradient(135deg, rgba(0, 255, 157, 0.1), rgba(0, 200, 100, 0.05));
-          border: 1px solid rgba(0, 255, 157, 0.25);
+          background: linear-gradient(135deg, rgba(37, 99, 235, 0.1), rgba(37, 99, 235, 0.05));
+          border: 1px solid rgba(37, 99, 235, 0.2);
           border-radius: 12px;
           padding: 1.25rem 1.5rem;
           margin-bottom: 1.5rem;
@@ -688,7 +689,7 @@ export function UserDashboard({
           font-family: var(--font-mono);
           font-size: 2.2rem;
           font-weight: 700;
-          color: var(--accent-secondary);
+          color: var(--accent-primary);
           letter-spacing: -0.02em;
         }
 
@@ -712,31 +713,33 @@ export function UserDashboard({
         .withdraw-btn {
           margin-top: 1rem;
           padding: 0.75rem 2rem;
-          background: linear-gradient(135deg, #d4af37, #b8962e);
+          background: var(--primary-gradient);
           border: none;
           border-radius: 8px;
-          color: #000;
+          color: #fff;
           font-weight: 700;
           font-size: 0.9rem;
           cursor: pointer;
           transition: all 0.2s ease;
+          box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
         }
 
         .withdraw-btn:hover:not(:disabled) {
           transform: translateY(-2px);
-          box-shadow: 0 4px 20px rgba(212, 175, 55, 0.4);
+          box-shadow: 0 6px 16px rgba(37, 99, 235, 0.4);
         }
 
         .withdraw-btn:disabled {
           opacity: 0.5;
           cursor: not-allowed;
+          box-shadow: none;
         }
 
         /* Withdrawal Modal */
         .withdraw-modal-overlay {
           position: fixed;
           inset: 0;
-          background: rgba(0, 0, 0, 0.85);
+          background: rgba(0, 0, 0, 0.6);
           display: flex;
           align-items: center;
           justify-content: center;
@@ -745,12 +748,13 @@ export function UserDashboard({
         }
 
         .withdraw-modal {
-          background: linear-gradient(135deg, rgba(30, 30, 40, 0.98), rgba(20, 20, 30, 0.98));
-          border: 1px solid rgba(212, 175, 55, 0.3);
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
           border-radius: 16px;
           width: 90%;
           max-width: 420px;
           overflow: hidden;
+          box-shadow: var(--shadow-lg);
         }
 
         .modal-header {
@@ -758,13 +762,13 @@ export function UserDashboard({
           justify-content: space-between;
           align-items: center;
           padding: 1.25rem 1.5rem;
-          border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+          border-bottom: 1px solid var(--border-color);
         }
 
         .modal-header h3 {
           margin: 0;
           font-size: 1.2rem;
-          color: var(--accent-gold);
+          color: var(--text-primary);
         }
 
         .modal-close {
@@ -778,7 +782,7 @@ export function UserDashboard({
         }
 
         .modal-close:hover {
-          color: #fff;
+          color: var(--text-primary);
         }
 
         .modal-body {
@@ -786,8 +790,8 @@ export function UserDashboard({
         }
 
         .modal-balance {
-          background: rgba(0, 255, 157, 0.08);
-          border: 1px solid rgba(0, 255, 157, 0.2);
+          background: var(--bg-secondary);
+          border: 1px solid var(--border-color);
           border-radius: 8px;
           padding: 1rem;
           margin-bottom: 1.5rem;
@@ -796,7 +800,7 @@ export function UserDashboard({
         }
 
         .modal-balance strong {
-          color: var(--accent-secondary);
+          color: var(--accent-primary);
           font-family: var(--font-mono);
         }
 
@@ -821,16 +825,17 @@ export function UserDashboard({
         .modal-field input {
           width: 100%;
           padding: 0.75rem 1rem;
-          background: rgba(255, 255, 255, 0.05);
-          border: 1px solid rgba(255, 255, 255, 0.15);
+          background: var(--bg-secondary);
+          border: 1px solid var(--border-color);
           border-radius: 8px;
-          color: #fff;
+          color: var(--text-primary);
           font-size: 1rem;
         }
 
         .modal-field input:focus {
           outline: none;
-          border-color: var(--accent-gold);
+          border-color: var(--accent-primary);
+          background: var(--bg-card);
         }
 
         .amount-input-row {
@@ -844,10 +849,10 @@ export function UserDashboard({
 
         .max-btn {
           padding: 0.75rem 1rem;
-          background: rgba(212, 175, 55, 0.2);
-          border: 1px solid rgba(212, 175, 55, 0.3);
+          background: var(--bg-hover);
+          border: 1px solid var(--border-color);
           border-radius: 8px;
-          color: var(--accent-gold);
+          color: var(--accent-primary);
           font-weight: 600;
           font-size: 0.8rem;
           cursor: pointer;
@@ -855,13 +860,14 @@ export function UserDashboard({
         }
 
         .max-btn:hover:not(:disabled) {
-          background: rgba(212, 175, 55, 0.3);
+          background: var(--bg-secondary);
+          border-color: var(--accent-primary);
         }
 
         .modal-error {
-          background: rgba(255, 87, 87, 0.15);
-          border: 1px solid rgba(255, 87, 87, 0.3);
-          color: #ff5757;
+          background: rgba(239, 68, 68, 0.1);
+          border: 1px solid rgba(239, 68, 68, 0.2);
+          color: #ef4444;
           padding: 0.75rem;
           border-radius: 8px;
           margin-bottom: 1rem;
@@ -869,9 +875,9 @@ export function UserDashboard({
         }
 
         .modal-success {
-          background: rgba(0, 255, 157, 0.15);
-          border: 1px solid rgba(0, 255, 157, 0.3);
-          color: #00ff9d;
+          background: rgba(16, 185, 129, 0.1);
+          border: 1px solid rgba(16, 185, 129, 0.2);
+          color: #10b981;
           padding: 0.75rem;
           border-radius: 8px;
           margin-bottom: 1rem;
@@ -881,24 +887,26 @@ export function UserDashboard({
         .modal-submit-btn {
           width: 100%;
           padding: 1rem;
-          background: linear-gradient(135deg, #d4af37, #b8962e);
+          background: var(--primary-gradient);
           border: none;
           border-radius: 8px;
-          color: #000;
+          color: #fff;
           font-weight: 700;
           font-size: 1rem;
           cursor: pointer;
           transition: all 0.2s ease;
+          box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
         }
 
         .modal-submit-btn:hover:not(:disabled) {
           transform: translateY(-2px);
-          box-shadow: 0 4px 20px rgba(212, 175, 55, 0.4);
+          box-shadow: 0 6px 16px rgba(37, 99, 235, 0.4);
         }
 
         .modal-submit-btn:disabled {
           opacity: 0.5;
           cursor: not-allowed;
+          box-shadow: none;
         }
 
         @keyframes shimmer {
@@ -915,8 +923,8 @@ export function UserDashboard({
         }
 
         .stat-card {
-          background: rgba(255, 255, 255, 0.03);
-          border: 1px solid rgba(255, 255, 255, 0.06);
+          background: var(--bg-secondary);
+          border: 1px solid var(--border-color);
           border-radius: 10px;
           padding: 1rem;
           text-align: center;
@@ -947,8 +955,9 @@ export function UserDashboard({
           gap: 0.5rem;
           margin-bottom: 1.5rem;
           padding: 0.25rem;
-          background: rgba(255, 255, 255, 0.02);
+          background: var(--bg-secondary);
           border-radius: 10px;
+          border: 1px solid var(--border-color);
         }
 
         .tab-btn {
@@ -969,14 +978,15 @@ export function UserDashboard({
         }
 
         .tab-btn:hover {
-          background: rgba(255, 255, 255, 0.03);
+          background: var(--bg-hover);
           color: var(--text-primary);
         }
 
         .tab-btn.active {
-          background: rgba(212, 175, 55, 0.15);
+          background: var(--bg-card);
           color: var(--accent-primary);
-          border: 1px solid rgba(212, 175, 55, 0.3);
+          border: 1px solid var(--border-color);
+          box-shadow: var(--shadow-sm);
         }
 
         .tab-icon {
@@ -1022,8 +1032,8 @@ export function UserDashboard({
         }
 
         .position-card {
-          background: rgba(255, 255, 255, 0.03);
-          border: 1px solid rgba(255, 255, 255, 0.08);
+          background: var(--bg-secondary);
+          border: 1px solid var(--border-color);
           border-radius: 10px;
           padding: 1rem;
         }
@@ -1081,15 +1091,15 @@ export function UserDashboard({
         }
 
         .config-group {
-          background: rgba(255, 255, 255, 0.02);
-          border: 1px solid rgba(255, 255, 255, 0.06);
+          background: var(--bg-secondary);
+          border: 1px solid var(--border-color);
           border-radius: 12px;
           padding: 1.25rem;
         }
 
         .config-group.featured {
-          background: linear-gradient(135deg, rgba(212, 175, 55, 0.08), rgba(212, 175, 55, 0.02));
-          border-color: rgba(212, 175, 55, 0.2);
+          background: linear-gradient(135deg, rgba(37, 99, 235, 0.05), rgba(37, 99, 235, 0.01));
+          border-color: rgba(37, 99, 235, 0.1);
         }
 
         .config-group-title {
@@ -1128,8 +1138,8 @@ export function UserDashboard({
         .input-group {
           display: flex;
           align-items: center;
-          background: rgba(5, 10, 20, 0.6);
-          border: 1px solid rgba(255, 255, 255, 0.1);
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
           border-radius: 8px;
           overflow: hidden;
         }
@@ -1146,7 +1156,7 @@ export function UserDashboard({
         }
 
         .config-input:focus {
-          background: rgba(255, 255, 255, 0.02);
+          background: var(--bg-hover);
         }
 
         .config-input.positive { color: var(--accent-secondary); }
@@ -1185,14 +1195,16 @@ export function UserDashboard({
         .toggle-track {
           width: 48px;
           height: 26px;
-          background: rgba(255, 255, 255, 0.1);
+          background: var(--text-muted);
           border-radius: 13px;
           position: relative;
           transition: all 0.2s ease;
+          opacity: 0.3;
         }
 
         .toggle-btn.active .toggle-track {
-          background: linear-gradient(135deg, var(--accent-primary), #F59E0B);
+          background: var(--accent-primary);
+          opacity: 1;
         }
 
         .toggle-thumb {
@@ -1235,25 +1247,27 @@ export function UserDashboard({
           align-items: center;
           gap: 0.5rem;
           padding: 0.85rem 1.5rem;
-          background: linear-gradient(135deg, var(--accent-primary), #F59E0B);
+          background: var(--primary-gradient);
           border: none;
           border-radius: 10px;
-          color: #050A14;
+          color: #fff;
           font-weight: 600;
           font-size: 0.9rem;
           cursor: pointer;
           transition: all 0.2s ease;
+          box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
         }
 
         .btn-primary:hover {
           transform: translateY(-2px);
-          box-shadow: 0 8px 24px rgba(212, 175, 55, 0.3);
+          box-shadow: 0 8px 20px rgba(37, 99, 235, 0.4);
         }
 
         .btn-primary:disabled {
           opacity: 0.6;
           cursor: not-allowed;
           transform: none;
+          box-shadow: none;
         }
 
         .save-icon {
@@ -1263,8 +1277,8 @@ export function UserDashboard({
         .spinner {
           width: 16px;
           height: 16px;
-          border: 2px solid rgba(5, 10, 20, 0.3);
-          border-top-color: #050A14;
+          border: 2px solid rgba(255, 255, 255, 0.3);
+          border-top-color: #fff;
           border-radius: 50%;
           animation: spin 0.8s linear infinite;
         }
@@ -1284,8 +1298,8 @@ export function UserDashboard({
           display: flex;
           align-items: center;
           gap: 1rem;
-          background: rgba(255, 255, 255, 0.03);
-          border: 1px solid rgba(255, 255, 255, 0.06);
+          background: var(--bg-secondary);
+          border: 1px solid var(--border-color);
           border-radius: 10px;
           padding: 1rem;
         }
@@ -1295,8 +1309,8 @@ export function UserDashboard({
         }
 
         .stat-detail-card.highlight {
-          background: linear-gradient(135deg, rgba(0, 255, 157, 0.08), rgba(0, 255, 157, 0.02));
-          border-color: rgba(0, 255, 157, 0.2);
+          background: linear-gradient(135deg, rgba(37, 99, 235, 0.05), rgba(37, 99, 235, 0.01));
+          border-color: rgba(37, 99, 235, 0.1);
         }
 
         .stat-detail-icon {
@@ -1328,7 +1342,7 @@ export function UserDashboard({
         .dashboard-footer {
           margin-top: 1.5rem;
           padding-top: 1rem;
-          border-top: 1px solid rgba(255, 255, 255, 0.06);
+          border-top: 1px solid var(--border-color);
           display: flex;
           justify-content: center;
         }

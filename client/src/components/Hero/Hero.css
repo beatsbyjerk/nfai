@@ -12,7 +12,7 @@
 .hero-section {
     position: relative;
     width: 100%;
-    min-height: 90vh;
+    min-height: 100vh;
     background: var(--hero-bg);
     /* Subtle background grid/mesh */
     background-image:
@@ -25,8 +25,9 @@
     align-items: center;
     justify-content: center;
     overflow: hidden;
-    padding-top: 80px;
-    /* Space for fixed header if any */
+    padding-top: 0;
+    margin-top: -80px;
+    /* Overlap header so it's not visible when viewing hero */
 }
 
 .hero-content-wrapper {
@@ -36,7 +37,7 @@
     padding: 0 2rem;
     display: grid;
     grid-template-columns: 1.2fr 1fr;
-    gap: 4rem;
+    gap: 5rem;
     align-items: center;
 }
 
@@ -73,7 +74,7 @@
 
 .hero-headline {
     font-family: 'Uncut Sans', sans-serif;
-    font-size: 4rem;
+    font-size: 5rem;
     line-height: 1.1;
     font-weight: 700;
     color: var(--hero-text);
@@ -82,6 +83,7 @@
 
 .gradient-text {
     background: linear-gradient(135deg, #FFF 0%, #D4AF37 100%);
+    background-clip: text;
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
 }
@@ -196,7 +198,7 @@
 /* Right Column */
 .hero-visual-col {
     position: relative;
-    height: 600px;
+    height: 700px;
     display: flex;
     align-items: center;
     justify-content: center;
