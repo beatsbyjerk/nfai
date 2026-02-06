@@ -33,8 +33,8 @@ export function Header({ connected, soundEnabled, onToggleSound, authWallet, lic
           {userWallet ? (
             <button className="user-wallet-btn connected" onClick={onOpenDashboard}>
               <span className="wallet-indicator"></span>
+              <span className="dashboard-label">Dashboard</span>
               <span className="wallet-text">{userWallet.slice(0, 4)}...{userWallet.slice(-4)}</span>
-              <span className="dashboard-icon">📊</span>
             </button>
           ) : (
             <button className="user-wallet-btn" onClick={onOpenWalletConnect}>
@@ -127,23 +127,24 @@ export function Header({ connected, soundEnabled, onToggleSound, authWallet, lic
         }
 
         .user-wallet-btn.connected {
-          background: rgba(0, 255, 157, 0.08);
-          border-color: rgba(0, 255, 157, 0.3);
+          background: linear-gradient(135deg, rgba(0, 255, 157, 0.2), rgba(0, 200, 100, 0.1));
+          border: 2px solid rgba(0, 255, 157, 0.5);
           color: var(--accent-secondary);
+          padding: 0.6rem 1.2rem;
         }
 
         .user-wallet-btn.connected:hover {
-          background: rgba(0, 255, 157, 0.15);
+          background: linear-gradient(135deg, rgba(0, 255, 157, 0.3), rgba(0, 200, 100, 0.15));
           border-color: var(--accent-secondary);
-          box-shadow: 0 4px 16px rgba(0, 255, 157, 0.2);
+          box-shadow: 0 4px 20px rgba(0, 255, 157, 0.3);
         }
 
         .wallet-indicator {
-          width: 8px;
-          height: 8px;
+          width: 10px;
+          height: 10px;
           background: var(--accent-secondary);
           border-radius: 50%;
-          box-shadow: 0 0 8px var(--accent-secondary);
+          box-shadow: 0 0 10px var(--accent-secondary);
           animation: pulse 2s infinite;
         }
 
@@ -152,9 +153,20 @@ export function Header({ connected, soundEnabled, onToggleSound, authWallet, lic
           50% { opacity: 0.5; }
         }
 
+        .dashboard-label {
+          font-weight: 700;
+          font-size: 0.9rem;
+          color: #00FF9D;
+          letter-spacing: 0.02em;
+        }
+
         .wallet-text {
           font-family: var(--font-mono);
-          font-size: 0.8rem;
+          font-size: 0.75rem;
+          color: rgba(255, 255, 255, 0.6);
+          background: rgba(0, 0, 0, 0.2);
+          padding: 0.15rem 0.4rem;
+          border-radius: 4px;
         }
 
         .connect-icon {
