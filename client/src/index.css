@@ -794,7 +794,7 @@ h6 {
     word-break: break-all;
 }
 
-/* User Dashboard Overlay */
+/* User Dashboard Overlay (legacy - keeping for reference) */
 .user-dashboard-overlay {
     position: fixed;
     inset: 0;
@@ -806,6 +806,28 @@ h6 {
     z-index: 1000;
     padding: 1rem;
     animation: fadeIn 0.2s ease-out;
+}
+
+/* User Dashboard Full Page */
+.user-dashboard-page {
+    position: fixed;
+    inset: 0;
+    background: var(--bg-primary);
+    z-index: 100;
+    padding: 2rem;
+    overflow-y: auto;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding-top: 4rem;
+    animation: fadeIn 0.2s ease-out;
+}
+
+.user-dashboard-page .user-dashboard {
+    max-width: 900px;
+    width: 100%;
+    max-height: none;
+    box-shadow: 0 0 60px rgba(0, 0, 0, 0.4);
 }
 
 @keyframes fadeIn {

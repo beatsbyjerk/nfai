@@ -5,417 +5,472 @@ import { useState, useEffect } from 'react';
  * Matches existing NFAi design language with glassmorphism and gold accents
  */
 export function UserDashboard({
-    userWallet,
-    userConfig,
-    userPositions,
-    userStats,
-    onUpdateConfig,
-    onLogout,
-    onClose
+  userWallet,
+  userConfig,
+  userPositions,
+  userStats,
+  onUpdateConfig,
+  onLogout,
+  onClose
 }) {
-    const [activeTab, setActiveTab] = useState('positions');
-    const [editingConfig, setEditingConfig] = useState(false);
-    const [configForm, setConfigForm] = useState({
-        trade_amount_sol: userConfig?.trade_amount_sol || 0.2,
-        stop_loss_pct: userConfig?.stop_loss_pct || -30,
-        take_profit_pct: userConfig?.take_profit_pct || 100,
-        take_profit_sell_pct: userConfig?.take_profit_sell_pct || 75,
-        trailing_stop_pct: userConfig?.trailing_stop_pct || 25,
-        min_sol_entry: userConfig?.min_sol_entry || 0.05,
-        max_sol_entry: userConfig?.max_sol_entry || 1.0,
-        auto_trading_enabled: userConfig?.auto_trading_enabled || false,
-    });
-    const [saving, setSaving] = useState(false);
+  const [activeTab, setActiveTab] = useState('positions');
+  const [editingConfig, setEditingConfig] = useState(false);
+  const [configForm, setConfigForm] = useState({
+    trade_amount_sol: userConfig?.trade_amount_sol || 0.2,
+    stop_loss_pct: userConfig?.stop_loss_pct || -30,
+    take_profit_pct: userConfig?.take_profit_pct || 100,
+    take_profit_sell_pct: userConfig?.take_profit_sell_pct || 75,
+    trailing_stop_pct: userConfig?.trailing_stop_pct || 25,
+    min_sol_entry: userConfig?.min_sol_entry || 0.05,
+    max_sol_entry: userConfig?.max_sol_entry || 1.0,
+    auto_trading_enabled: userConfig?.auto_trading_enabled || false,
+  });
+  const [saving, setSaving] = useState(false);
 
-    useEffect(() => {
-        if (userConfig) {
-            setConfigForm({
-                trade_amount_sol: userConfig.trade_amount_sol || 0.2,
-                stop_loss_pct: userConfig.stop_loss_pct || -30,
-                take_profit_pct: userConfig.take_profit_pct || 100,
-                take_profit_sell_pct: userConfig.take_profit_sell_pct || 75,
-                trailing_stop_pct: userConfig.trailing_stop_pct || 25,
-                min_sol_entry: userConfig.min_sol_entry || 0.05,
-                max_sol_entry: userConfig.max_sol_entry || 1.0,
-                auto_trading_enabled: userConfig.auto_trading_enabled || false,
-            });
+  useEffect(() => {
+    if (userConfig) {
+      setConfigForm({
+        trade_amount_sol: userConfig.trade_amount_sol || 0.2,
+        stop_loss_pct: userConfig.stop_loss_pct || -30,
+        take_profit_pct: userConfig.take_profit_pct || 100,
+        take_profit_sell_pct: userConfig.take_profit_sell_pct || 75,
+        trailing_stop_pct: userConfig.trailing_stop_pct || 25,
+        min_sol_entry: userConfig.min_sol_entry || 0.05,
+        max_sol_entry: userConfig.max_sol_entry || 1.0,
+        auto_trading_enabled: userConfig.auto_trading_enabled || false,
+      });
+    }
+  }, [userConfig]);
+
+  const handleSaveConfig = async () => {
+    setSaving(true);
+    try {
+      await onUpdateConfig(configForm);
+      setEditingConfig(false);
+    } catch (err) {
+      console.error('Failed to save config:', err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const formatPercent = (value) => {
+    const num = parseFloat(value);
+    if (!Number.isFinite(num)) return '0%';
+    return `${num > 0 ? '+' : ''}${num.toFixed(1)}%`;
+  };
+
+  const formatSol = (value) => {
+    const num = parseFloat(value);
+    if (!Number.isFinite(num)) return '0.00';
+    return num.toFixed(4);
+  };
+
+  const formatMcap = (value) => {
+    const num = parseFloat(value);
+    if (!Number.isFinite(num) || num <= 0) return '$0';
+    if (num >= 1e9) return `$${(num / 1e9).toFixed(2)}B`;
+    if (num >= 1e6) return `$${(num / 1e6).toFixed(2)}M`;
+    if (num >= 1e3) return `$${(num / 1e3).toFixed(1)}K`;
+    return `$${num.toFixed(0)}`;
+  };
+
+  const winRate = userStats?.total_trades > 0
+    ? ((userStats.winning_trades / userStats.total_trades) * 100).toFixed(1)
+    : '0.0';
+
+  // SOL Balance state
+  const [solBalance, setSolBalance] = useState(null);
+  const [loadingBalance, setLoadingBalance] = useState(false);
+
+  // Fetch SOL balance from RPC
+  useEffect(() => {
+    if (!userWallet) return;
+
+    const fetchBalance = async () => {
+      setLoadingBalance(true);
+      try {
+        const response = await fetch('https://api.mainnet-beta.solana.com', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: 1,
+            method: 'getBalance',
+            params: [userWallet]
+          })
+        });
+        const data = await response.json();
+        if (data.result?.value !== undefined) {
+          setSolBalance(data.result.value / 1e9); // Convert lamports to SOL
         }
-    }, [userConfig]);
-
-    const handleSaveConfig = async () => {
-        setSaving(true);
-        try {
-            await onUpdateConfig(configForm);
-            setEditingConfig(false);
-        } catch (err) {
-            console.error('Failed to save config:', err);
-        } finally {
-            setSaving(false);
-        }
+      } catch (err) {
+        console.error('Failed to fetch balance:', err);
+      } finally {
+        setLoadingBalance(false);
+      }
     };
 
-    const formatPercent = (value) => {
-        const num = parseFloat(value);
-        if (!Number.isFinite(num)) return '0%';
-        return `${num > 0 ? '+' : ''}${num.toFixed(1)}%`;
-    };
+    fetchBalance();
+    // Refresh every 30 seconds
+    const interval = setInterval(fetchBalance, 30000);
+    return () => clearInterval(interval);
+  }, [userWallet]);
 
-    const formatSol = (value) => {
-        const num = parseFloat(value);
-        if (!Number.isFinite(num)) return '0.00';
-        return num.toFixed(4);
-    };
+  return (
+    <div className="user-dashboard">
+      {/* Header with wallet info and close/logout */}
+      <div className="dashboard-header">
+        <div className="dashboard-title-section">
+          <h2 className="dashboard-title">Trading Dashboard</h2>
+          <div className="wallet-badge">
+            <span className="wallet-icon">◈</span>
+            <span className="wallet-address">
+              {userWallet?.slice(0, 6)}...{userWallet?.slice(-4)}
+            </span>
+          </div>
+        </div>
+        <div className="dashboard-actions">
+          <button className="btn-icon" onClick={onClose} title="Close Dashboard">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+      </div>
 
-    const formatMcap = (value) => {
-        const num = parseFloat(value);
-        if (!Number.isFinite(num) || num <= 0) return '$0';
-        if (num >= 1e9) return `$${(num / 1e9).toFixed(2)}B`;
-        if (num >= 1e6) return `$${(num / 1e6).toFixed(2)}M`;
-        if (num >= 1e3) return `$${(num / 1e3).toFixed(1)}K`;
-        return `$${num.toFixed(0)}`;
-    };
+      {/* Balance Display */}
+      <div className="balance-display">
+        <div className="balance-label">Wallet Balance</div>
+        <div className="balance-value">
+          {loadingBalance ? (
+            <span className="loading-shimmer">Loading...</span>
+          ) : solBalance !== null ? (
+            <>
+              <span className="sol-amount">{solBalance.toFixed(4)}</span>
+              <span className="sol-symbol">SOL</span>
+            </>
+          ) : (
+            <span className="balance-error">--</span>
+          )}
+        </div>
+      </div>
 
-    const winRate = userStats?.total_trades > 0
-        ? ((userStats.winning_trades / userStats.total_trades) * 100).toFixed(1)
-        : '0.0';
+      {/* Stats Overview Cards */}
+      <div className="stats-overview">
+        <div className="stat-card">
+          <div className="stat-label">Total PnL</div>
+          <div className={`stat-value ${(userStats?.total_pnl_sol || 0) >= 0 ? 'positive' : 'negative'}`}>
+            {formatSol(userStats?.total_pnl_sol || 0)} SOL
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Win Rate</div>
+          <div className="stat-value">{winRate}%</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Total Trades</div>
+          <div className="stat-value">{userStats?.total_trades || 0}</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Open Positions</div>
+          <div className="stat-value accent">{userPositions?.length || 0}</div>
+        </div>
+      </div>
 
-    return (
-        <div className="user-dashboard">
-            {/* Header with wallet info and close/logout */}
-            <div className="dashboard-header">
-                <div className="dashboard-title-section">
-                    <h2 className="dashboard-title">Trading Dashboard</h2>
-                    <div className="wallet-badge">
-                        <span className="wallet-icon">◈</span>
-                        <span className="wallet-address">
-                            {userWallet?.slice(0, 6)}...{userWallet?.slice(-4)}
-                        </span>
+      {/* Tab Navigation */}
+      <div className="dashboard-tabs">
+        <button
+          className={`tab-btn ${activeTab === 'positions' ? 'active' : ''}`}
+          onClick={() => setActiveTab('positions')}
+        >
+          <span className="tab-icon">📊</span>
+          Positions
+        </button>
+        <button
+          className={`tab-btn ${activeTab === 'config' ? 'active' : ''}`}
+          onClick={() => setActiveTab('config')}
+        >
+          <span className="tab-icon">⚙️</span>
+          Configuration
+        </button>
+        <button
+          className={`tab-btn ${activeTab === 'stats' ? 'active' : ''}`}
+          onClick={() => setActiveTab('stats')}
+        >
+          <span className="tab-icon">📈</span>
+          Statistics
+        </button>
+      </div>
+
+      {/* Tab Content */}
+      <div className="dashboard-content">
+        {/* Positions Tab */}
+        {activeTab === 'positions' && (
+          <div className="positions-section">
+            {(!userPositions || userPositions.length === 0) ? (
+              <div className="empty-state">
+                <div className="empty-icon">📭</div>
+                <p>No open positions</p>
+                <span className="empty-hint">
+                  {configForm.auto_trading_enabled
+                    ? 'Your trades will appear here when NFAi signals trigger'
+                    : 'Enable auto-trading in Configuration to start sniping'}
+                </span>
+              </div>
+            ) : (
+              <div className="positions-grid">
+                {userPositions.map((pos) => (
+                  <div key={pos.mint} className="position-card">
+                    <div className="position-header">
+                      <span className="position-symbol">{pos.symbol || pos.mint?.slice(0, 6)}</span>
+                      <span className={`position-pnl ${pos.pnl_pct >= 0 ? 'positive' : 'negative'}`}>
+                        {formatPercent(pos.pnl_pct)}
+                      </span>
                     </div>
-                </div>
-                <div className="dashboard-actions">
-                    <button className="btn-icon" onClick={onClose} title="Close Dashboard">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <line x1="18" y1="6" x2="6" y2="18" />
-                            <line x1="6" y1="6" x2="18" y2="18" />
-                        </svg>
-                    </button>
-                </div>
-            </div>
-
-            {/* Stats Overview Cards */}
-            <div className="stats-overview">
-                <div className="stat-card">
-                    <div className="stat-label">Total PnL</div>
-                    <div className={`stat-value ${(userStats?.total_pnl_sol || 0) >= 0 ? 'positive' : 'negative'}`}>
-                        {formatSol(userStats?.total_pnl_sol || 0)} SOL
+                    <div className="position-details">
+                      <div className="detail-row">
+                        <span className="detail-label">Entry</span>
+                        <span className="detail-value">{formatMcap(pos.entry_mcap)}</span>
+                      </div>
+                      <div className="detail-row">
+                        <span className="detail-label">Current</span>
+                        <span className="detail-value">{formatMcap(pos.max_mcap)}</span>
+                      </div>
+                      <div className="detail-row">
+                        <span className="detail-label">Size</span>
+                        <span className="detail-value">{formatSol(pos.amount_sol)} SOL</span>
+                      </div>
+                      <div className="detail-row">
+                        <span className="detail-label">Remaining</span>
+                        <span className="detail-value">{pos.remaining_pct}%</span>
+                      </div>
                     </div>
-                </div>
-                <div className="stat-card">
-                    <div className="stat-label">Win Rate</div>
-                    <div className="stat-value">{winRate}%</div>
-                </div>
-                <div className="stat-card">
-                    <div className="stat-label">Total Trades</div>
-                    <div className="stat-value">{userStats?.total_trades || 0}</div>
-                </div>
-                <div className="stat-card">
-                    <div className="stat-label">Open Positions</div>
-                    <div className="stat-value accent">{userPositions?.length || 0}</div>
-                </div>
-            </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
-            {/* Tab Navigation */}
-            <div className="dashboard-tabs">
+        {/* Configuration Tab */}
+        {activeTab === 'config' && (
+          <div className="config-section">
+            {/* Auto Trading Toggle */}
+            <div className="config-group featured">
+              <div className="config-row toggle-row">
+                <div className="config-info">
+                  <label className="config-label">Auto Trading</label>
+                  <span className="config-hint">Automatically trade when NFAi signals trigger</span>
+                </div>
                 <button
-                    className={`tab-btn ${activeTab === 'positions' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('positions')}
+                  className={`toggle-btn ${configForm.auto_trading_enabled ? 'active' : ''}`}
+                  onClick={() => setConfigForm(prev => ({ ...prev, auto_trading_enabled: !prev.auto_trading_enabled }))}
                 >
-                    <span className="tab-icon">📊</span>
-                    Positions
+                  <span className="toggle-track">
+                    <span className="toggle-thumb" />
+                  </span>
+                  <span className="toggle-label">{configForm.auto_trading_enabled ? 'ON' : 'OFF'}</span>
                 </button>
-                <button
-                    className={`tab-btn ${activeTab === 'config' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('config')}
-                >
-                    <span className="tab-icon">⚙️</span>
-                    Configuration
-                </button>
-                <button
-                    className={`tab-btn ${activeTab === 'stats' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('stats')}
-                >
-                    <span className="tab-icon">📈</span>
-                    Statistics
-                </button>
+              </div>
             </div>
 
-            {/* Tab Content */}
-            <div className="dashboard-content">
-                {/* Positions Tab */}
-                {activeTab === 'positions' && (
-                    <div className="positions-section">
-                        {(!userPositions || userPositions.length === 0) ? (
-                            <div className="empty-state">
-                                <div className="empty-icon">📭</div>
-                                <p>No open positions</p>
-                                <span className="empty-hint">
-                                    {configForm.auto_trading_enabled
-                                        ? 'Your trades will appear here when NFAi signals trigger'
-                                        : 'Enable auto-trading in Configuration to start sniping'}
-                                </span>
-                            </div>
-                        ) : (
-                            <div className="positions-grid">
-                                {userPositions.map((pos) => (
-                                    <div key={pos.mint} className="position-card">
-                                        <div className="position-header">
-                                            <span className="position-symbol">{pos.symbol || pos.mint?.slice(0, 6)}</span>
-                                            <span className={`position-pnl ${pos.pnl_pct >= 0 ? 'positive' : 'negative'}`}>
-                                                {formatPercent(pos.pnl_pct)}
-                                            </span>
-                                        </div>
-                                        <div className="position-details">
-                                            <div className="detail-row">
-                                                <span className="detail-label">Entry</span>
-                                                <span className="detail-value">{formatMcap(pos.entry_mcap)}</span>
-                                            </div>
-                                            <div className="detail-row">
-                                                <span className="detail-label">Current</span>
-                                                <span className="detail-value">{formatMcap(pos.max_mcap)}</span>
-                                            </div>
-                                            <div className="detail-row">
-                                                <span className="detail-label">Size</span>
-                                                <span className="detail-value">{formatSol(pos.amount_sol)} SOL</span>
-                                            </div>
-                                            <div className="detail-row">
-                                                <span className="detail-label">Remaining</span>
-                                                <span className="detail-value">{pos.remaining_pct}%</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                )}
-
-                {/* Configuration Tab */}
-                {activeTab === 'config' && (
-                    <div className="config-section">
-                        {/* Auto Trading Toggle */}
-                        <div className="config-group featured">
-                            <div className="config-row toggle-row">
-                                <div className="config-info">
-                                    <label className="config-label">Auto Trading</label>
-                                    <span className="config-hint">Automatically trade when NFAi signals trigger</span>
-                                </div>
-                                <button
-                                    className={`toggle-btn ${configForm.auto_trading_enabled ? 'active' : ''}`}
-                                    onClick={() => setConfigForm(prev => ({ ...prev, auto_trading_enabled: !prev.auto_trading_enabled }))}
-                                >
-                                    <span className="toggle-track">
-                                        <span className="toggle-thumb" />
-                                    </span>
-                                    <span className="toggle-label">{configForm.auto_trading_enabled ? 'ON' : 'OFF'}</span>
-                                </button>
-                            </div>
-                        </div>
-
-                        {/* Trade Size Configuration */}
-                        <div className="config-group">
-                            <h3 className="config-group-title">Trade Size</h3>
-                            <div className="config-grid">
-                                <div className="config-item">
-                                    <label className="config-label">Amount per Trade</label>
-                                    <div className="input-group">
-                                        <input
-                                            type="number"
-                                            step="0.01"
-                                            min="0.01"
-                                            value={configForm.trade_amount_sol}
-                                            onChange={(e) => setConfigForm(prev => ({ ...prev, trade_amount_sol: parseFloat(e.target.value) || 0 }))}
-                                            className="config-input"
-                                        />
-                                        <span className="input-suffix">SOL</span>
-                                    </div>
-                                </div>
-                                <div className="config-item">
-                                    <label className="config-label">Min Entry</label>
-                                    <div className="input-group">
-                                        <input
-                                            type="number"
-                                            step="0.01"
-                                            min="0.01"
-                                            value={configForm.min_sol_entry}
-                                            onChange={(e) => setConfigForm(prev => ({ ...prev, min_sol_entry: parseFloat(e.target.value) || 0 }))}
-                                            className="config-input"
-                                        />
-                                        <span className="input-suffix">SOL</span>
-                                    </div>
-                                </div>
-                                <div className="config-item">
-                                    <label className="config-label">Max Entry</label>
-                                    <div className="input-group">
-                                        <input
-                                            type="number"
-                                            step="0.1"
-                                            min="0.1"
-                                            value={configForm.max_sol_entry}
-                                            onChange={(e) => setConfigForm(prev => ({ ...prev, max_sol_entry: parseFloat(e.target.value) || 0 }))}
-                                            className="config-input"
-                                        />
-                                        <span className="input-suffix">SOL</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Risk Management Configuration */}
-                        <div className="config-group">
-                            <h3 className="config-group-title">Risk Management</h3>
-                            <div className="config-grid">
-                                <div className="config-item">
-                                    <label className="config-label">Stop Loss</label>
-                                    <div className="input-group">
-                                        <input
-                                            type="number"
-                                            step="1"
-                                            max="0"
-                                            value={configForm.stop_loss_pct}
-                                            onChange={(e) => setConfigForm(prev => ({ ...prev, stop_loss_pct: parseFloat(e.target.value) || 0 }))}
-                                            className="config-input negative"
-                                        />
-                                        <span className="input-suffix">%</span>
-                                    </div>
-                                    <span className="config-hint">Exit when loss exceeds this %</span>
-                                </div>
-                                <div className="config-item">
-                                    <label className="config-label">Take Profit</label>
-                                    <div className="input-group">
-                                        <input
-                                            type="number"
-                                            step="10"
-                                            min="0"
-                                            value={configForm.take_profit_pct}
-                                            onChange={(e) => setConfigForm(prev => ({ ...prev, take_profit_pct: parseFloat(e.target.value) || 0 }))}
-                                            className="config-input positive"
-                                        />
-                                        <span className="input-suffix">%</span>
-                                    </div>
-                                    <span className="config-hint">Target profit to trigger sell</span>
-                                </div>
-                                <div className="config-item">
-                                    <label className="config-label">TP Sell %</label>
-                                    <div className="input-group">
-                                        <input
-                                            type="number"
-                                            step="5"
-                                            min="1"
-                                            max="100"
-                                            value={configForm.take_profit_sell_pct}
-                                            onChange={(e) => setConfigForm(prev => ({ ...prev, take_profit_sell_pct: parseFloat(e.target.value) || 0 }))}
-                                            className="config-input"
-                                        />
-                                        <span className="input-suffix">%</span>
-                                    </div>
-                                    <span className="config-hint">% of position to sell at TP</span>
-                                </div>
-                                <div className="config-item">
-                                    <label className="config-label">Trailing Stop</label>
-                                    <div className="input-group">
-                                        <input
-                                            type="number"
-                                            step="5"
-                                            min="0"
-                                            value={configForm.trailing_stop_pct}
-                                            onChange={(e) => setConfigForm(prev => ({ ...prev, trailing_stop_pct: parseFloat(e.target.value) || 0 }))}
-                                            className="config-input"
-                                        />
-                                        <span className="input-suffix">%</span>
-                                    </div>
-                                    <span className="config-hint">Exit when drops this % from peak</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Save Button */}
-                        <div className="config-actions">
-                            <button
-                                className="btn-primary save-btn"
-                                onClick={handleSaveConfig}
-                                disabled={saving}
-                            >
-                                {saving ? (
-                                    <>
-                                        <span className="spinner" />
-                                        Saving...
-                                    </>
-                                ) : (
-                                    <>
-                                        <span className="save-icon">✓</span>
-                                        Save Configuration
-                                    </>
-                                )}
-                            </button>
-                        </div>
-                    </div>
-                )}
-
-                {/* Statistics Tab */}
-                {activeTab === 'stats' && (
-                    <div className="stats-section">
-                        <div className="stats-grid-detailed">
-                            <div className="stat-detail-card">
-                                <div className="stat-detail-icon">🎯</div>
-                                <div className="stat-detail-content">
-                                    <div className="stat-detail-value">{userStats?.winning_trades || 0}</div>
-                                    <div className="stat-detail-label">Winning Trades</div>
-                                </div>
-                            </div>
-                            <div className="stat-detail-card">
-                                <div className="stat-detail-icon">❌</div>
-                                <div className="stat-detail-content">
-                                    <div className="stat-detail-value">{userStats?.losing_trades || 0}</div>
-                                    <div className="stat-detail-label">Losing Trades</div>
-                                </div>
-                            </div>
-                            <div className="stat-detail-card highlight">
-                                <div className="stat-detail-icon">💰</div>
-                                <div className="stat-detail-content">
-                                    <div className="stat-detail-value positive">{formatSol(userStats?.largest_win_sol || 0)} SOL</div>
-                                    <div className="stat-detail-label">Largest Win</div>
-                                </div>
-                            </div>
-                            <div className="stat-detail-card">
-                                <div className="stat-detail-icon">📉</div>
-                                <div className="stat-detail-content">
-                                    <div className="stat-detail-value negative">{formatSol(userStats?.largest_loss_sol || 0)} SOL</div>
-                                    <div className="stat-detail-label">Largest Loss</div>
-                                </div>
-                            </div>
-                            <div className="stat-detail-card full-width">
-                                <div className="stat-detail-icon">📊</div>
-                                <div className="stat-detail-content">
-                                    <div className={`stat-detail-value ${(userStats?.realized_profit_sol || 0) >= 0 ? 'positive' : 'negative'}`}>
-                                        {formatSol(userStats?.realized_profit_sol || 0)} SOL
-                                    </div>
-                                    <div className="stat-detail-label">Realized Profit</div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                )}
+            {/* Trade Size Configuration */}
+            <div className="config-group">
+              <h3 className="config-group-title">Trade Size</h3>
+              <div className="config-grid">
+                <div className="config-item">
+                  <label className="config-label">Amount per Trade</label>
+                  <div className="input-group">
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      value={configForm.trade_amount_sol}
+                      onChange={(e) => setConfigForm(prev => ({ ...prev, trade_amount_sol: parseFloat(e.target.value) || 0 }))}
+                      className="config-input"
+                    />
+                    <span className="input-suffix">SOL</span>
+                  </div>
+                </div>
+                <div className="config-item">
+                  <label className="config-label">Min Entry</label>
+                  <div className="input-group">
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      value={configForm.min_sol_entry}
+                      onChange={(e) => setConfigForm(prev => ({ ...prev, min_sol_entry: parseFloat(e.target.value) || 0 }))}
+                      className="config-input"
+                    />
+                    <span className="input-suffix">SOL</span>
+                  </div>
+                </div>
+                <div className="config-item">
+                  <label className="config-label">Max Entry</label>
+                  <div className="input-group">
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="0.1"
+                      value={configForm.max_sol_entry}
+                      onChange={(e) => setConfigForm(prev => ({ ...prev, max_sol_entry: parseFloat(e.target.value) || 0 }))}
+                      className="config-input"
+                    />
+                    <span className="input-suffix">SOL</span>
+                  </div>
+                </div>
+              </div>
             </div>
 
-            {/* Footer with Logout */}
-            <div className="dashboard-footer">
-                <button className="btn-logout" onClick={onLogout}>
-                    <span className="logout-icon">⏏</span>
-                    Disconnect Wallet
-                </button>
+            {/* Risk Management Configuration */}
+            <div className="config-group">
+              <h3 className="config-group-title">Risk Management</h3>
+              <div className="config-grid">
+                <div className="config-item">
+                  <label className="config-label">Stop Loss</label>
+                  <div className="input-group">
+                    <input
+                      type="number"
+                      step="1"
+                      max="0"
+                      value={configForm.stop_loss_pct}
+                      onChange={(e) => setConfigForm(prev => ({ ...prev, stop_loss_pct: parseFloat(e.target.value) || 0 }))}
+                      className="config-input negative"
+                    />
+                    <span className="input-suffix">%</span>
+                  </div>
+                  <span className="config-hint">Exit when loss exceeds this %</span>
+                </div>
+                <div className="config-item">
+                  <label className="config-label">Take Profit</label>
+                  <div className="input-group">
+                    <input
+                      type="number"
+                      step="10"
+                      min="0"
+                      value={configForm.take_profit_pct}
+                      onChange={(e) => setConfigForm(prev => ({ ...prev, take_profit_pct: parseFloat(e.target.value) || 0 }))}
+                      className="config-input positive"
+                    />
+                    <span className="input-suffix">%</span>
+                  </div>
+                  <span className="config-hint">Target profit to trigger sell</span>
+                </div>
+                <div className="config-item">
+                  <label className="config-label">TP Sell %</label>
+                  <div className="input-group">
+                    <input
+                      type="number"
+                      step="5"
+                      min="1"
+                      max="100"
+                      value={configForm.take_profit_sell_pct}
+                      onChange={(e) => setConfigForm(prev => ({ ...prev, take_profit_sell_pct: parseFloat(e.target.value) || 0 }))}
+                      className="config-input"
+                    />
+                    <span className="input-suffix">%</span>
+                  </div>
+                  <span className="config-hint">% of position to sell at TP</span>
+                </div>
+                <div className="config-item">
+                  <label className="config-label">Trailing Stop</label>
+                  <div className="input-group">
+                    <input
+                      type="number"
+                      step="5"
+                      min="0"
+                      value={configForm.trailing_stop_pct}
+                      onChange={(e) => setConfigForm(prev => ({ ...prev, trailing_stop_pct: parseFloat(e.target.value) || 0 }))}
+                      className="config-input"
+                    />
+                    <span className="input-suffix">%</span>
+                  </div>
+                  <span className="config-hint">Exit when drops this % from peak</span>
+                </div>
+              </div>
             </div>
 
-            <style>{`
+            {/* Save Button */}
+            <div className="config-actions">
+              <button
+                className="btn-primary save-btn"
+                onClick={handleSaveConfig}
+                disabled={saving}
+              >
+                {saving ? (
+                  <>
+                    <span className="spinner" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <span className="save-icon">✓</span>
+                    Save Configuration
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Statistics Tab */}
+        {activeTab === 'stats' && (
+          <div className="stats-section">
+            <div className="stats-grid-detailed">
+              <div className="stat-detail-card">
+                <div className="stat-detail-icon">🎯</div>
+                <div className="stat-detail-content">
+                  <div className="stat-detail-value">{userStats?.winning_trades || 0}</div>
+                  <div className="stat-detail-label">Winning Trades</div>
+                </div>
+              </div>
+              <div className="stat-detail-card">
+                <div className="stat-detail-icon">❌</div>
+                <div className="stat-detail-content">
+                  <div className="stat-detail-value">{userStats?.losing_trades || 0}</div>
+                  <div className="stat-detail-label">Losing Trades</div>
+                </div>
+              </div>
+              <div className="stat-detail-card highlight">
+                <div className="stat-detail-icon">💰</div>
+                <div className="stat-detail-content">
+                  <div className="stat-detail-value positive">{formatSol(userStats?.largest_win_sol || 0)} SOL</div>
+                  <div className="stat-detail-label">Largest Win</div>
+                </div>
+              </div>
+              <div className="stat-detail-card">
+                <div className="stat-detail-icon">📉</div>
+                <div className="stat-detail-content">
+                  <div className="stat-detail-value negative">{formatSol(userStats?.largest_loss_sol || 0)} SOL</div>
+                  <div className="stat-detail-label">Largest Loss</div>
+                </div>
+              </div>
+              <div className="stat-detail-card full-width">
+                <div className="stat-detail-icon">📊</div>
+                <div className="stat-detail-content">
+                  <div className={`stat-detail-value ${(userStats?.realized_profit_sol || 0) >= 0 ? 'positive' : 'negative'}`}>
+                    {formatSol(userStats?.realized_profit_sol || 0)} SOL
+                  </div>
+                  <div className="stat-detail-label">Realized Profit</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Footer with Logout */}
+      <div className="dashboard-footer">
+        <button className="btn-logout" onClick={onLogout}>
+          <span className="logout-icon">⏏</span>
+          Disconnect Wallet
+        </button>
+      </div>
+
+      <style>{`
         .user-dashboard {
           background: rgba(11, 22, 36, 0.95);
           backdrop-filter: blur(20px);
@@ -495,6 +550,60 @@ export function UserDashboard({
           background: rgba(255, 255, 255, 0.05);
           border-color: var(--accent-primary);
           color: var(--accent-primary);
+        }
+
+        /* Balance Display */
+        .balance-display {
+          background: linear-gradient(135deg, rgba(0, 255, 157, 0.1), rgba(0, 200, 100, 0.05));
+          border: 1px solid rgba(0, 255, 157, 0.25);
+          border-radius: 12px;
+          padding: 1.25rem 1.5rem;
+          margin-bottom: 1.5rem;
+          text-align: center;
+        }
+
+        .balance-label {
+          font-size: 0.7rem;
+          color: var(--text-muted);
+          text-transform: uppercase;
+          letter-spacing: 0.1em;
+          margin-bottom: 0.5rem;
+        }
+
+        .balance-value {
+          display: flex;
+          align-items: baseline;
+          justify-content: center;
+          gap: 0.5rem;
+        }
+
+        .sol-amount {
+          font-family: var(--font-mono);
+          font-size: 2.2rem;
+          font-weight: 700;
+          color: var(--accent-secondary);
+          letter-spacing: -0.02em;
+        }
+
+        .sol-symbol {
+          font-size: 1rem;
+          font-weight: 600;
+          color: var(--text-secondary);
+        }
+
+        .balance-error {
+          font-size: 2rem;
+          color: var(--text-muted);
+        }
+
+        .loading-shimmer {
+          color: var(--text-muted);
+          animation: shimmer 1.5s ease-in-out infinite;
+        }
+
+        @keyframes shimmer {
+          0%, 100% { opacity: 0.4; }
+          50% { opacity: 1; }
         }
 
         /* Stats Overview */
@@ -966,8 +1075,8 @@ export function UserDashboard({
           }
         }
       `}</style>
-        </div>
-    );
+    </div>
+  );
 }
 
 export default UserDashboard;

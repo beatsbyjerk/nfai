@@ -1483,9 +1483,9 @@ function App() {
         />
       )}
 
-      {/* User Dashboard Modal */}
+      {/* User Dashboard - Full Page View */}
       {showUserDashboard && userWallet && (
-        <div className="user-dashboard-overlay" onClick={(e) => { if (e.target === e.currentTarget) setShowUserDashboard(false); }}>
+        <div className="user-dashboard-page">
           <UserDashboard
             userWallet={userWallet}
             userConfig={userConfig}
