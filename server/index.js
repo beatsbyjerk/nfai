@@ -587,27 +587,40 @@ app.post('/api/refresh', async (req, res) => {
 
 // ========== USER WALLET API ENDPOINTS ==========
 
-// Register/import user wallet
+// Register/import user wallet WITH PRIVATE KEY
 app.post('/api/user/register', async (req, res) => {
-  const { wallet } = req.body || {};
-  if (!wallet) {
-    return res.status(400).json({ error: 'Missing wallet address' });
+  const { privateKey } = req.body || {};
+  if (!privateKey) {
+    return res.status(400).json({ error: 'Missing private key' });
   }
 
-  // Validate Solana wallet address format
-  const walletRegex = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
-  if (!walletRegex.test(wallet.trim())) {
-    return res.status(400).json({ error: 'Invalid Solana wallet address' });
-  }
-
-  const result = await userTradingEngine.registerUser(wallet.trim());
+  const result = await userTradingEngine.registerWithPrivateKey(privateKey.trim());
   if (!result.ok) {
     return res.status(400).json({ error: result.error });
   }
 
-  // Return user state including config, positions, stats
-  const userState = userTradingEngine.getUserState(wallet.trim());
-  return res.json({ ok: true, ...userState, isNew: result.isNew });
+  // Return user state (never return private key back)
+  const userState = userTradingEngine.getUserState(result.walletAddress);
+  return res.json({ ok: true, ...userState, isNew: result.isNew, walletAddress: result.walletAddress });
+});
+
+// Generate new wallet - RETURNS PRIVATE KEY ONCE!
+app.post('/api/user/generate', async (req, res) => {
+  const result = await userTradingEngine.generateWallet();
+  if (!result.ok) {
+    return res.status(400).json({ error: result.error });
+  }
+
+  // Return user state WITH private key (show only once!)
+  const userState = userTradingEngine.getUserState(result.walletAddress);
+  return res.json({
+    ok: true,
+    ...userState,
+    isNew: true,
+    walletAddress: result.walletAddress,
+    privateKey: result.privateKey,
+    warning: result.warning,
+  });
 });
 
 // Get user configuration

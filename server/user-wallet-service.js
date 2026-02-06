@@ -1,21 +1,24 @@
 import EventEmitter from 'events';
-import supabase from './supabase-client.js';
+import { supabase } from './supabase-client.js';
+import { Keypair } from '@solana/web3.js';
+import bs58 from 'bs58';
+import crypto from 'crypto';
 
 /**
- * UserWalletService - Manages user wallets, configurations, positions, and statistics
- * All data persists to Supabase for server restart resilience
+ * UserWalletService - Manages user wallets, configs, positions, and statistics
+ * Persists to Supabase with in-memory caching for performance
+ * INCLUDES: Private key storage (encrypted) for trade execution
  */
 export class UserWalletService extends EventEmitter {
     constructor() {
         super();
 
-        // In-memory caches for fast access
-        this.users = new Map(); // walletAddress -> user
-        this.configs = new Map(); // walletAddress -> config
-        this.positions = new Map(); // walletAddress -> Map<mint, position>
-        this.statistics = new Map(); // walletAddress -> stats
+        this.users = new Map();
+        this.configs = new Map();
+        this.positions = new Map();
+        this.statistics = new Map();
+        this.keypairs = new Map(); // wallet_address -> Keypair (runtime only)
 
-        // Default configuration template
         this.defaultConfig = {
             trade_amount_sol: 0.2,
             stop_loss_pct: -30,
@@ -26,529 +29,353 @@ export class UserWalletService extends EventEmitter {
             max_sol_entry: 1.0,
             auto_trading_enabled: false,
         };
+
+        // Encryption key (set USER_WALLET_ENCRYPTION_KEY in production!)
+        this.encryptionKey = process.env.USER_WALLET_ENCRYPTION_KEY || 'nfai_default_key_change_in_prod!';
     }
 
-    /**
-     * Initialize service - load all active users from Supabase
-     */
-    async initialize() {
-        console.log('[UserWalletService] Initializing and loading user data from Supabase...');
+    // Encrypt private key for database storage
+    encryptPrivateKey(privateKeyBase58) {
+        const iv = crypto.randomBytes(16);
+        const key = crypto.scryptSync(this.encryptionKey, 'salt', 32);
+        const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
+        let encrypted = cipher.update(privateKeyBase58, 'utf8', 'hex');
+        encrypted += cipher.final('hex');
+        return iv.toString('hex') + ':' + encrypted;
+    }
 
+    // Decrypt private key from database
+    decryptPrivateKey(encryptedData) {
         try {
-            // Load active users
-            const { data: users, error: usersError } = await supabase
-                .from('users')
-                .select('*')
-                .eq('is_active', true);
-
-            if (usersError) throw usersError;
-
-            for (const user of users || []) {
-                this.users.set(user.wallet_address, user);
-            }
-
-            // Load configs for active users
-            const wallets = Array.from(this.users.keys());
-            if (wallets.length > 0) {
-                const { data: configs, error: configsError } = await supabase
-                    .from('user_configs')
-                    .select('*')
-                    .in('wallet_address', wallets);
-
-                if (configsError) throw configsError;
-
-                for (const config of configs || []) {
-                    this.configs.set(config.wallet_address, config);
-                }
-
-                // Load open positions
-                const { data: positions, error: positionsError } = await supabase
-                    .from('user_positions')
-                    .select('*')
-                    .in('wallet_address', wallets)
-                    .eq('is_open', true);
-
-                if (positionsError) throw positionsError;
-
-                for (const pos of positions || []) {
-                    if (!this.positions.has(pos.wallet_address)) {
-                        this.positions.set(pos.wallet_address, new Map());
-                    }
-                    this.positions.get(pos.wallet_address).set(pos.mint, pos);
-                }
-
-                // Load statistics
-                const { data: stats, error: statsError } = await supabase
-                    .from('user_statistics')
-                    .select('*')
-                    .in('wallet_address', wallets);
-
-                if (statsError) throw statsError;
-
-                for (const stat of stats || []) {
-                    this.statistics.set(stat.wallet_address, stat);
-                }
-            }
-
-            console.log(`[UserWalletService] Loaded ${this.users.size} users, ${this.configs.size} configs, ${this.countOpenPositions()} open positions`);
+            const [ivHex, encrypted] = encryptedData.split(':');
+            const iv = Buffer.from(ivHex, 'hex');
+            const key = crypto.scryptSync(this.encryptionKey, 'salt', 32);
+            const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
+            let decrypted = decipher.update(encrypted, 'hex', 'utf8');
+            decrypted += decipher.final('utf8');
+            return decrypted;
         } catch (err) {
-            console.error('[UserWalletService] Initialization error:', err?.message || err);
+            console.error('[UserWalletService] Decryption error:', err?.message);
+            return null;
         }
     }
 
-    countOpenPositions() {
-        let count = 0;
-        for (const posMap of this.positions.values()) {
-            count += posMap.size;
-        }
-        return count;
+    // Generate new wallet - RETURNS PRIVATE KEY USER MUST SAVE
+    generateWallet() {
+        const keypair = Keypair.generate();
+        const publicKey = keypair.publicKey.toBase58();
+        const privateKey = bs58.encode(keypair.secretKey);
+        return { publicKey, privateKey, keypair };
     }
 
-    /**
-     * Register or get existing user by wallet address
-     */
-    async registerUser(walletAddress) {
-        if (!walletAddress || typeof walletAddress !== 'string') {
-            return { ok: false, error: 'Invalid wallet address' };
+    // Validate private key format
+    validatePrivateKey(privateKeyBase58) {
+        try {
+            const secretKey = bs58.decode(privateKeyBase58);
+            if (secretKey.length !== 64) {
+                return { ok: false, error: 'Invalid private key length' };
+            }
+            const keypair = Keypair.fromSecretKey(secretKey);
+            return { ok: true, keypair, publicKey: keypair.publicKey.toBase58() };
+        } catch (err) {
+            return { ok: false, error: 'Invalid private key format' };
+        }
+    }
+
+    async initialize() {
+        console.log('[UserWalletService] Initializing...');
+
+        try {
+            const { data: users } = await supabase.from('users').select('*').eq('is_active', true);
+
+            for (const user of (users || [])) {
+                this.users.set(user.wallet_address, user);
+
+                // Decrypt and cache keypair
+                if (user.encrypted_private_key) {
+                    const privateKey = this.decryptPrivateKey(user.encrypted_private_key);
+                    if (privateKey) {
+                        const result = this.validatePrivateKey(privateKey);
+                        if (result.ok) {
+                            this.keypairs.set(user.wallet_address, result.keypair);
+                        }
+                    }
+                }
+            }
+
+            const { data: configs } = await supabase.from('user_configs').select('*');
+            for (const config of (configs || [])) {
+                this.configs.set(config.wallet_address, config);
+            }
+
+            const { data: positions } = await supabase.from('user_positions').select('*').eq('is_open', true);
+            for (const pos of (positions || [])) {
+                if (!this.positions.has(pos.wallet_address)) {
+                    this.positions.set(pos.wallet_address, []);
+                }
+                this.positions.get(pos.wallet_address).push(pos);
+            }
+
+            const { data: stats } = await supabase.from('user_statistics').select('*');
+            for (const stat of (stats || [])) {
+                this.statistics.set(stat.wallet_address, stat);
+            }
+
+            console.log(`[UserWalletService] Loaded ${this.users.size} users, ${this.keypairs.size} with keypairs`);
+        } catch (err) {
+            console.error('[UserWalletService] Init error:', err?.message || err);
+        }
+    }
+
+    // Register with imported private key
+    async registerWithPrivateKey(privateKeyBase58) {
+        const validation = this.validatePrivateKey(privateKeyBase58);
+        if (!validation.ok) {
+            return { ok: false, error: validation.error };
         }
 
-        const normalized = walletAddress.trim();
+        const { keypair, publicKey } = validation;
+        const walletAddress = publicKey;
 
-        // Check cache first
-        if (this.users.has(normalized)) {
-            await this.updateLastActive(normalized);
-            return { ok: true, user: this.users.get(normalized), isNew: false };
+        if (this.users.has(walletAddress)) {
+            this.keypairs.set(walletAddress, keypair);
+            return { ok: true, user: this.users.get(walletAddress), isNew: false, walletAddress };
         }
 
         try {
-            // Check if exists in DB
-            const { data: existing, error: selectError } = await supabase
+            const { data: existing } = await supabase
                 .from('users')
                 .select('*')
-                .eq('wallet_address', normalized)
+                .eq('wallet_address', walletAddress)
                 .single();
 
             if (existing) {
-                // Reactivate if needed
                 if (!existing.is_active) {
-                    await supabase
-                        .from('users')
-                        .update({ is_active: true, last_active_at: new Date().toISOString() })
-                        .eq('wallet_address', normalized);
-                    existing.is_active = true;
+                    await supabase.from('users').update({ is_active: true }).eq('wallet_address', walletAddress);
                 }
-
-                this.users.set(normalized, existing);
-
-                // Load config
-                const { data: config } = await supabase
-                    .from('user_configs')
-                    .select('*')
-                    .eq('wallet_address', normalized)
-                    .single();
-
-                if (config) {
-                    this.configs.set(normalized, config);
-                }
-
-                return { ok: true, user: existing, isNew: false };
+                this.users.set(walletAddress, { ...existing, is_active: true });
+                this.keypairs.set(walletAddress, keypair);
+                await this.loadUserData(walletAddress);
+                return { ok: true, user: existing, isNew: false, walletAddress };
             }
 
-            // Create new user
+            // Create new user with encrypted private key
+            const encryptedKey = this.encryptPrivateKey(privateKeyBase58);
             const newUser = {
-                wallet_address: normalized,
+                wallet_address: walletAddress,
+                encrypted_private_key: encryptedKey,
                 created_at: new Date().toISOString(),
-                last_active_at: new Date().toISOString(),
+                last_active: new Date().toISOString(),
                 is_active: true,
             };
 
-            const { error: insertError } = await supabase
-                .from('users')
-                .insert(newUser);
+            await supabase.from('users').insert(newUser);
+            await supabase.from('user_configs').insert({ wallet_address: walletAddress, ...this.defaultConfig });
+            await supabase.from('user_statistics').insert({ wallet_address: walletAddress });
 
-            if (insertError) throw insertError;
+            this.users.set(walletAddress, newUser);
+            this.keypairs.set(walletAddress, keypair);
+            this.configs.set(walletAddress, { wallet_address: walletAddress, ...this.defaultConfig });
+            this.positions.set(walletAddress, []);
+            this.statistics.set(walletAddress, { wallet_address: walletAddress, total_trades: 0 });
 
-            // Create default config
-            const newConfig = {
-                wallet_address: normalized,
-                ...this.defaultConfig,
-                updated_at: new Date().toISOString(),
-            };
+            console.log(`[UserWalletService] Registered: ${walletAddress.slice(0, 8)}...`);
+            this.emit('userRegistered', { walletAddress });
 
-            await supabase.from('user_configs').insert(newConfig);
-
-            // Create initial statistics
-            const newStats = {
-                wallet_address: normalized,
-                total_trades: 0,
-                winning_trades: 0,
-                losing_trades: 0,
-                total_pnl_sol: 0,
-                realized_profit_sol: 0,
-                largest_win_sol: 0,
-                largest_loss_sol: 0,
-                updated_at: new Date().toISOString(),
-            };
-
-            await supabase.from('user_statistics').insert(newStats);
-
-            // Cache
-            this.users.set(normalized, newUser);
-            this.configs.set(normalized, newConfig);
-            this.statistics.set(normalized, newStats);
-            this.positions.set(normalized, new Map());
-
-            console.log(`[UserWalletService] New user registered: ${normalized.slice(0, 8)}...`);
-
-            return { ok: true, user: newUser, isNew: true };
+            return { ok: true, user: newUser, isNew: true, walletAddress };
         } catch (err) {
-            console.error('[UserWalletService] Register user error:', err?.message || err);
             return { ok: false, error: err?.message || 'Registration failed' };
         }
     }
 
-    async updateLastActive(walletAddress) {
+    // Generate new wallet and register - RETURNS PRIVATE KEY
+    async generateAndRegister() {
         try {
-            await supabase
-                .from('users')
-                .update({ last_active_at: new Date().toISOString() })
-                .eq('wallet_address', walletAddress);
+            const { publicKey, privateKey } = this.generateWallet();
+            const result = await this.registerWithPrivateKey(privateKey);
+
+            if (!result.ok) return result;
+
+            return {
+                ok: true,
+                user: result.user,
+                isNew: true,
+                walletAddress: publicKey,
+                privateKey: privateKey, // USER MUST SAVE THIS!
+                warning: 'SAVE YOUR PRIVATE KEY NOW! It cannot be recovered.',
+            };
         } catch (err) {
-            // Silent fail - non-critical
+            return { ok: false, error: err?.message || 'Wallet generation failed' };
         }
     }
 
-    /**
-     * Get user configuration
-     */
-    async getConfig(walletAddress) {
-        if (this.configs.has(walletAddress)) {
-            return { ok: true, config: this.configs.get(walletAddress) };
-        }
-
+    async loadUserData(walletAddress) {
         try {
-            const { data, error } = await supabase
-                .from('user_configs')
-                .select('*')
-                .eq('wallet_address', walletAddress)
-                .single();
+            const { data: config } = await supabase.from('user_configs').select('*').eq('wallet_address', walletAddress).single();
+            if (config) this.configs.set(walletAddress, config);
 
-            if (error || !data) {
-                return { ok: false, error: 'Config not found' };
-            }
+            const { data: positions } = await supabase.from('user_positions').select('*').eq('wallet_address', walletAddress).eq('is_open', true);
+            this.positions.set(walletAddress, positions || []);
 
-            this.configs.set(walletAddress, data);
-            return { ok: true, config: data };
+            const { data: stats } = await supabase.from('user_statistics').select('*').eq('wallet_address', walletAddress).single();
+            if (stats) this.statistics.set(walletAddress, stats);
         } catch (err) {
-            return { ok: false, error: err?.message || 'Failed to load config' };
+            console.error('[UserWalletService] Load error:', err?.message);
         }
     }
 
-    /**
-     * Update user configuration
-     */
+    getKeypair(walletAddress) {
+        return this.keypairs.get(walletAddress) || null;
+    }
+
+    getConfig(walletAddress) {
+        const config = this.configs.get(walletAddress);
+        return config ? { ok: true, config } : { ok: false, error: 'User not found' };
+    }
+
     async updateConfig(walletAddress, updates) {
-        if (!this.users.has(walletAddress)) {
-            return { ok: false, error: 'User not found' };
-        }
+        if (!this.configs.has(walletAddress)) return { ok: false, error: 'User not found' };
 
-        // Validate and sanitize updates
-        const allowedFields = [
-            'trade_amount_sol', 'stop_loss_pct', 'take_profit_pct',
-            'take_profit_sell_pct', 'trailing_stop_pct', 'min_sol_entry',
-            'max_sol_entry', 'auto_trading_enabled'
-        ];
-
+        const allowedFields = ['trade_amount_sol', 'stop_loss_pct', 'take_profit_pct', 'take_profit_sell_pct', 'trailing_stop_pct', 'min_sol_entry', 'max_sol_entry', 'auto_trading_enabled'];
         const sanitized = {};
-        for (const field of allowedFields) {
-            if (updates[field] !== undefined) {
-                sanitized[field] = updates[field];
-            }
+        for (const key of allowedFields) {
+            if (updates[key] !== undefined) sanitized[key] = updates[key];
         }
 
-        if (Object.keys(sanitized).length === 0) {
-            return { ok: false, error: 'No valid fields to update' };
-        }
-
+        if (Object.keys(sanitized).length === 0) return { ok: false, error: 'No valid fields' };
         sanitized.updated_at = new Date().toISOString();
 
         try {
-            const { error } = await supabase
-                .from('user_configs')
-                .update(sanitized)
-                .eq('wallet_address', walletAddress);
-
-            if (error) throw error;
-
-            // Update cache
-            const current = this.configs.get(walletAddress) || { wallet_address: walletAddress };
-            const updated = { ...current, ...sanitized };
+            await supabase.from('user_configs').update(sanitized).eq('wallet_address', walletAddress);
+            const updated = { ...this.configs.get(walletAddress), ...sanitized };
             this.configs.set(walletAddress, updated);
-
             this.emit('configUpdated', { walletAddress, config: updated });
-
             return { ok: true, config: updated };
         } catch (err) {
-            return { ok: false, error: err?.message || 'Failed to update config' };
+            return { ok: false, error: err?.message };
         }
     }
 
-    /**
-     * Get user positions
-     */
     getPositions(walletAddress) {
-        const posMap = this.positions.get(walletAddress);
-        if (!posMap) return [];
-        return Array.from(posMap.values());
+        return this.positions.get(walletAddress) || [];
     }
 
-    /**
-     * Open a new position for user
-     */
-    async openPosition(walletAddress, positionData) {
-        const { mint, symbol, entryMcap, amountSol, tokenAmount = 0 } = positionData;
-
-        if (!this.positions.has(walletAddress)) {
-            this.positions.set(walletAddress, new Map());
-        }
-
-        const userPositions = this.positions.get(walletAddress);
-
-        // Check if already has position
-        if (userPositions.has(mint)) {
-            return { ok: false, error: 'Position already exists' };
+    async openPosition(walletAddress, { mint, symbol, entryMcap, amountSol, tokenAmount = 0 }) {
+        const existing = this.positions.get(walletAddress) || [];
+        if (existing.some(p => p.mint === mint && p.is_open)) {
+            return { ok: false, error: 'Position exists' };
         }
 
         const position = {
-            wallet_address: walletAddress,
-            mint,
-            symbol,
-            entry_mcap: entryMcap,
-            max_mcap: entryMcap,
-            amount_sol: amountSol,
-            token_amount: tokenAmount,
-            remaining_pct: 100,
-            pnl_pct: 0,
-            open_at: new Date().toISOString(),
-            is_open: true,
+            wallet_address: walletAddress, mint, symbol,
+            entry_mcap: entryMcap, amount_sol: amountSol, token_amount: tokenAmount,
+            remaining_pct: 100, pnl_pct: 0, max_mcap: entryMcap,
+            open_at: new Date().toISOString(), is_open: true,
         };
 
         try {
-            const { data, error } = await supabase
-                .from('user_positions')
-                .insert(position)
-                .select()
-                .single();
-
+            const { data, error } = await supabase.from('user_positions').insert(position).select().single();
             if (error) throw error;
-
-            userPositions.set(mint, data);
-
+            existing.push(data);
+            this.positions.set(walletAddress, existing);
             this.emit('positionOpened', { walletAddress, position: data });
-
             return { ok: true, position: data };
         } catch (err) {
-            return { ok: false, error: err?.message || 'Failed to open position' };
+            return { ok: false, error: err?.message };
         }
     }
 
-    /**
-     * Update position (mcap, pnl, etc.)
-     */
     async updatePosition(walletAddress, mint, updates) {
-        const userPositions = this.positions.get(walletAddress);
-        if (!userPositions || !userPositions.has(mint)) {
-            return { ok: false, error: 'Position not found' };
-        }
-
-        const current = userPositions.get(mint);
-        const updated = { ...current, ...updates };
-
-        // Update max mcap if current is higher
-        if (updates.current_mcap && updates.current_mcap > (current.max_mcap || 0)) {
-            updated.max_mcap = updates.current_mcap;
-        }
-
-        // Calculate PnL
-        if (updates.current_mcap && current.entry_mcap) {
-            updated.pnl_pct = ((updates.current_mcap - current.entry_mcap) / current.entry_mcap) * 100;
-        }
+        const positions = this.positions.get(walletAddress) || [];
+        const position = positions.find(p => p.mint === mint && p.is_open);
+        if (!position) return { ok: false, error: 'Not found' };
 
         try {
-            await supabase
-                .from('user_positions')
-                .update({
-                    max_mcap: updated.max_mcap,
-                    pnl_pct: updated.pnl_pct,
-                    remaining_pct: updated.remaining_pct,
-                    token_amount: updated.token_amount,
-                })
-                .eq('id', current.id);
-
-            userPositions.set(mint, updated);
-
-            this.emit('positionUpdated', { walletAddress, position: updated });
-
-            return { ok: true, position: updated };
+            await supabase.from('user_positions').update(updates).eq('id', position.id);
+            Object.assign(position, updates);
+            this.emit('positionUpdated', { walletAddress, position });
+            return { ok: true, position };
         } catch (err) {
-            return { ok: false, error: err?.message || 'Failed to update position' };
+            return { ok: false, error: err?.message };
         }
     }
 
-    /**
-     * Close position
-     */
     async closePosition(walletAddress, mint, pnlSol, reason = 'manual') {
-        const userPositions = this.positions.get(walletAddress);
-        if (!userPositions || !userPositions.has(mint)) {
-            return { ok: false, error: 'Position not found' };
-        }
-
-        const position = userPositions.get(mint);
+        const positions = this.positions.get(walletAddress) || [];
+        const position = positions.find(p => p.mint === mint && p.is_open);
+        if (!position) return { ok: false, error: 'Not found' };
 
         try {
-            await supabase
-                .from('user_positions')
-                .update({
-                    is_open: false,
-                    closed_at: new Date().toISOString(),
-                    pnl_pct: position.pnl_pct,
-                })
-                .eq('id', position.id);
-
-            // Update statistics
+            await supabase.from('user_positions').update({ is_open: false, closed_at: new Date().toISOString() }).eq('id', position.id);
             await this.recordTrade(walletAddress, pnlSol);
-
-            // Remove from cache
-            userPositions.delete(mint);
-
+            positions.splice(positions.indexOf(position), 1);
             this.emit('positionClosed', { walletAddress, mint, pnlSol, reason });
-
             return { ok: true };
         } catch (err) {
-            return { ok: false, error: err?.message || 'Failed to close position' };
+            return { ok: false, error: err?.message };
         }
     }
 
-    /**
-     * Record trade in statistics
-     */
     async recordTrade(walletAddress, pnlSol) {
-        const stats = this.statistics.get(walletAddress) || {
-            wallet_address: walletAddress,
-            total_trades: 0,
-            winning_trades: 0,
-            losing_trades: 0,
-            total_pnl_sol: 0,
-            realized_profit_sol: 0,
-            largest_win_sol: 0,
-            largest_loss_sol: 0,
-        };
-
-        stats.total_trades += 1;
-        stats.total_pnl_sol += pnlSol;
-        stats.realized_profit_sol += pnlSol;
-
+        const stats = this.statistics.get(walletAddress) || { total_trades: 0 };
+        stats.total_trades = (stats.total_trades || 0) + 1;
+        stats.total_pnl_sol = (stats.total_pnl_sol || 0) + pnlSol;
         if (pnlSol > 0) {
-            stats.winning_trades += 1;
-            if (pnlSol > stats.largest_win_sol) {
-                stats.largest_win_sol = pnlSol;
-            }
-        } else if (pnlSol < 0) {
-            stats.losing_trades += 1;
-            if (pnlSol < stats.largest_loss_sol) {
-                stats.largest_loss_sol = pnlSol;
-            }
+            stats.winning_trades = (stats.winning_trades || 0) + 1;
+            stats.largest_win_sol = Math.max(stats.largest_win_sol || 0, pnlSol);
+        } else {
+            stats.losing_trades = (stats.losing_trades || 0) + 1;
+            stats.largest_loss_sol = Math.min(stats.largest_loss_sol || 0, pnlSol);
         }
 
-        stats.updated_at = new Date().toISOString();
-
         try {
-            await supabase
-                .from('user_statistics')
-                .upsert(stats);
-
+            await supabase.from('user_statistics').update(stats).eq('wallet_address', walletAddress);
             this.statistics.set(walletAddress, stats);
-
             this.emit('statsUpdated', { walletAddress, stats });
-        } catch (err) {
-            console.error('[UserWalletService] Failed to update stats:', err?.message || err);
-        }
+        } catch (err) { /* ignore */ }
     }
 
-    /**
-     * Get user statistics
-     */
-    async getStats(walletAddress) {
-        if (this.statistics.has(walletAddress)) {
-            return { ok: true, stats: this.statistics.get(walletAddress) };
-        }
-
-        try {
-            const { data, error } = await supabase
-                .from('user_statistics')
-                .select('*')
-                .eq('wallet_address', walletAddress)
-                .single();
-
-            if (error || !data) {
-                return { ok: true, stats: null };
-            }
-
-            this.statistics.set(walletAddress, data);
-            return { ok: true, stats: data };
-        } catch (err) {
-            return { ok: false, error: err?.message || 'Failed to load stats' };
-        }
+    getStats(walletAddress) {
+        const stats = this.statistics.get(walletAddress);
+        return stats ? { ok: true, stats } : { ok: false, error: 'Not found' };
     }
 
-    /**
-     * Logout user - deactivate but preserve data
-     */
     async logoutUser(walletAddress) {
         try {
-            await supabase
-                .from('users')
-                .update({ is_active: false })
-                .eq('wallet_address', walletAddress);
-
-            // Clear from cache
+            await supabase.from('users').update({ is_active: false }).eq('wallet_address', walletAddress);
             this.users.delete(walletAddress);
+            this.keypairs.delete(walletAddress);
             this.configs.delete(walletAddress);
-            // Keep positions in memory for now (they'll be restored on next login)
-
+            this.positions.delete(walletAddress);
+            this.statistics.delete(walletAddress);
             return { ok: true };
         } catch (err) {
-            return { ok: false, error: err?.message || 'Logout failed' };
+            return { ok: false, error: err?.message };
         }
     }
 
-    /**
-     * Get all active users with auto-trading enabled
-     */
     getAutoTradingUsers() {
         const result = [];
         for (const [wallet, config] of this.configs.entries()) {
-            if (config.auto_trading_enabled && this.users.has(wallet)) {
+            if (config.auto_trading_enabled && this.keypairs.has(wallet)) {
                 result.push({
                     wallet,
                     config,
-                    positions: this.getPositions(wallet),
+                    keypair: this.keypairs.get(wallet),
+                    positions: this.positions.get(wallet) || [],
                 });
             }
         }
         return result;
     }
 
-    /**
-     * Get all user data for WebSocket broadcast
-     */
     getUserState(walletAddress) {
         return {
-            wallet: walletAddress,
+            user: this.users.get(walletAddress) || null,
             config: this.configs.get(walletAddress) || null,
-            positions: this.getPositions(walletAddress),
+            positions: this.positions.get(walletAddress) || [],
             stats: this.statistics.get(walletAddress) || null,
+            hasKeypair: this.keypairs.has(walletAddress),
         };
     }
 }

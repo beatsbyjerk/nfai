@@ -422,8 +422,8 @@ function App() {
 
   // ==== USER WALLET TRADING HANDLERS ====
 
-  // Connect user wallet
-  const handleConnectUserWallet = async (walletAddress) => {
+  // Connect user wallet with private key
+  const handleConnectUserWallet = async (privateKey) => {
     setWalletConnecting(true);
     setWalletError('');
 
@@ -431,7 +431,7 @@ function App() {
       const res = await fetch('/api/user/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ wallet: walletAddress }),
+        body: JSON.stringify({ privateKey }),
       });
 
       const data = await res.json();
@@ -440,8 +440,8 @@ function App() {
       }
 
       // Store wallet and update state
-      localStorage.setItem('userWallet', walletAddress);
-      setUserWallet(walletAddress);
+      localStorage.setItem('userWallet', data.walletAddress);
+      setUserWallet(data.walletAddress);
       setUserConfig(data.config);
       setUserPositions(data.positions || []);
       setUserStats(data.stats);
@@ -452,6 +452,17 @@ function App() {
     } finally {
       setWalletConnecting(false);
     }
+  };
+
+  // Handle generated wallet (after user confirms they saved key)
+  const handleGeneratedWallet = (data) => {
+    localStorage.setItem('userWallet', data.walletAddress);
+    setUserWallet(data.walletAddress);
+    setUserConfig(data.config);
+    setUserPositions(data.positions || []);
+    setUserStats(data.stats);
+    setShowWalletConnect(false);
+    setShowUserDashboard(true);
   };
 
   // Load user state on mount if wallet exists
@@ -1465,6 +1476,7 @@ function App() {
       {showWalletConnect && (
         <WalletConnect
           onConnect={handleConnectUserWallet}
+          onGenerate={handleGeneratedWallet}
           onClose={() => { setShowWalletConnect(false); setWalletError(''); }}
           loading={walletConnecting}
           error={walletError}

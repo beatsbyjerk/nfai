@@ -222,10 +222,17 @@ export class UserTradingEngine extends EventEmitter {
     // ========== API Methods ==========
 
     /**
-     * Register a new user by wallet address
+     * Register user with private key (for imports)
      */
-    async registerUser(walletAddress) {
-        return this.userWalletService.registerUser(walletAddress);
+    async registerWithPrivateKey(privateKey) {
+        return this.userWalletService.registerWithPrivateKey(privateKey);
+    }
+
+    /**
+     * Generate new wallet and register - RETURNS PRIVATE KEY ONCE
+     */
+    async generateWallet() {
+        return this.userWalletService.generateAndRegister();
     }
 
     /**
