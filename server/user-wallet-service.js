@@ -139,6 +139,10 @@ export class UserWalletService extends EventEmitter {
 
         if (this.users.has(walletAddress)) {
             this.keypairs.set(walletAddress, keypair);
+            // Ensure config is loaded for this user
+            if (!this.configs.has(walletAddress)) {
+                await this.loadUserData(walletAddress);
+            }
             return { ok: true, user: this.users.get(walletAddress), isNew: false, walletAddress };
         }
 
