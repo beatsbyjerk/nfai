@@ -584,7 +584,6 @@ function App() {
   };
 
   const connectPublicWebSocket = useCallback(() => {
-    if (authState.authenticated) return;
     if (publicWsRef.current && publicWsRef.current.readyState === WebSocket.OPEN) return;
 
     const isDev = window.location.port === '5173';
@@ -678,16 +677,16 @@ function App() {
 
     ws.onclose = () => {
       console.log('Public WebSocket disconnected');
-      if (!authState.authenticated) {
-        publicReconnectTimeoutRef.current = setTimeout(connectPublicWebSocket, 3000);
-      }
+      // Always reconnect for real-time feeds
+      publicReconnectTimeoutRef.current = setTimeout(connectPublicWebSocket, 3000);
     };
 
     publicWsRef.current = ws;
   }, [authState.authenticated]);
 
   useEffect(() => {
-    if (!authState.authenticated && !authState.loading) {
+    // Always connect public WebSocket for real-time token feeds
+    if (!authState.loading) {
       connectPublicWebSocket();
     }
 
@@ -695,7 +694,7 @@ function App() {
       publicWsRef.current?.close();
       clearTimeout(publicReconnectTimeoutRef.current);
     };
-  }, [authState.authenticated, authState.loading, connectPublicWebSocket]);
+  }, [authState.loading, connectPublicWebSocket]);
 
   const connectWebSocket = useCallback(() => {
     if (!authState.authenticated || !authState.sessionToken) return;
