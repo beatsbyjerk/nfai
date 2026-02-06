@@ -1604,6 +1604,63 @@ function App() {
                   )}
                 </div>
               </div>
+
+              {/* User Stats - Only shown when wallet connected */}
+              {userWallet && (
+                <div className="float-col user-stats-col">
+                  <h3 className="float-title">Your Stats</h3>
+                  <div className="user-stats-grid">
+                    <div className="user-stat-item">
+                      <span className="user-stat-label">Balance</span>
+                      <span className="user-stat-value">{userStats?.balance ? `${userStats.balance.toFixed(4)} SOL` : '--'}</span>
+                    </div>
+                    <div className="user-stat-item">
+                      <span className="user-stat-label">Total PnL</span>
+                      <span className={`user-stat-value ${(userStats?.total_pnl_sol || 0) >= 0 ? 'positive' : 'negative'}`}>
+                        {userStats?.total_pnl_sol ? `${userStats.total_pnl_sol >= 0 ? '+' : ''}${userStats.total_pnl_sol.toFixed(4)} SOL` : '0.0000 SOL'}
+                      </span>
+                    </div>
+                    <div className="user-stat-item">
+                      <span className="user-stat-label">Trades</span>
+                      <span className="user-stat-value">{userStats?.total_trades || 0}</span>
+                    </div>
+                    <div className="user-stat-item">
+                      <span className="user-stat-label">Win Rate</span>
+                      <span className="user-stat-value">
+                        {userStats?.total_trades > 0
+                          ? `${((userStats.winning_trades / userStats.total_trades) * 100).toFixed(1)}%`
+                          : '0%'}
+                      </span>
+                    </div>
+                    <div className="user-stat-item">
+                      <span className="user-stat-label">Open Positions</span>
+                      <span className="user-stat-value accent">{userPositions?.length || 0}</span>
+                    </div>
+                    <div className="user-stat-item">
+                      <span className="user-stat-label">Auto Trading</span>
+                      <span className={`user-stat-value ${userConfig?.auto_trading_enabled ? 'positive' : ''}`}>
+                        {userConfig?.auto_trading_enabled ? 'ON' : 'OFF'}
+                      </span>
+                    </div>
+                  </div>
+                  {userPositions && userPositions.length > 0 && (
+                    <div className="user-positions-mini">
+                      <div className="mini-title">Your Positions</div>
+                      {userPositions.slice(0, 3).map((pos) => (
+                        <div key={pos.mint} className="mini-position">
+                          <span className="mini-symbol">{pos.symbol || pos.mint?.slice(0, 6)}</span>
+                          <span className={`mini-pnl ${(pos.pnl_pct || 0) >= 0 ? 'positive' : 'negative'}`}>
+                            {pos.pnl_pct ? `${pos.pnl_pct >= 0 ? '+' : ''}${pos.pnl_pct.toFixed(1)}%` : '0%'}
+                          </span>
+                        </div>
+                      ))}
+                      {userPositions.length > 3 && (
+                        <div className="mini-more">+{userPositions.length - 3} more</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
