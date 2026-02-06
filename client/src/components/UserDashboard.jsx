@@ -121,6 +121,62 @@ export function UserDashboard({
     return () => clearInterval(interval);
   }, [userWallet]);
 
+  // Withdrawal state
+  const [showWithdrawModal, setShowWithdrawModal] = useState(false);
+  const [withdrawDestination, setWithdrawDestination] = useState('');
+  const [withdrawAmount, setWithdrawAmount] = useState('');
+  const [withdrawing, setWithdrawing] = useState(false);
+  const [withdrawError, setWithdrawError] = useState('');
+  const [withdrawSuccess, setWithdrawSuccess] = useState('');
+
+  const handleWithdraw = async () => {
+    if (!withdrawDestination || !withdrawAmount) {
+      setWithdrawError('Please enter destination address and amount');
+      return;
+    }
+
+    const amount = parseFloat(withdrawAmount);
+    if (!amount || amount <= 0) {
+      setWithdrawError('Invalid amount');
+      return;
+    }
+
+    if (amount > (solBalance || 0) - 0.005) {
+      setWithdrawError('Insufficient balance (must leave 0.005 SOL for fees)');
+      return;
+    }
+
+    setWithdrawing(true);
+    setWithdrawError('');
+    setWithdrawSuccess('');
+
+    try {
+      const res = await fetch(`/api/user/withdraw/${userWallet}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          destinationAddress: withdrawDestination,
+          amount: amount,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Withdrawal failed');
+      }
+
+      setWithdrawSuccess(`Sent ${amount} SOL! Tx: ${data.signature?.slice(0, 16)}...`);
+      setWithdrawDestination('');
+      setWithdrawAmount('');
+      // Refresh balance
+      setSolBalance(prev => prev ? prev - amount : null);
+    } catch (err) {
+      setWithdrawError(err.message || 'Withdrawal failed');
+    } finally {
+      setWithdrawing(false);
+    }
+  };
+
   return (
     <div className="user-dashboard">
       {/* Header with wallet info and close/logout */}
@@ -159,6 +215,17 @@ export function UserDashboard({
             <span className="balance-error">--</span>
           )}
         </div>
+        <button
+          className="withdraw-btn"
+          onClick={() => {
+            setShowWithdrawModal(true);
+            setWithdrawError('');
+            setWithdrawSuccess('');
+          }}
+          disabled={!solBalance || solBalance < 0.01}
+        >
+          Withdraw
+        </button>
       </div>
 
       {/* Stats Overview Cards */}
@@ -641,6 +708,199 @@ export function UserDashboard({
           animation: shimmer 1.5s ease-in-out infinite;
         }
 
+        /* Withdraw Button */
+        .withdraw-btn {
+          margin-top: 1rem;
+          padding: 0.75rem 2rem;
+          background: linear-gradient(135deg, #d4af37, #b8962e);
+          border: none;
+          border-radius: 8px;
+          color: #000;
+          font-weight: 700;
+          font-size: 0.9rem;
+          cursor: pointer;
+          transition: all 0.2s ease;
+        }
+
+        .withdraw-btn:hover:not(:disabled) {
+          transform: translateY(-2px);
+          box-shadow: 0 4px 20px rgba(212, 175, 55, 0.4);
+        }
+
+        .withdraw-btn:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+
+        /* Withdrawal Modal */
+        .withdraw-modal-overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(0, 0, 0, 0.85);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 9999;
+          backdrop-filter: blur(4px);
+        }
+
+        .withdraw-modal {
+          background: linear-gradient(135deg, rgba(30, 30, 40, 0.98), rgba(20, 20, 30, 0.98));
+          border: 1px solid rgba(212, 175, 55, 0.3);
+          border-radius: 16px;
+          width: 90%;
+          max-width: 420px;
+          overflow: hidden;
+        }
+
+        .modal-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 1.25rem 1.5rem;
+          border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .modal-header h3 {
+          margin: 0;
+          font-size: 1.2rem;
+          color: var(--accent-gold);
+        }
+
+        .modal-close {
+          background: none;
+          border: none;
+          color: var(--text-muted);
+          font-size: 1.5rem;
+          cursor: pointer;
+          padding: 0;
+          line-height: 1;
+        }
+
+        .modal-close:hover {
+          color: #fff;
+        }
+
+        .modal-body {
+          padding: 1.5rem;
+        }
+
+        .modal-balance {
+          background: rgba(0, 255, 157, 0.08);
+          border: 1px solid rgba(0, 255, 157, 0.2);
+          border-radius: 8px;
+          padding: 1rem;
+          margin-bottom: 1.5rem;
+          text-align: center;
+          color: var(--text-secondary);
+        }
+
+        .modal-balance strong {
+          color: var(--accent-secondary);
+          font-family: var(--font-mono);
+        }
+
+        .fee-note {
+          display: block;
+          font-size: 0.75rem;
+          color: var(--text-muted);
+          margin-top: 0.25rem;
+        }
+
+        .modal-field {
+          margin-bottom: 1.25rem;
+        }
+
+        .modal-field label {
+          display: block;
+          font-size: 0.8rem;
+          color: var(--text-secondary);
+          margin-bottom: 0.5rem;
+        }
+
+        .modal-field input {
+          width: 100%;
+          padding: 0.75rem 1rem;
+          background: rgba(255, 255, 255, 0.05);
+          border: 1px solid rgba(255, 255, 255, 0.15);
+          border-radius: 8px;
+          color: #fff;
+          font-size: 1rem;
+        }
+
+        .modal-field input:focus {
+          outline: none;
+          border-color: var(--accent-gold);
+        }
+
+        .amount-input-row {
+          display: flex;
+          gap: 0.75rem;
+        }
+
+        .amount-input-row input {
+          flex: 1;
+        }
+
+        .max-btn {
+          padding: 0.75rem 1rem;
+          background: rgba(212, 175, 55, 0.2);
+          border: 1px solid rgba(212, 175, 55, 0.3);
+          border-radius: 8px;
+          color: var(--accent-gold);
+          font-weight: 600;
+          font-size: 0.8rem;
+          cursor: pointer;
+          transition: all 0.2s ease;
+        }
+
+        .max-btn:hover:not(:disabled) {
+          background: rgba(212, 175, 55, 0.3);
+        }
+
+        .modal-error {
+          background: rgba(255, 87, 87, 0.15);
+          border: 1px solid rgba(255, 87, 87, 0.3);
+          color: #ff5757;
+          padding: 0.75rem;
+          border-radius: 8px;
+          margin-bottom: 1rem;
+          font-size: 0.85rem;
+        }
+
+        .modal-success {
+          background: rgba(0, 255, 157, 0.15);
+          border: 1px solid rgba(0, 255, 157, 0.3);
+          color: #00ff9d;
+          padding: 0.75rem;
+          border-radius: 8px;
+          margin-bottom: 1rem;
+          font-size: 0.85rem;
+        }
+
+        .modal-submit-btn {
+          width: 100%;
+          padding: 1rem;
+          background: linear-gradient(135deg, #d4af37, #b8962e);
+          border: none;
+          border-radius: 8px;
+          color: #000;
+          font-weight: 700;
+          font-size: 1rem;
+          cursor: pointer;
+          transition: all 0.2s ease;
+        }
+
+        .modal-submit-btn:hover:not(:disabled) {
+          transform: translateY(-2px);
+          box-shadow: 0 4px 20px rgba(212, 175, 55, 0.4);
+        }
+
+        .modal-submit-btn:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+
         @keyframes shimmer {
           0%, 100% { opacity: 0.4; }
           50% { opacity: 1; }
@@ -1115,6 +1375,69 @@ export function UserDashboard({
           }
         }
       `}</style>
+
+      {/* Withdrawal Modal */}
+      {showWithdrawModal && (
+        <div className="withdraw-modal-overlay" onClick={() => setShowWithdrawModal(false)}>
+          <div className="withdraw-modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Withdraw SOL</h3>
+              <button className="modal-close" onClick={() => setShowWithdrawModal(false)}>×</button>
+            </div>
+            <div className="modal-body">
+              <div className="modal-balance">
+                Available: <strong>{solBalance ? (solBalance - 0.005).toFixed(4) : '0'} SOL</strong>
+                <span className="fee-note">(0.005 SOL reserved for fees)</span>
+              </div>
+
+              <div className="modal-field">
+                <label>Destination Address</label>
+                <input
+                  type="text"
+                  placeholder="Enter Solana wallet address"
+                  value={withdrawDestination}
+                  onChange={e => setWithdrawDestination(e.target.value)}
+                  disabled={withdrawing}
+                />
+              </div>
+
+              <div className="modal-field">
+                <label>Amount (SOL)</label>
+                <div className="amount-input-row">
+                  <input
+                    type="number"
+                    placeholder="0.00"
+                    value={withdrawAmount}
+                    onChange={e => setWithdrawAmount(e.target.value)}
+                    step="0.01"
+                    min="0.001"
+                    max={solBalance ? solBalance - 0.005 : 0}
+                    disabled={withdrawing}
+                  />
+                  <button
+                    className="max-btn"
+                    onClick={() => setWithdrawAmount(Math.max(0, (solBalance || 0) - 0.005).toFixed(4))}
+                    disabled={withdrawing}
+                  >
+                    MAX
+                  </button>
+                </div>
+              </div>
+
+              {withdrawError && <div className="modal-error">{withdrawError}</div>}
+              {withdrawSuccess && <div className="modal-success">{withdrawSuccess}</div>}
+
+              <button
+                className="modal-submit-btn"
+                onClick={handleWithdraw}
+                disabled={withdrawing || !withdrawDestination || !withdrawAmount}
+              >
+                {withdrawing ? 'Sending...' : 'Confirm Withdrawal'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

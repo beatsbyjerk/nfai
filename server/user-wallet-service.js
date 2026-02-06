@@ -1,6 +1,6 @@
 import EventEmitter from 'events';
 import { supabase } from './supabase-client.js';
-import { Keypair } from '@solana/web3.js';
+import { Keypair, Connection, Transaction, SystemProgram, PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
 import bs58 from 'bs58';
 import crypto from 'crypto';
 
@@ -34,6 +34,13 @@ export class UserWalletService extends EventEmitter {
 
         // Encryption key (set USER_WALLET_ENCRYPTION_KEY in production!)
         this.encryptionKey = process.env.USER_WALLET_ENCRYPTION_KEY || 'nfai_default_key_change_in_prod!';
+
+        // Solana RPC connection for withdrawals
+        this.rpcUrl = process.env.HELIUS_RPC_URL || process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
+        this.connection = new Connection(this.rpcUrl, 'confirmed');
+
+        // Minimum balance to leave in wallet (for rent/fees)
+        this.minBalanceReserve = 0.005 * LAMPORTS_PER_SOL; // 0.005 SOL
     }
 
     // Encrypt private key for database storage
@@ -357,6 +364,117 @@ export class UserWalletService extends EventEmitter {
             return { ok: true };
         } catch (err) {
             return { ok: false, error: err?.message };
+        }
+    }
+
+    /**
+     * Withdraw SOL from user wallet to destination address
+     * CRITICAL: This is a real on-chain transaction with proper signing
+     */
+    async withdrawSol(walletAddress, destinationAddress, amountSol) {
+        // Validate user exists and has keypair
+        if (!this.users.has(walletAddress)) {
+            return { ok: false, error: 'User not found' };
+        }
+        if (!this.keypairs.has(walletAddress)) {
+            return { ok: false, error: 'Wallet keypair not loaded. Please re-authenticate.' };
+        }
+
+        // Validate destination address
+        let destPubkey;
+        try {
+            destPubkey = new PublicKey(destinationAddress);
+            if (!PublicKey.isOnCurve(destPubkey.toBytes())) {
+                return { ok: false, error: 'Invalid destination address' };
+            }
+        } catch {
+            return { ok: false, error: 'Invalid destination address format' };
+        }
+
+        // Validate amount
+        if (!amountSol || amountSol <= 0) {
+            return { ok: false, error: 'Invalid withdrawal amount' };
+        }
+
+        const keypair = this.keypairs.get(walletAddress);
+        const fromPubkey = new PublicKey(walletAddress);
+
+        try {
+            // Get current balance
+            const balance = await this.connection.getBalance(fromPubkey);
+            const amountLamports = Math.floor(amountSol * LAMPORTS_PER_SOL);
+
+            // Check if user has enough balance (including reserve for fees)
+            const totalNeeded = amountLamports + this.minBalanceReserve;
+            if (balance < totalNeeded) {
+                const available = Math.max(0, (balance - this.minBalanceReserve) / LAMPORTS_PER_SOL);
+                return { ok: false, error: `Insufficient balance. Available: ${available.toFixed(4)} SOL` };
+            }
+
+            // Create transfer instruction
+            const transaction = new Transaction().add(
+                SystemProgram.transfer({
+                    fromPubkey,
+                    toPubkey: destPubkey,
+                    lamports: amountLamports,
+                })
+            );
+
+            // Get recent blockhash
+            const { blockhash, lastValidBlockHeight } = await this.connection.getLatestBlockhash('confirmed');
+            transaction.recentBlockhash = blockhash;
+            transaction.feePayer = fromPubkey;
+
+            // Sign transaction with user's keypair
+            transaction.sign(keypair);
+
+            // Send transaction
+            const signature = await this.connection.sendRawTransaction(transaction.serialize(), {
+                skipPreflight: false,
+                maxRetries: 3,
+            });
+
+            console.log(`[UserWalletService] Withdrawal submitted: ${signature} (${amountSol} SOL from ${walletAddress.slice(0, 8)}... to ${destinationAddress.slice(0, 8)}...)`);
+
+            // Wait for confirmation
+            const confirmation = await this.connection.confirmTransaction({
+                signature,
+                blockhash,
+                lastValidBlockHeight,
+            }, 'confirmed');
+
+            if (confirmation.value.err) {
+                throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
+            }
+
+            console.log(`[UserWalletService] Withdrawal confirmed: ${signature}`);
+
+            // Emit event for tracking
+            this.emit('withdrawal', {
+                walletAddress,
+                destinationAddress,
+                amountSol,
+                signature,
+                timestamp: new Date().toISOString(),
+            });
+
+            return { ok: true, signature, amountSol };
+        } catch (err) {
+            console.error(`[UserWalletService] Withdrawal failed for ${walletAddress.slice(0, 8)}...:`, err?.message || err);
+            return { ok: false, error: err?.message || 'Withdrawal failed' };
+        }
+    }
+
+    /**
+     * Get user's SOL balance
+     */
+    async getBalance(walletAddress) {
+        try {
+            const pubkey = new PublicKey(walletAddress);
+            const balance = await this.connection.getBalance(pubkey);
+            return { ok: true, balance: balance / LAMPORTS_PER_SOL };
+        } catch (err) {
+            return { ok: false, error: err?.message || 'Failed to get balance' };
         }
     }
 

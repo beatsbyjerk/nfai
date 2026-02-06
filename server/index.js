@@ -664,6 +664,42 @@ app.get('/api/user/positions/:wallet', (req, res) => {
   return res.json({ positions });
 });
 
+// Withdraw SOL from user wallet
+app.post('/api/user/withdraw/:wallet', async (req, res) => {
+  const { wallet } = req.params;
+  const { destinationAddress, amount } = req.body || {};
+
+  if (!wallet) {
+    return res.status(400).json({ error: 'Missing wallet address' });
+  }
+  if (!destinationAddress) {
+    return res.status(400).json({ error: 'Missing destination address' });
+  }
+  if (!amount || amount <= 0) {
+    return res.status(400).json({ error: 'Invalid withdrawal amount' });
+  }
+
+  const result = await userTradingEngine.withdrawSol(wallet, destinationAddress, amount);
+  if (!result.ok) {
+    return res.status(400).json({ error: result.error });
+  }
+  return res.json({ ok: true, signature: result.signature, amount: result.amountSol });
+});
+
+// Get user balance
+app.get('/api/user/balance/:wallet', async (req, res) => {
+  const { wallet } = req.params;
+  if (!wallet) {
+    return res.status(400).json({ error: 'Missing wallet address' });
+  }
+
+  const result = await userTradingEngine.getBalance(wallet);
+  if (!result.ok) {
+    return res.status(400).json({ error: result.error });
+  }
+  return res.json({ ok: true, balance: result.balance });
+});
+
 // Get user statistics
 app.get('/api/user/stats/:wallet', async (req, res) => {
   const { wallet } = req.params;

@@ -363,6 +363,20 @@ export class UserTradingEngine extends EventEmitter {
     }
 
     /**
+     * Withdraw SOL from user wallet
+     */
+    async withdrawSol(walletAddress, destinationAddress, amountSol) {
+        return this.userWalletService.withdrawSol(walletAddress, destinationAddress, amountSol);
+    }
+
+    /**
+     * Get user SOL balance
+     */
+    async getBalance(walletAddress) {
+        return this.userWalletService.getBalance(walletAddress);
+    }
+
+    /**
      * Get all active user wallets
      */
     getActiveUsers() {
