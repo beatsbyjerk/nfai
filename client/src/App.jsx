@@ -1483,9 +1483,16 @@ function App() {
         />
       )}
 
-      {/* User Dashboard - Full Page View */}
-      {showUserDashboard && userWallet && (
-        <div className="user-dashboard-page">
+      {soundEnabled && soundPermissionNeeded && (
+        <div className="sound-permission">
+          <span>Enable sound for new NFAi tokens.</span>
+          <button onClick={requestSoundPermission}>Enable sound</button>
+        </div>
+      )}
+
+      {/* When dashboard is shown, show dashboard page. Otherwise show main content */}
+      {showUserDashboard && userWallet ? (
+        <main className="dashboard-page-content">
           <UserDashboard
             userWallet={userWallet}
             userConfig={userConfig}
@@ -1495,18 +1502,10 @@ function App() {
             onLogout={handleDisconnectUserWallet}
             onClose={() => setShowUserDashboard(false)}
           />
-        </div>
-      )}
-
-      {soundEnabled && soundPermissionNeeded && (
-        <div className="sound-permission">
-          <span>Enable sound for new NFAi tokens.</span>
-          <button onClick={requestSoundPermission}>Enable sound</button>
-        </div>
-      )}
-
-      <main id="main-content" className="main-content">
-        {/* <div className="hero">
+        </main>
+      ) : (
+        <main id="main-content" className="main-content">
+          {/* <div className="hero">
           <h1>NFAi</h1>
           <p className="hero-sub">Athena Labs · Divine Market Intelligence · Solana</p>
           <div className="hero-desc">
@@ -1516,219 +1515,220 @@ function App() {
           </div>
         </div> */}
 
-        <div className="ops-dashboard">
-          <div className="ops-header-floating">
-            <span className="ops-title-text">NFAi Live Operations</span>
-            <span className="ops-status-pill">{connected ? 'LIVE' : 'SNAPSHOT'} · {tradingMode.toUpperCase()}</span>
-          </div>
-
-          <div className="roman-ticker">
-            <div className="ticker-content">
-              <span>Trades: <strong>{tradeCount}</strong></span>
-              <span className="sep">♦</span>
-              <span>Open: <strong>{positions.length}</strong></span>
-              <span className="sep">♦</span>
-              <span>Balance: <strong>{balanceSol.toFixed(3)} SOL</strong></span>
-              <span className="sep">♦</span>
-              <span>Profit: <strong>{realizedProfit.toFixed(3)} SOL</strong></span>
-              <span className="sep">♦</span>
-              <span>Pool: <strong>{distributionPool.toFixed(3)} SOL</strong></span>
-              <span className="sep">♦</span>
-              <span>Calls: <strong>{totalCalls}</strong></span>
-              <span className="sep">♦</span>
-              <span>Success: <strong>{successRate.toFixed(1)}%</strong></span>
-              <span className="sep">♦</span>
-              <span>Avg: <strong>{averageAthX.toFixed(1)}x</strong></span>
+          <div className="ops-dashboard">
+            <div className="ops-header-floating">
+              <span className="ops-title-text">NFAi Live Operations</span>
+              <span className="ops-status-pill">{connected ? 'LIVE' : 'SNAPSHOT'} · {tradingMode.toUpperCase()}</span>
             </div>
-          </div>
 
-          <div className="floating-columns">
-            <div className="float-col">
-              <h3 className="float-title">Live Trades</h3>
-              <div className="ops-list">
-                {liveTrades.length === 0 ? (
-                  <div className="ops-empty">Awaiting first signal.</div>
-                ) : (
-                  liveTrades.map((entry, index) => {
-                    let message = entry.message;
-                    if (entry.message && entry.message.startsWith('Monitoring ')) {
-                      const symbolMatch = entry.message.match(/^Monitoring\s+([^:]+):/);
-                      if (symbolMatch) {
-                        const symbol = symbolMatch[1].trim();
-                        const position = positions.find(p => p.symbol === symbol || (p.mint && symbol.length >= 6 && p.mint.slice(0, 6) === symbol.slice(0, 6)));
-                        if (position) {
-                          const token = tokens.find(t => t.address === position.mint || t.mint === position.mint);
-                          if (token && position.entryMcap) {
-                            const currentMcap = token.realtime_mcap || token.latest_mcap;
-                            if (currentMcap && Number.isFinite(currentMcap) && currentMcap > 0) {
-                              const pnlPct = ((currentMcap - position.entryMcap) / position.entryMcap) * 100;
-                              message = `Monitoring ${position.symbol || symbol}: $${currentMcap.toFixed(0)} mcap, ${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(1)}% P&L`;
+            <div className="roman-ticker">
+              <div className="ticker-content">
+                <span>Trades: <strong>{tradeCount}</strong></span>
+                <span className="sep">♦</span>
+                <span>Open: <strong>{positions.length}</strong></span>
+                <span className="sep">♦</span>
+                <span>Balance: <strong>{balanceSol.toFixed(3)} SOL</strong></span>
+                <span className="sep">♦</span>
+                <span>Profit: <strong>{realizedProfit.toFixed(3)} SOL</strong></span>
+                <span className="sep">♦</span>
+                <span>Pool: <strong>{distributionPool.toFixed(3)} SOL</strong></span>
+                <span className="sep">♦</span>
+                <span>Calls: <strong>{totalCalls}</strong></span>
+                <span className="sep">♦</span>
+                <span>Success: <strong>{successRate.toFixed(1)}%</strong></span>
+                <span className="sep">♦</span>
+                <span>Avg: <strong>{averageAthX.toFixed(1)}x</strong></span>
+              </div>
+            </div>
+
+            <div className="floating-columns">
+              <div className="float-col">
+                <h3 className="float-title">Live Trades</h3>
+                <div className="ops-list">
+                  {liveTrades.length === 0 ? (
+                    <div className="ops-empty">Awaiting first signal.</div>
+                  ) : (
+                    liveTrades.map((entry, index) => {
+                      let message = entry.message;
+                      if (entry.message && entry.message.startsWith('Monitoring ')) {
+                        const symbolMatch = entry.message.match(/^Monitoring\s+([^:]+):/);
+                        if (symbolMatch) {
+                          const symbol = symbolMatch[1].trim();
+                          const position = positions.find(p => p.symbol === symbol || (p.mint && symbol.length >= 6 && p.mint.slice(0, 6) === symbol.slice(0, 6)));
+                          if (position) {
+                            const token = tokens.find(t => t.address === position.mint || t.mint === position.mint);
+                            if (token && position.entryMcap) {
+                              const currentMcap = token.realtime_mcap || token.latest_mcap;
+                              if (currentMcap && Number.isFinite(currentMcap) && currentMcap > 0) {
+                                const pnlPct = ((currentMcap - position.entryMcap) / position.entryMcap) * 100;
+                                message = `Monitoring ${position.symbol || symbol}: $${currentMcap.toFixed(0)} mcap, ${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(1)}% P&L`;
+                              }
                             }
                           }
                         }
                       }
-                    }
-                    return (
-                      <div key={`${entry.timestamp}-${index}`} className="ops-row">
-                        <span className="ops-row-time">{formatShortTime(entry.timestamp)}</span>
-                        <span className={`ops-row-type ${entry.type || 'info'}`}>{entry.type || 'info'}</span>
-                        <span className="ops-row-text">{message}</span>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-
-            <div className="float-col">
-              <h3 className="float-title">Active Trades</h3>
-              <div className="ops-list">
-                {activePositions.length === 0 ? (
-                  <div className="ops-empty">No open positions.</div>
-                ) : (
-                  activePositions.map((position) => {
-                    const symbol = position.symbol || position.mint?.slice(0, 6) || 'UNKNOWN';
-                    const pnl = Number.isFinite(position.pnlPct) ? position.pnlPct : 0;
-                    const remaining = Number.isFinite(position.remainingPct) ? position.remainingPct : null;
-                    return (
-                      <div key={position.mint} className="ops-row">
-                        <span className="ops-row-title">{symbol}</span>
-                        <span className={`ops-pill ${pnl >= 0 ? 'positive' : 'negative'}`}>
-                          {pnl.toFixed(1)}%
-                        </span>
-                        <span className="ops-row-meta">
-                          {formatAge(position.openAt)} · {remaining === null ? '--' : `${remaining.toFixed(0)}%`} left
-                        </span>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="tab-nav">
-          {tabs.map((tab) => (
-            <button
-              key={tab.key}
-              className={`tab-btn ${activeTab === tab.key ? 'active' : ''}`}
-              onClick={() => {
-                setActiveTab(tab.key);
-                try {
-                  localStorage.setItem('activeTab', tab.key);
-                } catch {
-                  // Ignore storage errors
-                }
-              }}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="content-layout">
-          <div className="stream-container">
-            {(() => {
-              const current = tabs.find(t => t.key === activeTab);
-              return (
-                <TokenStream
-                  tokens={getFilteredTokens()}
-                  onSelect={(token) => setSelectedTokenAddress(token?.address || null)}
-                  selectedId={selectedToken?.address}
-                  highlightedId={current?.source === 'meme_radar' ? highlighted.meme_radar : highlighted.print_scan}
-                  label={current?.firstLabel}
-                  timeSource={current?.source}
-                  pageSize={15}
-                />
-              );
-            })()}
-          </div>
-
-          <div className="side-panel">
-            <div className="panel-card">
-              <div className="panel-title">Athena Wallet</div>
-              <div className="balance">{balanceSol.toFixed(3)} SOL</div>
-              <div className="panel-note">Always watching. Always ready.</div>
-              <div className="mini-metrics">
-                <div>Profit retained: {realizedProfit.toFixed(3)} SOL</div>
-                <div>Distribution pool: {distributionPool.toFixed(3)} SOL</div>
-              </div>
-            </div>
-
-            <div className="panel-card terminal">
-              <div className="panel-title">Internal Monologue</div>
-              <div className="terminal-body">
-                {activity.length === 0 ? (
-                  <div className="terminal-line typing">Initializing cognitive model...</div>
-                ) : (
-                  activity.slice(0, 15).map((entry, i) => (
-                    <div key={i} className="terminal-line">
-                      <span className="log-time">{new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
-                      <span className="log-content">{entry.message}</span>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-
-            <div className="panel-card holders-card">
-              <div className="panel-title">Top Holders</div>
-              <div className="holders-list">
-                <div className="holder-header">
-                  <span>Rank</span>
-                  <span className="holder-address">Wallet</span>
-                  <span className="holder-amount">Balance</span>
+                      return (
+                        <div key={`${entry.timestamp}-${index}`} className="ops-row">
+                          <span className="ops-row-time">{formatShortTime(entry.timestamp)}</span>
+                          <span className={`ops-row-type ${entry.type || 'info'}`}>{entry.type || 'info'}</span>
+                          <span className="ops-row-text">{message}</span>
+                        </div>
+                      );
+                    })
+                  )}
                 </div>
-                {holders.slice(0, 50).map((h, index) => {
-                  const address = typeof h.address === 'string' ? h.address : '';
-                  const displayAddress = address
-                    ? `${address.slice(0, 6)}...${address.slice(-4)}`
-                    : 'Unknown';
-                  const rawAmount = h.uiAmount ?? h.amount ?? null;
-                  const amountDisplay = rawAmount === null || rawAmount === undefined
-                    ? '-'
-                    : (typeof rawAmount === 'number'
-                      ? rawAmount.toLocaleString(undefined, { maximumFractionDigits: 2 })
-                      : String(rawAmount));
-                  const key = h.address ?? h.rank ?? index;
-                  return (
-                    <div key={key} className="holder-row">
-                      <span className="holder-rank">#{h.rank ?? index + 1}</span>
-                      <span className="holder-address">{displayAddress}</span>
-                      <span className="holder-amount">{amountDisplay}</span>
-                    </div>
-                  );
-                })}
               </div>
-              {holders.length === 0 && <div className="holders-empty">No holders data yet.</div>}
+
+              <div className="float-col">
+                <h3 className="float-title">Active Trades</h3>
+                <div className="ops-list">
+                  {activePositions.length === 0 ? (
+                    <div className="ops-empty">No open positions.</div>
+                  ) : (
+                    activePositions.map((position) => {
+                      const symbol = position.symbol || position.mint?.slice(0, 6) || 'UNKNOWN';
+                      const pnl = Number.isFinite(position.pnlPct) ? position.pnlPct : 0;
+                      const remaining = Number.isFinite(position.remainingPct) ? position.remainingPct : null;
+                      return (
+                        <div key={position.mint} className="ops-row">
+                          <span className="ops-row-title">{symbol}</span>
+                          <span className={`ops-pill ${pnl >= 0 ? 'positive' : 'negative'}`}>
+                            {pnl.toFixed(1)}%
+                          </span>
+                          <span className="ops-row-meta">
+                            {formatAge(position.openAt)} · {remaining === null ? '--' : `${remaining.toFixed(0)}%`} left
+                          </span>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
             </div>
+          </div>
+
+          <div className="tab-nav">
+            {tabs.map((tab) => (
+              <button
+                key={tab.key}
+                className={`tab-btn ${activeTab === tab.key ? 'active' : ''}`}
+                onClick={() => {
+                  setActiveTab(tab.key);
+                  try {
+                    localStorage.setItem('activeTab', tab.key);
+                  } catch {
+                    // Ignore storage errors
+                  }
+                }}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="content-layout">
+            <div className="stream-container">
+              {(() => {
+                const current = tabs.find(t => t.key === activeTab);
+                return (
+                  <TokenStream
+                    tokens={getFilteredTokens()}
+                    onSelect={(token) => setSelectedTokenAddress(token?.address || null)}
+                    selectedId={selectedToken?.address}
+                    highlightedId={current?.source === 'meme_radar' ? highlighted.meme_radar : highlighted.print_scan}
+                    label={current?.firstLabel}
+                    timeSource={current?.source}
+                    pageSize={15}
+                  />
+                );
+              })()}
+            </div>
+
+            <div className="side-panel">
+              <div className="panel-card">
+                <div className="panel-title">Athena Wallet</div>
+                <div className="balance">{balanceSol.toFixed(3)} SOL</div>
+                <div className="panel-note">Always watching. Always ready.</div>
+                <div className="mini-metrics">
+                  <div>Profit retained: {realizedProfit.toFixed(3)} SOL</div>
+                  <div>Distribution pool: {distributionPool.toFixed(3)} SOL</div>
+                </div>
+              </div>
+
+              <div className="panel-card terminal">
+                <div className="panel-title">Internal Monologue</div>
+                <div className="terminal-body">
+                  {activity.length === 0 ? (
+                    <div className="terminal-line typing">Initializing cognitive model...</div>
+                  ) : (
+                    activity.slice(0, 15).map((entry, i) => (
+                      <div key={i} className="terminal-line">
+                        <span className="log-time">{new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                        <span className="log-content">{entry.message}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              <div className="panel-card holders-card">
+                <div className="panel-title">Top Holders</div>
+                <div className="holders-list">
+                  <div className="holder-header">
+                    <span>Rank</span>
+                    <span className="holder-address">Wallet</span>
+                    <span className="holder-amount">Balance</span>
+                  </div>
+                  {holders.slice(0, 50).map((h, index) => {
+                    const address = typeof h.address === 'string' ? h.address : '';
+                    const displayAddress = address
+                      ? `${address.slice(0, 6)}...${address.slice(-4)}`
+                      : 'Unknown';
+                    const rawAmount = h.uiAmount ?? h.amount ?? null;
+                    const amountDisplay = rawAmount === null || rawAmount === undefined
+                      ? '-'
+                      : (typeof rawAmount === 'number'
+                        ? rawAmount.toLocaleString(undefined, { maximumFractionDigits: 2 })
+                        : String(rawAmount));
+                    const key = h.address ?? h.rank ?? index;
+                    return (
+                      <div key={key} className="holder-row">
+                        <span className="holder-rank">#{h.rank ?? index + 1}</span>
+                        <span className="holder-address">{displayAddress}</span>
+                        <span className="holder-amount">{amountDisplay}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+                {holders.length === 0 && <div className="holders-empty">No holders data yet.</div>}
+              </div>
+            </div>
+
+            {selectedToken && (
+              <div className="detail-panel desktop-only">
+                <TokenDetail
+                  token={selectedToken}
+                  onClose={() => setSelectedTokenAddress(null)}
+                />
+              </div>
+            )}
           </div>
 
           {selectedToken && (
-            <div className="detail-panel desktop-only">
-              <TokenDetail
-                token={selectedToken}
-                onClose={() => setSelectedTokenAddress(null)}
-              />
+            <div
+              className="token-detail-modal mobile-only"
+              role="dialog"
+              aria-modal="true"
+              onClick={() => setSelectedTokenAddress(null)}
+            >
+              <div className="modal-scrim" />
+              <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+                <TokenDetail token={selectedToken} onClose={() => setSelectedTokenAddress(null)} />
+              </div>
             </div>
           )}
-        </div>
-
-        {selectedToken && (
-          <div
-            className="token-detail-modal mobile-only"
-            role="dialog"
-            aria-modal="true"
-            onClick={() => setSelectedTokenAddress(null)}
-          >
-            <div className="modal-scrim" />
-            <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-              <TokenDetail token={selectedToken} onClose={() => setSelectedTokenAddress(null)} />
-            </div>
-          </div>
-        )}
-      </main>
+        </main>
+      )}
 
       <style>{`
         .main-content {

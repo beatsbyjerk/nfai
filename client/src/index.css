@@ -808,26 +808,22 @@ h6 {
     animation: fadeIn 0.2s ease-out;
 }
 
-/* User Dashboard Full Page */
-.user-dashboard-page {
-    position: fixed;
-    inset: 0;
-    background: var(--bg-primary);
-    z-index: 100;
+/* User Dashboard Full Page - REPLACES main content */
+.dashboard-page-content {
+    max-width: 100%;
+    margin: 0 auto;
     padding: 2rem;
-    overflow-y: auto;
+    width: 100%;
+    flex: 1;
     display: flex;
     justify-content: center;
     align-items: flex-start;
-    padding-top: 4rem;
-    animation: fadeIn 0.2s ease-out;
 }
 
-.user-dashboard-page .user-dashboard {
+.dashboard-page-content .user-dashboard {
     max-width: 900px;
     width: 100%;
     max-height: none;
-    box-shadow: 0 0 60px rgba(0, 0, 0, 0.4);
 }
 
 @keyframes fadeIn {
