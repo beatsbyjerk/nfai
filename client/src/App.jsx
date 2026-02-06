@@ -1564,8 +1564,8 @@ function App() {
           </div>
 
           <div className="dashboard-grid">
-            {/* Left Column: Feed */}
-            <div className="feed-column">
+            {/* Main Area: Navigation & Feed */}
+            <div className="main-area">
               <div className="feed-header">
                 <div className="tab-nav-clean">
                   {tabs.map((tab) => (
@@ -1605,10 +1605,10 @@ function App() {
               </div>
             </div>
 
-            {/* Middle/Right Column: System Info */}
-            <div className="info-column">
-              {/* Active Trades */}
-              <div className="info-card">
+            {/* Sidebar Area: Critical Info */}
+            <div className="sidebar-area">
+              {/* Active Trades - Top Priority */}
+              <div className="info-card active-positions-card">
                 <div className="card-header">
                   <h3>Active Positions</h3>
                   <span className="badge">{positions.length}</span>
@@ -1623,7 +1623,7 @@ function App() {
                       return (
                         <div key={position.mint} className="position-row">
                           <span className="pos-symbol">{symbol}</span>
-                          <span className="pos-pnl ${pnl >= 0 ? 'positive' : 'negative'}">
+                          <span className={`pos-pnl ${pnl >= 0 ? 'positive' : 'negative'}`}>
                             {pnl >= 0 ? '+' : ''}{pnl.toFixed(1)}%
                           </span>
                         </div>
@@ -1633,8 +1633,24 @@ function App() {
                 </div>
               </div>
 
-              {/* System Console */}
-              <div className="info-card console-card">
+              {/* Profit Share */}
+              <div className="info-card profit-share-card">
+                <div className="card-header">
+                   <h3>Profit Share (Top 50)</h3>
+                </div>
+                <div className="holders-list-clean">
+                   {holders.slice(0, 50).map((h, index) => (
+                      <div key={h.address || index} className="holder-row-clean">
+                         <span className="rank">#{index + 1}</span>
+                         <span className="address">{h.address ? `${h.address.slice(0,4)}...${h.address.slice(-4)}` : 'Unknown'}</span>
+                         <span className="amount">{(h.uiAmount || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                      </div>
+                   ))}
+                </div>
+              </div>
+
+              {/* System Console - Terminal Style */}
+              <div className="info-card console-card terminal-style">
                 <div className="card-header">
                   <h3>System Intelligence</h3>
                 </div>
@@ -1651,25 +1667,9 @@ function App() {
                   )}
                 </div>
               </div>
-
-              {/* Top Holders */}
-              <div className="info-card holders-card">
-                <div className="card-header">
-                   <h3>Profit Share (Top 50)</h3>
-                </div>
-                <div className="holders-list-clean">
-                   {holders.slice(0, 50).map((h, index) => (
-                      <div key={h.address || index} className="holder-row-clean">
-                         <span className="rank">#{index + 1}</span>
-                         <span className="address">{h.address ? `${h.address.slice(0,4)}...${h.address.slice(-4)}` : 'Unknown'}</span>
-                         <span className="amount">{(h.uiAmount || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
-                      </div>
-                   ))}
-                </div>
-              </div>
             </div>
 
-            {/* Rightmost: Detail Panel (if selected) */}
+            {/* Detail Panel Overlay (if selected) */}
             {selectedToken && (
               <div className="detail-column desktop-only">
                 <div className="sticky-detail">
@@ -1964,19 +1964,19 @@ function App() {
 
         .dashboard-grid {
           display: grid;
-          grid-template-columns: 1fr 350px;
+          grid-template-columns: 1fr 380px;
           gap: 1.5rem;
           height: calc(100vh - 200px);
         }
 
         /* Detail column (3 columns layout) */
-        @media (min-width: 1400px) {
+        @media (min-width: 1600px) {
            .dashboard-grid:has(.detail-column) {
-              grid-template-columns: 1fr 300px 320px;
+              grid-template-columns: 1fr 350px 350px;
            }
         }
 
-        .feed-column {
+        .main-area {
           display: flex;
           flex-direction: column;
           gap: 1rem;
@@ -2026,10 +2026,10 @@ function App() {
            padding-right: 0.5rem;
         }
 
-        .info-column {
+        .sidebar-area {
           display: flex;
           flex-direction: column;
-          gap: 1rem;
+          gap: 1.5rem;
           overflow-y: auto;
           padding-right: 0.25rem;
         }
@@ -2094,7 +2094,7 @@ function App() {
         .pos-pnl.negative { color: #ef4444; }
 
         .console-card {
-           min-height: 200px;
+           min-height: 250px;
         }
         
         .console-body {
@@ -2104,7 +2104,7 @@ function App() {
            display: flex;
            flex-direction: column;
            gap: 0.5rem;
-           max-height: 200px;
+           max-height: 250px;
            overflow-y: auto;
         }
         
@@ -2126,7 +2126,7 @@ function App() {
            display: flex;
            flex-direction: column;
            gap: 0.5rem;
-           max-height: 300px;
+           max-height: 350px;
            overflow-y: auto;
         }
         
@@ -2196,7 +2196,7 @@ function App() {
               overflow: visible;
            }
            
-           .info-column {
+           .sidebar-area {
               overflow: visible;
            }
            
