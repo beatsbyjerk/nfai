@@ -24,6 +24,8 @@ export function UserDashboard({
     min_sol_entry: userConfig?.min_sol_entry || 0.05,
     max_sol_entry: userConfig?.max_sol_entry || 1.0,
     auto_trading_enabled: userConfig?.auto_trading_enabled || false,
+    buy_on_first_dump_enabled: userConfig?.buy_on_first_dump_enabled || false,
+    first_dump_pct: userConfig?.first_dump_pct || -20,
   });
   const [saving, setSaving] = useState(false);
 
@@ -38,6 +40,8 @@ export function UserDashboard({
         min_sol_entry: userConfig.min_sol_entry || 0.05,
         max_sol_entry: userConfig.max_sol_entry || 1.0,
         auto_trading_enabled: userConfig.auto_trading_enabled || false,
+        buy_on_first_dump_enabled: userConfig.buy_on_first_dump_enabled || false,
+        first_dump_pct: userConfig.first_dump_pct || -20,
       });
     }
   }, [userConfig]);
@@ -274,6 +278,42 @@ export function UserDashboard({
                   <span className="toggle-label">{configForm.auto_trading_enabled ? 'ON' : 'OFF'}</span>
                 </button>
               </div>
+            </div>
+
+            {/* Buy on First Dump Configuration */}
+            <div className="config-group">
+              <h3 className="config-group-title">Buy Timing Strategy</h3>
+              <div className="config-row toggle-row">
+                <div className="config-info">
+                  <label className="config-label">Buy on First Dump</label>
+                  <span className="config-hint">Wait for price to drop before buying (safer entry)</span>
+                </div>
+                <button
+                  className={`toggle-btn ${configForm.buy_on_first_dump_enabled ? 'active' : ''}`}
+                  onClick={() => setConfigForm(prev => ({ ...prev, buy_on_first_dump_enabled: !prev.buy_on_first_dump_enabled }))}
+                >
+                  <span className="toggle-track">
+                    <span className="toggle-thumb" />
+                  </span>
+                  <span className="toggle-label">{configForm.buy_on_first_dump_enabled ? 'ON' : 'OFF'}</span>
+                </button>
+              </div>
+              {configForm.buy_on_first_dump_enabled && (
+                <div className="config-item">
+                  <label className="config-label">Dump Threshold</label>
+                  <div className="input-group">
+                    <input
+                      type="number"
+                      value={configForm.first_dump_pct}
+                      onChange={e => setConfigForm(prev => ({ ...prev, first_dump_pct: parseFloat(e.target.value) || -20 }))}
+                      step="5"
+                      max="-5"
+                    />
+                    <span className="input-suffix">%</span>
+                  </div>
+                  <span className="config-hint">Buy when price drops by this % from initial call (e.g., -20%)</span>
+                </div>
+              )}
             </div>
 
             {/* Trade Size Configuration */}

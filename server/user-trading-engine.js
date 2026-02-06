@@ -21,6 +21,10 @@ export class UserTradingEngine extends EventEmitter {
         // Pending trades queue (processed after AI wallet)
         this.pendingTrades = new Map(); // mint -> { token, users: [...] }
 
+        // Pending dump-buy queue: users waiting for first dump before buying
+        // mint -> { token, initialMcap, users: [{ wallet, config, positions }] }
+        this.pendingDumpBuys = new Map();
+
         // Bind event handlers
         this.handleAITrade = this.handleAITrade.bind(this);
         this.handleAIPositionUpdate = this.handleAIPositionUpdate.bind(this);
@@ -60,12 +64,38 @@ export class UserTradingEngine extends EventEmitter {
         const autoTradingUsers = this.userWalletService.getAutoTradingUsers();
         if (autoTradingUsers.length === 0) return;
 
-        console.log(`[UserTradingEngine] AI traded ${token?.symbol || mint?.slice(0, 8)}. Queuing ${autoTradingUsers.length} user trades with ${this.tradeDelayMs}ms delay.`);
+        const initialMcap = parseFloat(token.latest_mcap || token.initial_mcap || 0);
 
-        // Queue user trades with delay (AI trades first!)
-        setTimeout(() => {
-            this.executeUserBuys(mint, token, autoTradingUsers);
-        }, this.tradeDelayMs);
+        // Separate users: immediate buyers vs dump-waiters
+        const immediateBuyers = [];
+        const dumpWaiters = [];
+
+        for (const user of autoTradingUsers) {
+            if (user.config.buy_on_first_dump_enabled) {
+                dumpWaiters.push(user);
+            } else {
+                immediateBuyers.push(user);
+            }
+        }
+
+        // Queue immediate buyers with delay
+        if (immediateBuyers.length > 0) {
+            console.log(`[UserTradingEngine] AI traded ${token?.symbol || mint?.slice(0, 8)}. Queuing ${immediateBuyers.length} immediate buys with ${this.tradeDelayMs}ms delay.`);
+            setTimeout(() => {
+                this.executeUserBuys(mint, token, immediateBuyers);
+            }, this.tradeDelayMs);
+        }
+
+        // Queue dump-waiters for later execution when first dump triggers
+        if (dumpWaiters.length > 0) {
+            console.log(`[UserTradingEngine] Queuing ${dumpWaiters.length} users to buy on first dump for ${token?.symbol || mint?.slice(0, 8)} at initial mcap $${initialMcap.toFixed(0)}`);
+            this.pendingDumpBuys.set(mint, {
+                token,
+                initialMcap,
+                users: dumpWaiters,
+                queuedAt: Date.now(),
+            });
+        }
     }
 
     /**
@@ -129,6 +159,9 @@ export class UserTradingEngine extends EventEmitter {
      * Handle AI position updates - sync to user positions
      */
     handleAIPositionUpdate(aiPositions) {
+        // Check pending dump-buy users for first dump trigger
+        this.checkPendingDumpBuys(aiPositions);
+
         // Update user positions with current market data
         const autoTradingUsers = this.userWalletService.getAutoTradingUsers();
 
@@ -173,6 +206,58 @@ export class UserTradingEngine extends EventEmitter {
                     current_mcap: currentMcap,
                     pnl_pct: pnlPct,
                 });
+            }
+        }
+    }
+
+    /**
+     * Check pending dump-buy users and trigger buys when first dump threshold met
+     */
+    checkPendingDumpBuys(aiPositions) {
+        if (this.pendingDumpBuys.size === 0) return;
+
+        for (const [mint, pending] of this.pendingDumpBuys.entries()) {
+            // Find current mcap from AI positions
+            const aiPos = aiPositions.find(p => p.mint === mint);
+            if (!aiPos) continue;
+
+            const currentMcap = aiPos.currentMcap || aiPos.maxMcap || 0;
+            if (currentMcap <= 0) continue;
+
+            const initialMcap = pending.initialMcap;
+            const pctChange = ((currentMcap - initialMcap) / initialMcap) * 100;
+
+            // Check each user's first_dump_pct threshold
+            const usersToTrigger = [];
+            const remainingUsers = [];
+
+            for (const user of pending.users) {
+                const threshold = user.config.first_dump_pct || -20;
+                // first_dump_pct is negative (e.g., -20), pctChange must be <= threshold
+                if (pctChange <= threshold) {
+                    usersToTrigger.push(user);
+                } else {
+                    remainingUsers.push(user);
+                }
+            }
+
+            // Execute buys for triggered users
+            if (usersToTrigger.length > 0) {
+                console.log(`[UserTradingEngine] First dump triggered for ${pending.token?.symbol || mint.slice(0, 8)}! ${pctChange.toFixed(1)}% from initial. Executing ${usersToTrigger.length} buy(s).`);
+                this.executeUserBuys(mint, pending.token, usersToTrigger);
+            }
+
+            // Update or remove from pending map
+            if (remainingUsers.length > 0) {
+                pending.users = remainingUsers;
+            } else {
+                this.pendingDumpBuys.delete(mint);
+            }
+
+            // Expire old pending buys (30 minutes)
+            if (Date.now() - pending.queuedAt > 30 * 60 * 1000) {
+                console.log(`[UserTradingEngine] Expiring old pending dump-buy for ${pending.token?.symbol || mint.slice(0, 8)}`);
+                this.pendingDumpBuys.delete(mint);
             }
         }
     }

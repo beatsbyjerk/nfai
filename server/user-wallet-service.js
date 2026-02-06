@@ -28,6 +28,8 @@ export class UserWalletService extends EventEmitter {
             min_sol_entry: 0.05,
             max_sol_entry: 1.0,
             auto_trading_enabled: false,
+            buy_on_first_dump_enabled: false,  // Wait for first dump before buying
+            first_dump_pct: -20,                // Trigger buy when mcap drops this much from initial
         };
 
         // Encryption key (set USER_WALLET_ENCRYPTION_KEY in production!)
@@ -240,7 +242,7 @@ export class UserWalletService extends EventEmitter {
     async updateConfig(walletAddress, updates) {
         if (!this.configs.has(walletAddress)) return { ok: false, error: 'User not found' };
 
-        const allowedFields = ['trade_amount_sol', 'stop_loss_pct', 'take_profit_pct', 'take_profit_sell_pct', 'trailing_stop_pct', 'min_sol_entry', 'max_sol_entry', 'auto_trading_enabled'];
+        const allowedFields = ['trade_amount_sol', 'stop_loss_pct', 'take_profit_pct', 'take_profit_sell_pct', 'trailing_stop_pct', 'min_sol_entry', 'max_sol_entry', 'auto_trading_enabled', 'buy_on_first_dump_enabled', 'first_dump_pct'];
         const sanitized = {};
         for (const key of allowedFields) {
             if (updates[key] !== undefined) sanitized[key] = updates[key];
