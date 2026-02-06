@@ -17,6 +17,7 @@ export class UserTradingEngine extends EventEmitter {
         this.tradeDelayMs = parseInt(process.env.USER_TRADE_DELAY_MS || '1000', 10);
         this.tradeFeePercent = parseFloat(process.env.USER_TRADE_FEE_PCT || '2');
         this.tradingWallet = process.env.TRADING_WALLET_ADDRESS;
+        this.tradingMode = process.env.TRADING_MODE || 'paper'; // Same as trading wallet
 
         // Pending trades queue (processed after AI wallet)
         this.pendingTrades = new Map(); // mint -> { token, users: [...] }
@@ -118,7 +119,6 @@ export class UserTradingEngine extends EventEmitter {
                     continue;
                 }
 
-                // Execute the trade (paper mode simulation for now)
                 const entryMcap = parseFloat(token.latest_mcap || token.initial_mcap || 0);
 
                 if (entryMcap <= 0) {
@@ -126,28 +126,79 @@ export class UserTradingEngine extends EventEmitter {
                     continue;
                 }
 
-                // Open position for user
-                const result = await this.userWalletService.openPosition(wallet, {
-                    mint,
-                    symbol: token.symbol,
-                    entryMcap,
-                    amountSol: tradeAmount,
-                    tokenAmount: 0, // Paper mode
-                });
+                // Get user's keypair for live trading
+                const keypair = this.userWalletService.keypairs.get(wallet);
 
-                if (result.ok) {
-                    console.log(`[UserTradingEngine] Opened position for ${wallet.slice(0, 6)}... in ${token?.symbol || mint.slice(0, 8)} at $${entryMcap.toFixed(0)}`);
-
-                    // Emit event for WebSocket broadcast
-                    this.emit('userTrade', {
-                        wallet,
+                // Check trading mode - same pattern as trading wallet
+                if (this.tradingMode !== 'live' || !keypair) {
+                    // Paper mode - open position without real swap
+                    const result = await this.userWalletService.openPosition(wallet, {
                         mint,
                         symbol: token.symbol,
-                        action: 'buy',
-                        amountSol: tradeAmount,
                         entryMcap,
-                        position: result.position,
+                        amountSol: tradeAmount,
+                        tokenAmount: 0, // Paper mode
                     });
+
+                    if (result.ok) {
+                        console.log(`[UserTradingEngine] Simulating entry for ${wallet.slice(0, 6)}... in ${token?.symbol || mint.slice(0, 8)} at $${entryMcap.toFixed(0)}`);
+                        this.emit('userTrade', {
+                            wallet,
+                            mint,
+                            symbol: token.symbol,
+                            action: 'buy',
+                            amountSol: tradeAmount,
+                            entryMcap,
+                            position: result.position,
+                        });
+                    }
+                    continue;
+                }
+
+                // Live mode - execute real swap using user's keypair
+                try {
+                    const buyResult = await this.tradingEngine.swapForMint({
+                        inputMint: 'So11111111111111111111111111111111111111112',
+                        outputMint: mint,
+                        amount: Math.round(tradeAmount * 1e9),
+                        isInputSol: true,
+                        migrationState: null,
+                        keypair: keypair,
+                        walletAddress: wallet,
+                    });
+
+                    if (!buyResult?.txid) {
+                        console.log(`[UserTradingEngine] Buy failed for ${wallet.slice(0, 6)}... - no txid returned`);
+                        continue;
+                    }
+
+                    // Wait for confirmation
+                    await this.tradingEngine.waitForConfirmation(buyResult.txid);
+
+                    // Open position for user with real trade
+                    const result = await this.userWalletService.openPosition(wallet, {
+                        mint,
+                        symbol: token.symbol,
+                        entryMcap,
+                        amountSol: tradeAmount,
+                        tokenAmount: 0, // Could fetch actual token balance here
+                    });
+
+                    if (result.ok) {
+                        console.log(`[UserTradingEngine] Live buy executed for ${wallet.slice(0, 6)}... in ${token?.symbol || mint.slice(0, 8)} txid: ${buyResult.txid.slice(0, 12)}...`);
+                        this.emit('userTrade', {
+                            wallet,
+                            mint,
+                            symbol: token.symbol,
+                            action: 'buy',
+                            amountSol: tradeAmount,
+                            entryMcap,
+                            position: result.position,
+                            txid: buyResult.txid,
+                        });
+                    }
+                } catch (swapErr) {
+                    console.error(`[UserTradingEngine] Live buy failed for ${wallet.slice(0, 6)}...:`, swapErr?.message || swapErr);
                 }
             } catch (err) {
                 console.error(`[UserTradingEngine] Error executing buy for ${wallet.slice(0, 6)}...:`, err?.message || err);

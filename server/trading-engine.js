@@ -1015,23 +1015,25 @@ export class TradingEngine extends EventEmitter {
     };
   }
 
-  async swapForMint({ inputMint, outputMint, amount, isInputSol, migrationState, tokenDecimals = null }) {
+  async swapForMint({ inputMint, outputMint, amount, isInputSol, migrationState, tokenDecimals = null, keypair = null, walletAddress = null }) {
     if (migrationState !== false) {
       try {
-        return await this.swapPumpPortalLocal({ inputMint, outputMint, amount, isInputSol, tokenDecimals });
+        return await this.swapPumpPortalLocal({ inputMint, outputMint, amount, isInputSol, tokenDecimals, keypair, walletAddress });
       } catch (e) {
         this.log('warn', `Pump Portal trade-local failed, falling back to Jupiter: ${e.message}`);
       }
     }
-    return this.swapJupiter({ inputMint, outputMint, amount, isInputSol });
+    return this.swapJupiter({ inputMint, outputMint, amount, isInputSol, keypair, walletAddress });
   }
 
-  async swapPumpPortalLocal({ inputMint, outputMint, amount, isInputSol, tokenDecimals = null }) {
+  async swapPumpPortalLocal({ inputMint, outputMint, amount, isInputSol, tokenDecimals = null, keypair = null, walletAddress = null }) {
     if (!this.pumpPortalUrl) {
       throw new Error('Pump Portal URL not configured');
     }
-    if (!this.walletAddress || !this.keypair) {
-      throw new Error('Trading wallet not configured for Pump Portal');
+    const useKeypair = keypair || this.keypair;
+    const useWalletAddress = walletAddress || this.walletAddress;
+    if (!useWalletAddress || !useKeypair) {
+      throw new Error('Wallet not configured for Pump Portal');
     }
 
     const mint = isInputSol ? outputMint : inputMint;
@@ -1052,7 +1054,7 @@ export class TradingEngine extends EventEmitter {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        publicKey: this.walletAddress,
+        publicKey: useWalletAddress,
         action,
         mint,
         denominatedInSol: isInputSol ? 'true' : 'false',
@@ -1070,7 +1072,7 @@ export class TradingEngine extends EventEmitter {
 
     const raw = await response.arrayBuffer();
     const tx = VersionedTransaction.deserialize(new Uint8Array(raw));
-    tx.sign([this.keypair]);
+    tx.sign([useKeypair]);
     const signature = await this.helius.connection.sendRawTransaction(tx.serialize(), {
       skipPreflight: false,
       maxRetries: 3,
@@ -1079,7 +1081,10 @@ export class TradingEngine extends EventEmitter {
     return { txid: signature };
   }
 
-  async swapJupiter({ inputMint, outputMint, amount, isInputSol }) {
+  async swapJupiter({ inputMint, outputMint, amount, isInputSol, keypair = null, walletAddress = null }) {
+    const useKeypair = keypair || this.keypair;
+    const useWalletAddress = walletAddress || this.walletAddress;
+
     const quoteRes = await axios.get(`${this.jupiterBase}/quote`, {
       params: {
         inputMint,
@@ -1095,7 +1100,7 @@ export class TradingEngine extends EventEmitter {
 
     const swapRes = await axios.post(`${this.jupiterBase}/swap`, {
       quoteResponse: quoteRes.data,
-      userPublicKey: this.walletAddress,
+      userPublicKey: useWalletAddress,
       wrapAndUnwrapSol: isInputSol,
       dynamicComputeUnitLimit: true,
     });
@@ -1107,7 +1112,7 @@ export class TradingEngine extends EventEmitter {
     const tx = VersionedTransaction.deserialize(
       Buffer.from(swapRes.data.swapTransaction, 'base64')
     );
-    tx.sign([this.keypair]);
+    tx.sign([useKeypair]);
 
     const signature = await this.helius.connection.sendRawTransaction(tx.serialize(), {
       skipPreflight: false,
