@@ -1,6 +1,16 @@
 import { useState, useEffect } from 'react';
 
+const CONTRACT_ADDRESS = '69CTvh7g4vSvkU86AjVHxHHqzc1VzpX4i6W93piPpump';
+
 export function Header({ connected, soundEnabled, onToggleSound, authWallet, licenseExpiresAt, onLogout, userWallet, onOpenWalletConnect, onOpenDashboard }) {
+  const [copied, setCopied] = useState(false);
+
+  const copyContract = () => {
+    navigator.clipboard.writeText(CONTRACT_ADDRESS);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   const [theme, setTheme] = useState(() => {
     try {
       return localStorage.getItem('theme') || 'light';
@@ -25,6 +35,11 @@ export function Header({ connected, soundEnabled, onToggleSound, authWallet, lic
           <div className="logo">
             <img src="/cyphoai-logo.jpg" alt="Cyphoai" className="logo-img" />
             <span className="logo-text">Cyphoai</span>
+          </div>
+          <div className="contract-badge" onClick={copyContract}>
+            <span className="contract-label">CA:</span>
+            <span className="contract-address">{CONTRACT_ADDRESS.slice(0, 4)}...{CONTRACT_ADDRESS.slice(-4)}</span>
+            <span className="copy-icon">{copied ? '✓' : '⧉'}</span>
           </div>
         </div>
 
@@ -89,6 +104,40 @@ export function Header({ connected, soundEnabled, onToggleSound, authWallet, lic
           display: flex;
           align-items: center;
           gap: 1rem;
+        }
+
+        .contract-badge {
+          display: flex;
+          align-items: center;
+          gap: 0.4rem;
+          padding: 0.4rem 0.75rem;
+          background: #f1f5f9;
+          border: 1px solid #e2e8f0;
+          border-radius: 6px;
+          cursor: pointer;
+          transition: all 0.2s ease;
+          font-size: 0.8rem;
+        }
+
+        .contract-badge:hover {
+          background: #e2e8f0;
+          border-color: #cbd5e1;
+        }
+
+        .contract-label {
+          color: #64748b;
+          font-weight: 600;
+        }
+
+        .contract-address {
+          font-family: var(--font-mono);
+          color: #0f172a;
+          font-weight: 500;
+        }
+
+        .copy-icon {
+          color: #64748b;
+          font-size: 0.85rem;
         }
 
         .logo {
