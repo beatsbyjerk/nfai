@@ -2,7 +2,15 @@
 
 import { useEffect, useRef, useCallback, useState } from "react";
 
-const WS_BASE = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:3001";
+// Resolve WebSocket base URL:
+// - If NEXT_PUBLIC_WS_URL is set, use it (explicit override).
+// - Otherwise, when running in the browser, derive from window.location (same origin as app).
+// - Only fall back to ws://localhost:3001 for local dev without envs.
+const WS_BASE =
+  process.env.NEXT_PUBLIC_WS_URL ||
+  (typeof window !== "undefined"
+    ? window.location.origin.replace(/^http/, "ws")
+    : "ws://localhost:3001");
 
 export type WSMessageType =
   | "init"
