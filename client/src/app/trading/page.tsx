@@ -96,7 +96,7 @@ export default function TradingPage() {
                   <div className="absolute inset-0 bg-accent/20 rounded-full blur-lg" />
                 </div>
                 <div>
-                  <h1 className="text-2xl font-heading font-bold tracking-tight">Open Claw Engine</h1>
+                  <h1 className="text-2xl font-heading font-bold tracking-tight">ClawFi Engine</h1>
                   <p className="text-muted/60 text-xs">Autonomous execution — auto-buys, take-profits, stop-losses</p>
                 </div>
               </div>
@@ -218,12 +218,11 @@ export default function TradingPage() {
                     {activityLog.slice(0, 100).map((entry, i) => (
                       <div key={i} className="px-4 py-3 text-xs hover:bg-surface-raised/20 transition-colors">
                         <div className="flex items-start gap-2.5">
-                          <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ring-2 ${
-                            entry.type === "buy" ? "bg-accent ring-accent/20" :
-                            entry.type === "sell" ? "bg-danger ring-danger/20" :
-                            entry.type === "error" ? "bg-warning ring-warning/20" :
-                            "bg-muted/50 ring-muted/10"
-                          }`} />
+                          <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ring-2 ${entry.type === "buy" ? "bg-accent ring-accent/20" :
+                              entry.type === "sell" ? "bg-danger ring-danger/20" :
+                                entry.type === "error" ? "bg-warning ring-warning/20" :
+                                  "bg-muted/50 ring-muted/10"
+                            }`} />
                           <div className="min-w-0">
                             <p className="text-foreground/80 break-words leading-relaxed">{entry.message}</p>
                             <p className="text-muted/40 mt-0.5 font-mono text-[10px]">{timeAgo(entry.timestamp)}</p>

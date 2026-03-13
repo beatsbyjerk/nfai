@@ -697,7 +697,7 @@ function CoreOrb({ hotCount }: { hotCount: number }) {
         }}
       >
         <div className="text-center">
-          <div className="text-[10px] font-mono text-accent/60 uppercase tracking-[0.2em] mb-1">Open Claw</div>
+          <div className="text-[10px] font-mono text-accent/60 uppercase tracking-[0.2em] mb-1">ClawFi</div>
           <div className="text-3xl font-heading font-black text-foreground leading-none">{hotCount}</div>
           <div className="text-[9px] text-foreground/40 uppercase tracking-wider mt-1">active signals</div>
         </div>
@@ -836,7 +836,7 @@ export function HeroSection({ tokens, hotTokens, allTokens, stats, hotCount, dex
               animate={{ y: "0%" }}
               transition={{ ...SPRING_SNAPPY, delay: 0.3 }}
             >
-              <span className="text-gradient-accent">Open Claw</span>
+              <span className="text-gradient-accent">ClawFi</span>
             </motion.h1>
           </div>
 

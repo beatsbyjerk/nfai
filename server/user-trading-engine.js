@@ -17,7 +17,7 @@ export class UserTradingEngine extends EventEmitter {
         this.tradeDelayMs = parseInt(process.env.USER_TRADE_DELAY_MS || '1000', 10);
         this.tradeFeePercent = parseFloat(process.env.USER_TRADE_FEE_PCT || '2');
         this.tradingWallet = process.env.TRADING_WALLET_ADDRESS;
-        this.tradingMode = process.env.TRADING_MODE || 'paper'; // Same as trading wallet
+        this.tradingMode = (process.env.TRADING_MODE || 'paper').trim().toLowerCase();
 
         // Pending trades queue (processed after AI wallet)
         this.pendingTrades = new Map(); // mint -> { token, users: [...] }

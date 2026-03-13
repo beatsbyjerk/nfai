@@ -7,8 +7,8 @@ const inter = Inter({ variable: "--font-inter", subsets: ["latin"] });
 const syne = Syne({ variable: "--font-syne", subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "ClawFi | Powered by Open Claw",
-  description: "Institutional-grade Solana signal detection. Open Claw actively monitors the blockchain, scores every token, and surfaces the highest-conviction opportunities in real-time.",
+  title: "ClawFi | Institutional Grade Signal Detection",
+  description: "Institutional-grade Solana signal detection. ClawFi actively monitors the blockchain, scores every token, and surfaces the highest-conviction opportunities in real-time.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

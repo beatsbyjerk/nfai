@@ -20,7 +20,7 @@ const SPRING_SMOOTH = { type: "spring" as const, damping: 22, stiffness: 100 };
 
 /* ═══════════════════════════════════════════════════════════════════
    PROOF OF INTELLIGENCE — Leaderboard
-   Open Claw's top signals by highest multiplier
+   ClawFi's top signals by highest multiplier
    ═══════════════════════════════════════════════════════════════════ */
 
 function LeaderboardEntry({ token, rank, onClick }: { token: Token; rank: number; onClick: () => void }) {
@@ -198,10 +198,10 @@ export default function HomePage() {
                   Proof of Intelligence
                 </div>
                 <h2 className="text-2xl sm:text-3xl font-heading font-black mb-2">
-                  Open Claw&apos;s <span className="text-gradient-accent">Top Signals</span>
+                  ClawFi&apos;s <span className="text-gradient-accent">Top Signals</span>
                 </h2>
                 <p className="text-muted/40 text-sm max-w-md mx-auto">
-                  Every signal below was identified by Open Claw before the move. These aren&apos;t predictions — they&apos;re results. Real-time performance, verified on-chain.
+                  Every signal below was identified by ClawFi before the move. These aren&apos;t predictions — they&apos;re results. Real-time performance, verified on-chain.
                 </p>
               </motion.div>
 
@@ -245,7 +245,7 @@ export default function HomePage() {
                   From Signal to <span className="text-gradient-accent">Execution</span>
                 </h2>
                 <p className="text-foreground/55 text-sm leading-relaxed mb-4">
-                  When Open Claw spots a token worth trading, it doesn&apos;t just tell you about it — it handles the trade. Buys in early, sets stop-losses, takes profit, and exits before momentum dies. All hands-free.
+                  When ClawFi spots a token worth trading, it doesn&apos;t just tell you about it — it handles the trade. Buys in early, sets stop-losses, takes profit, and exits before momentum dies. All hands-free.
                 </p>
                 <p className="text-foreground/40 text-xs leading-relaxed mb-6">
                   You set your risk. The engine does the rest. Every trade shows up in real-time on your dashboard so you always know what&apos;s happening with your capital.
@@ -271,7 +271,7 @@ export default function HomePage() {
                 {[
                   {
                     title: "Catches Tokens Early",
-                    desc: "Open Claw watches every new Solana launch in real-time. When volume, holder count, and momentum line up — it moves fast.",
+                    desc: "ClawFi watches every new Solana launch in real-time. When volume, holder count, and momentum line up — it moves fast.",
                   },
                   {
                     title: "Buys and Sells For You",
@@ -575,7 +575,7 @@ export default function HomePage() {
 
           {tokens.length === 0 && (
             <div className="text-center py-28">
-              <p className="text-foreground/50 text-base font-heading font-bold mb-1">Open Claw is scanning the Solana network...</p>
+              <p className="text-foreground/50 text-base font-heading font-bold mb-1">ClawFi is scanning the Solana network...</p>
               <p className="text-muted/40 text-sm">Tokens will appear here as they&apos;re detected and scored</p>
               {!connected && (
                 <p className="text-danger/60 text-xs mt-3">WebSocket disconnected — make sure the backend is running on port 3001</p>

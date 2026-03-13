@@ -31,7 +31,7 @@ export class TradingEngine extends EventEmitter {
     this.distributionTopN = parseInt(process.env.DISTRIBUTION_TOP_HOLDERS || '50', 10);
     this.distributionEnabled = process.env.DISTRIBUTION_ENABLED === 'true';
 
-    this.tradingMode = process.env.TRADING_MODE || 'paper'; // paper | live
+    this.tradingMode = (process.env.TRADING_MODE || 'paper').trim().toLowerCase();
     this.walletAddress = process.env.TRADING_WALLET_ADDRESS || null;
     this.privateKey = process.env.TRADING_PRIVATE_KEY || null;
     // Jupiter API base - use env var if set, otherwise default to v6 endpoint
@@ -71,7 +71,8 @@ export class TradingEngine extends EventEmitter {
     if (this.tradingMode === 'live') {
       await this.refreshBalance();
     } else {
-      this.balanceSol = parseFloat(process.env.PAPER_STARTING_BALANCE || '10');
+      const startingBalance = parseFloat(process.env.PAPER_STARTING_BALANCE);
+      this.balanceSol = Number.isFinite(startingBalance) ? startingBalance : 10;
       this.emit('balance', this.balanceSol);
     }
     await this.refreshHolders();
@@ -105,6 +106,7 @@ export class TradingEngine extends EventEmitter {
   }
 
   async refreshBalance() {
+    if (this.tradingMode !== 'live') return;
     try {
       if (!this.walletAddress || !this.isValidPublicKey(this.walletAddress)) return;
       this.balanceSol = await this.helius.getSolBalance(this.walletAddress);

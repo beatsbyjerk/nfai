@@ -328,7 +328,10 @@ const ingestApiTokens = (data, source) => {
         volume_24h: token.volume_24h,
         transactions_24h: token.transactions_24h,
       };
-      tokenStore.upsertToken(token, source);
+      const isNew = tokenStore.upsertToken(token, source);
+      if (isNew && tradingEngine) {
+        tradingEngine.handleNewSignal(token, source).catch(e => console.error(e));
+      }
       count++;
     }
     return count;
@@ -340,7 +343,10 @@ const ingestApiTokens = (data, source) => {
     if (!token || typeof token !== 'object') continue;
     const mint = token.mint || token.token_address || token.address;
     if (!mint) continue;
-    tokenStore.upsertToken(token, source);
+    const isNew = tokenStore.upsertToken(token, source);
+    if (isNew && tradingEngine) {
+      tradingEngine.handleNewSignal(token, source).catch(e => console.error(e));
+    }
     count++;
   }
   return count;
