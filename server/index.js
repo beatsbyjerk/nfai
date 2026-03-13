@@ -11,6 +11,7 @@ import { TradingEngine } from './trading-engine.js';
 import { PumpPortalWebSocket } from './pump-portal-ws.js';
 import { AuthService } from './auth-service.js';
 import { UserTradingEngine } from './user-trading-engine.js';
+// PumpSignalTracker removed — using stalk.fun APIs only for signals
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -158,9 +159,13 @@ if (existsSync(clientDist)) {
 const api = new StalkFunAPI();
 let printScanAuthWarningAt = 0;
 const tokenStore = new TokenStore();
-const backfilled = tokenStore.backfillMissingMetrics();
+const backfilled = tokenStore.backfillMissingMetrics(5000);
 if (backfilled > 0) {
   console.log(`Backfilled metrics for ${backfilled} tokens`);
+}
+const tsFixed = tokenStore.backfillTimestamps();
+if (tsFixed > 0) {
+  console.log(`Fixed timestamps for ${tsFixed} tokens`);
 }
 
 const VISIBLE_REFRESH_LIMIT = Number.parseInt(process.env.VISIBLE_REFRESH_LIMIT || '15', 10);
@@ -244,9 +249,9 @@ pumpPortalWs.on('error', (err) => {
 
 pumpPortalWs.start();
 
+// Signal tracking is handled purely through stalk.fun APIs (no PumpPortal signals)
+
 const syncWatchedTokens = () => {
-  // Always sync position tokens to PumpPortal WS for realtime trade updates
-  // This ensures we get fresh mcap data from PumpPortal even with realtime monitoring
   pumpPortalWs.setTokenKeys(tradingEngine.getOpenPositionMints());
 };
 
@@ -303,33 +308,80 @@ const extractPrintScanTokens = (printScan) => {
   return printScan?.tokens || printScan?.data || printScan?.items || [];
 };
 
+// Ingest helper — extract tokens from any stalk.fun API response shape
+const ingestApiTokens = (data, source) => {
+  if (!data) return 0;
+  let count = 0;
+  // Handle trending's nested structure: { data: { swaps_1m: [], swaps_5m: [] } }
+  if (source === 'trending' && data?.data) {
+    const swaps1m = data.data.swaps_1m || [];
+    const swaps5m = data.data.swaps_5m || [];
+    for (const token of [...swaps5m, ...swaps1m]) {
+      if (!token || typeof token !== 'object') continue;
+      const mint = token.mint || token.token_address || token.address;
+      if (!mint) continue;
+      // Enrich with momentum data from trending response
+      token._momentum = {
+        price_change_1m: token.price_change_percent1m,
+        price_change_5m: token.price_change_percent5m ?? token.price_change_percent,
+        price_change_1h: token.price_change_percent1h,
+        volume_24h: token.volume_24h,
+        transactions_24h: token.transactions_24h,
+      };
+      tokenStore.upsertToken(token, source);
+      count++;
+    }
+    return count;
+  }
+  // Handle koth: { data: [...] }
+  const list = data?.data || data?.tokens || data?.items || (Array.isArray(data) ? data : []);
+  if (!Array.isArray(list)) return 0;
+  for (const token of list) {
+    if (!token || typeof token !== 'object') continue;
+    const mint = token.mint || token.token_address || token.address;
+    if (!mint) continue;
+    tokenStore.upsertToken(token, source);
+    count++;
+  }
+  return count;
+};
+
 // Refresh visible tokens before sending snapshots; live events remain unchanged.
 const refreshVisibleTokens = async () => {
-  if (!api.isAuthenticated()) return;
-  const limit = Number.isFinite(VISIBLE_REFRESH_LIMIT) && VISIBLE_REFRESH_LIMIT > 0
-    ? VISIBLE_REFRESH_LIMIT
-    : 15;
+  // PUBLIC ENDPOINTS (always available)
   try {
-    const [memeRadar, printScan] = await Promise.all([
-      api.fetchMemeRadar('recency', limit),
-      api.fetchLeaderboard(limit, 0, true)
+    const [movers, trending, koth, dexPaid, liveScan] = await Promise.all([
+      api.fetchMovers().catch(() => null),
+      api.fetchTrending().catch(() => null),
+      api.fetchKoth().catch(() => null),
+      api.fetchDexPaid().catch(() => null),
+      api.fetchLiveScan(100, '1h').catch(() => null),
     ]);
+    if (movers) ingestApiTokens(movers, 'movers');
+    if (trending) ingestApiTokens(trending, 'trending');
+    if (koth) ingestApiTokens(koth, 'koth');
+    if (dexPaid) ingestApiTokens(dexPaid, 'dex_paid');
+    if (liveScan) ingestApiTokens(liveScan, 'live_scan');
+  } catch (e) {
+    // non-fatal
+  }
 
-    const memeTokens = extractMemeRadarTokens(memeRadar);
-    if (Array.isArray(memeTokens)) {
-      for (const token of memeTokens) {
-        tokenStore.upsertToken(token, 'meme_radar');
-      }
+  // AUTH-REQUIRED ENDPOINTS (VIP)
+  if (api.isAuthenticated()) {
+    try {
+      const [memeRadar, printScan, smartPump, tokenTracker] = await Promise.all([
+        api.fetchMemeRadar('recency', 200).catch(() => null),
+        api.fetchLeaderboard(200, 0, true).catch(() => null),
+        api.fetchSmartPump(500).catch(() => null),
+        api.fetchTokenTracker('combined', 50).catch(() => null),
+      ]);
+      if (memeRadar) ingestApiTokens(memeRadar, 'meme_radar');
+      if (printScan) ingestApiTokens(printScan, 'print_scan');
+      if (smartPump) ingestApiTokens(smartPump, 'smart_pump');
+      if (tokenTracker) ingestApiTokens(tokenTracker, 'token_tracker');
+    } catch (error) {
+      console.warn('Refresh-visible auth fetch failed:', error?.message || error);
     }
-
-    const printTokens = extractPrintScanTokens(printScan);
-    if (Array.isArray(printTokens)) {
-      for (const token of printTokens) {
-        tokenStore.upsertToken(token, 'print_scan');
-      }
-    }
-  } catch (error) {
-    console.warn('Refresh-visible fetch failed:', error?.message || error);
   }
 };
 
@@ -405,10 +457,7 @@ const attachRealtimeMcapField = async (tokens, { limit = 30, forceRefresh = fals
 const clients = new Set();
 const publicClients = new Set();
 
-// Delayed token queue for public broadcast (5 minute delay)
-const delayedTokenQueue = [];
-const DELAY_MS = 5 * 60 * 1000; // 5 minutes
-const MAX_QUEUE_SIZE = 100;
+// No artificial delays — all data is broadcast instantly to all clients
 
 wss.on('connection', async (ws, req) => {
   try {
@@ -419,7 +468,6 @@ wss.on('connection', async (ws, req) => {
       publicClients.add(ws);
       console.log(`Public client connected. Total: ${publicClients.size}`);
 
-      // Send ALL ClaudeCash tokens that are 5+ minutes old (full data, not duplicated)
       const recentPublic = getRecentPublicTokens(200);
       ws.send(JSON.stringify({
         type: 'init',
@@ -503,34 +551,23 @@ function broadcastToPublic(message) {
 }
 
 function getRecentPublicTokens(limit = 200) {
-  const now = Date.now();
   return tokenStore.getAllTokens()
-    .filter(t => {
-      const sources = (t.sources || t.source || '').split(',').map(s => s.trim());
-      if (!sources.includes('print_scan')) return false;
-
-      const callTime = new Date(t.first_seen_print_scan || t.first_seen_local).getTime();
-      const age = now - callTime;
-      return age >= DELAY_MS; // Only show tokens 5+ minutes old
-    })
     .sort((a, b) => {
-      const aTime = new Date(a.first_seen_print_scan || a.first_seen_local).getTime();
-      const bTime = new Date(b.first_seen_print_scan || b.first_seen_local).getTime();
+      const aTime = new Date(a.first_seen_local || 0).getTime();
+      const bTime = new Date(b.first_seen_local || 0).getTime();
       return bTime - aTime;
     })
     .slice(0, limit);
 }
 
-function isPublicEligible(token) {
-  const sources = (token.sources || token.source || '').split(',').map(s => s.trim());
-  if (!sources.includes('print_scan')) return false;
-
-  const callTime = new Date(token.first_seen_print_scan || token.first_seen_local).getTime();
-  const age = Date.now() - callTime;
-  return age >= DELAY_MS;
-}
-
 // API Routes
+app.get('/api/signals', (req, res) => {
+  const allTokens = tokenStore.getAllTokens()
+    .sort((a, b) => new Date(b.first_seen_local || 0).getTime() - new Date(a.first_seen_local || 0).getTime())
+    .slice(0, 200);
+  res.json({ ok: true, signals: allTokens, total: tokenStore.getStats().totalTokens });
+});
+
 app.get('/api/status', (req, res) => {
   res.json({
     authenticated: api.authMode === 'privy' && api.isAuthenticated(),
@@ -747,8 +784,6 @@ async function pollStalkFun() {
   if (pollInFlight) return;
   pollInFlight = true;
   const newTokens = [];
-  const newMemeTokens = [];
-  const newPrintTokens = [];
   const updatedTokens = [];
 
   const parseFirstSeen = (value) => {
@@ -778,150 +813,152 @@ async function pollStalkFun() {
     return ageMs >= 0 && ageMs <= 120000;
   };
 
-  try {
-    // AUTH-REQUIRED ENDPOINTS (priority: meme radar, then first seen)
-    if (api.isAuthenticated()) {
-      // Meme Radar (priority)
-      try {
-        const memeRadar = await api.fetchMemeRadar();
-        const memeData = memeRadar?.data;
-        const memeList =
-          (Array.isArray(memeData) ? memeData : null) ||
-          (Array.isArray(memeData?.data) ? memeData.data : null) ||
-          memeRadar?.tokens ||
-          memeRadar?.results ||
-          memeRadar?.items ||
-          [];
-        if ((memeRadar?.success ?? true) && Array.isArray(memeList)) {
-          for (const token of memeList) {
-            if (!token || typeof token !== 'object') continue;
-            const mint = token.mint || token.token_address || token.address;
-            if (!mint) continue;
-            const isNew = tokenStore.upsertToken(token, 'meme_radar');
-            const record = tokenStore.getToken(mint);
-            if (isNew) {
-              const flagged = { ...record, isNew: true };
-              newTokens.push(flagged);
-              newMemeTokens.push(flagged);
-            } else {
-              updatedTokens.push(record);
-            }
-          }
-        } else if (process.env.DEBUG_MEME_RADAR === 'true') {
-          console.log('Meme radar response keys:', Object.keys(memeRadar || {}));
-          if (memeRadar?.data) {
-            console.log('Meme radar data type:', Array.isArray(memeRadar.data) ? 'array' : typeof memeRadar.data);
-            console.log('Meme radar data keys:', Object.keys(memeRadar.data || {}));
-          }
-        }
-      } catch (e) {
-        console.error('Meme radar fetch error:', e.message);
+  const SIGNAL_SOURCES = new Set(['print_scan', 'smart_pump', 'meme_radar', 'movers', 'koth']);
+
+  // Generic ingestion — returns { new: Token[], updated: Token[], tradeSignals: Token[] }
+  const ingestTokenList = (data, source) => {
+    const result = { new: [], updated: [], tradeSignals: [] };
+    if (!data) return result;
+
+    // Handle trending's nested structure
+    if (source === 'trending' && data?.data) {
+      const swaps1m = data.data.swaps_1m || [];
+      const swaps5m = data.data.swaps_5m || [];
+      for (const token of [...swaps5m, ...swaps1m]) {
+        if (!token || typeof token !== 'object') continue;
+        const mint = token.mint || token.token_address || token.address;
+        if (!mint) continue;
+        token._momentum = {
+          price_change_1m: token.price_change_percent1m,
+          price_change_5m: token.price_change_percent5m ?? token.price_change_percent,
+          price_change_1h: token.price_change_percent1h,
+          volume_24h: token.volume_24h,
+          transactions_24h: token.transactions_24h,
+        };
+        const isNew = tokenStore.upsertToken(token, source);
+        const record = tokenStore.getToken(mint);
+        if (isNew && record) result.new.push({ ...record, isNew: true });
+        else if (record) result.updated.push(record);
+      }
+      return result;
+    }
+
+    // Standard shape: { data: [...] } or { tokens: [...] } or array
+    const memeData = data?.data;
+    const list =
+      (Array.isArray(memeData) ? memeData : null) ||
+      (Array.isArray(memeData?.data) ? memeData.data : null) ||
+      data?.tokens || data?.items || data?.results ||
+      (Array.isArray(data) ? data : []);
+
+    if (!Array.isArray(list)) return result;
+    const seenAddresses = new Set();
+
+    for (const token of list) {
+      if (!token || typeof token !== 'object') continue;
+      const mint = token.mint || token.token_address || token.address || token.mintAddress;
+      if (!mint || seenAddresses.has(mint)) continue;
+      seenAddresses.add(mint);
+
+      const existing = tokenStore.getToken(mint);
+      const existingSources = (existing?.sources || existing?.source || '').split(',').map(s => s.trim()).filter(Boolean);
+      const hadSource = existingSources.includes(source);
+
+      const isNew = tokenStore.upsertToken(token, source);
+      const record = tokenStore.getToken(mint);
+      if (isNew && record) {
+        result.new.push({ ...record, isNew: true });
+      } else if (record) {
+        result.updated.push(record);
       }
 
-      // First Seen (print scan)
-      try {
-        if (!api.isAuthenticated()) {
-          const now = Date.now();
-          if (now - printScanAuthWarningAt > 60000) {
-            if (api.tokenExpiry && now > api.tokenExpiry - 60000) {
-              console.warn('Print-scan skipped: privy token expired. Refresh PRIVY_COOKIES.');
-            } else {
-              console.warn('Print-scan skipped: unauthorized. Refresh PRIVY_COOKIES/PRIVY_BEARER.');
-            }
-            printScanAuthWarningAt = now;
-          }
-          return;
-        }
-        const printSource = (process.env.PRINT_SCAN_SOURCE || 'leaderboard').toLowerCase();
-        const printScan = printSource === 'leaderboard'
-          ? await api.fetchLeaderboard(200, 0, true)
-          : await api.fetchPrintScan();
-        const printTokens = printScan?.tokens || printScan?.data || printScan?.items;
-        if ((printScan?.success ?? true) && Array.isArray(printTokens)) {
-          const newPrintSignals = [];
-          const printAddresses = [];
-          const seenPrintAddresses = new Set();
-          for (const token of printTokens) {
-            const tokenAddress = token?.token_address || token?.mint || token?.mintAddress;
-            if (!tokenAddress || seenPrintAddresses.has(tokenAddress)) continue;
-            seenPrintAddresses.add(tokenAddress);
-            printAddresses.push(tokenAddress);
-            const existing = tokenStore.getToken(tokenAddress);
-            const existingSources = (existing?.sources || existing?.source || '')
-              .split(',')
-              .map(s => s.trim())
-              .filter(Boolean);
-            const hadPrintScan = existingSources.includes('print_scan');
-            const isNew = tokenStore.upsertToken(token, 'print_scan');
-            const record = tokenStore.getToken(tokenAddress);
-            if (isNew) {
-              const flagged = { ...record, isNew: true };
-              newTokens.push(flagged);
-              newPrintTokens.push(flagged);
-
-              // Add to delayed queue for public broadcast (5 minute delay)
-              delayedTokenQueue.push({
-                token: record,
-                callTime: Date.now(),
-                broadcastTime: Date.now() + DELAY_MS
-              });
-
-              // Keep queue size limited
-              if (delayedTokenQueue.length > MAX_QUEUE_SIZE) {
-                delayedTokenQueue.shift();
-              }
-            } else {
-              updatedTokens.push(record);
-            }
-            if (!hadPrintScan && isFreshFirstCall(token, record)) {
-              newPrintSignals.push(record);
-            }
-          }
-          tokenStore.syncSourceSnapshot('print_scan', printAddresses);
-          if (newPrintSignals.length > 0) {
-            const uniqueSignals = [];
-            const seenSignals = new Set();
-            for (const signal of newPrintSignals.filter(Boolean)) {
-              const addr = signal?.address;
-              if (!addr || seenSignals.has(addr)) continue;
-              seenSignals.add(addr);
-              uniqueSignals.push(signal);
-            }
-            if (uniqueSignals.length > 0) {
-              await tradingEngine.handleSignals(uniqueSignals, 'First Seen');
-            }
-          }
-        }
-      } catch (e) {
-        console.error('Print-scan fetch error:', e.message);
+      if (SIGNAL_SOURCES.has(source) && !hadSource && record && isFreshFirstCall(token, record)) {
+        result.tradeSignals.push(record);
       }
     }
 
-    // On first run, push a full refresh without highlighting
+    if (source === 'print_scan') {
+      tokenStore.syncSourceSnapshot('print_scan', Array.from(seenAddresses));
+    }
+    return result;
+  };
+
+  try {
+    // ── PUBLIC ENDPOINTS (always available, no auth) ──
+    const [movers, trending, koth, dexPaid, liveScan] = await Promise.all([
+      api.fetchMovers().catch(() => null),
+      api.fetchTrending().catch(() => null),
+      api.fetchKoth().catch(() => null),
+      api.fetchDexPaid().catch(() => null),
+      api.fetchLiveScan(100, '1h').catch(() => null),
+    ]);
+
+    const allTradeSignals = [];
+
+    for (const [data, source] of [
+      [movers, 'movers'], [trending, 'trending'], [koth, 'koth'],
+      [dexPaid, 'dex_paid'], [liveScan, 'live_scan'],
+    ]) {
+      const r = ingestTokenList(data, source);
+      newTokens.push(...r.new);
+      updatedTokens.push(...r.updated);
+      allTradeSignals.push(...r.tradeSignals);
+    }
+
+    // ── AUTH-REQUIRED ENDPOINTS (VIP) ──
+    if (api.isAuthenticated()) {
+      const [memeRadar, printScan, smartPump, tokenTracker] = await Promise.all([
+        api.fetchMemeRadar('recency', 200).catch(() => null),
+        api.fetchLeaderboard(200, 0, true).catch(() => null),
+        api.fetchSmartPump(500).catch(() => null),
+        api.fetchTokenTracker('combined', 50).catch(() => null),
+      ]);
+
+      for (const [data, source] of [
+        [memeRadar, 'meme_radar'], [printScan, 'print_scan'],
+        [smartPump, 'smart_pump'], [tokenTracker, 'token_tracker'],
+      ]) {
+        const r = ingestTokenList(data, source);
+        newTokens.push(...r.new);
+        updatedTokens.push(...r.updated);
+        allTradeSignals.push(...r.tradeSignals);
+      }
+    }
+
+    // Fire trade signals from all quality sources
+    if (allTradeSignals.length > 0) {
+      const unique = [];
+      const seen = new Set();
+      for (const s of allTradeSignals) {
+        if (s?.address && !seen.has(s.address)) { seen.add(s.address); unique.push(s); }
+      }
+      if (unique.length > 0) {
+        await tradingEngine.handleSignals(unique, 'Signal Detected');
+      }
+    }
+
+    // ── FIRST RUN: full refresh ──
     if (!initialized) {
       await refreshVisibleTokens();
       const refreshTokens = tokenStore.getAllTokens();
       const tokensWithRealtimeMcap = await attachRealtimeMcapField(refreshTokens, { limit: REALTIME_MCAP_BROADCAST_LIMIT });
-      broadcast({
+      const initPayload = {
         type: 'refresh',
         data: {
           tokens: tokensWithRealtimeMcap,
           stats: tokenStore.getStats(),
           trading: tradingEngine.getState()
         }
-      });
+      };
+      broadcast(initPayload);
+      broadcastToPublic(initPayload);
       initialized = true;
       return;
     }
 
-    // Update positions with fresh data
+    // ── INSTANT UPDATES ──
     if (updatedTokens.length > 0) {
       await tradingEngine.updatePositions(updatedTokens, 'poll');
-    }
-
-    // Broadcast updates for existing tokens so UIs stay live
-    // Attach realtime_mcap using Jupiter (primary) → DexScreener (fallback)
-    if (updatedTokens.length > 0) {
       for (const token of updatedTokens.filter(Boolean)) {
         const mint = token?.address || token?.mint;
         if (mint && tradingEngine?.getRealtimeMcap) {
@@ -931,26 +968,19 @@ async function pollStalkFun() {
               token.realtime_mcap = mcap;
               token.realtime_mcap_ts = Date.now();
             }
-          } catch {
-            // ignore
-          }
+          } catch { /* ignore */ }
         }
-        // Ensure address field is present for frontend matching
-        broadcast({
-          type: 'token_update',
-          data: { ...token, address: token.address || token.mint || mint }
-        });
+        const updateMsg = { type: 'token_update', data: { ...token, address: token.address || token.mint || mint } };
+        broadcast(updateMsg);
+        broadcastToPublic(updateMsg);
       }
     }
 
-    // Broadcast only when new tokens appear
+    // ── NEW TOKENS: instant broadcast to ALL clients (zero delay) ──
     if (newTokens.length > 0) {
-      broadcast({
-        type: 'new_tokens',
-        data: newTokens.filter(Boolean)
-      });
-      // Trading signals should only be triggered from ClaudeCash (print_scan).
-      // Print-scan signals are handled with freshness checks above
+      const payload = { type: 'new_tokens', data: newTokens.filter(Boolean) };
+      broadcast(payload);
+      broadcastToPublic(payload);
       console.log(`Found ${newTokens.length} new tokens`);
     }
   } catch (error) {
@@ -958,36 +988,6 @@ async function pollStalkFun() {
   } finally {
     pollInFlight = false;
   }
-}
-
-// Broadcast delayed tokens to public clients
-async function broadcastPublicFeed() {
-  if (publicClients.size === 0) return;
-
-  const now = Date.now();
-  const ready = [];
-
-  // Find tokens ready to broadcast (broadcast time has passed)
-  for (let i = delayedTokenQueue.length - 1; i >= 0; i--) {
-    const item = delayedTokenQueue[i];
-    if (item.broadcastTime <= now) {
-      // Get the latest token data from store (includes all real-time updates)
-      const latestToken = tokenStore.getToken(item.token.address);
-      if (latestToken) {
-        ready.push(latestToken);
-      }
-      delayedTokenQueue.splice(i, 1);
-    }
-  }
-
-  if (ready.length === 0) return;
-
-  // Broadcast to public clients - same format as authenticated feed
-  console.log(`Broadcasting ${ready.length} delayed tokens to ${publicClients.size} public clients`);
-  broadcastToPublic({
-    type: 'new_tokens',
-    data: ready
-  });
 }
 
 // Stream realtime market caps periodically (Helius) without forcing full feed resets.
@@ -1071,26 +1071,16 @@ async function broadcastRealtimeMcaps() {
       tokenStore.updateAthIfHigher(data.address, data.realtime_mcap);
     }
 
-    // Send to authenticated clients
     broadcast({ type: 'token_update', data });
-
-    // Also send to public clients if token is 5+ minutes old
-    if (publicClients.size > 0) {
-      const token = tokenStore.getToken(data.address);
-      if (token && isPublicEligible(token)) {
-        broadcastToPublic({ type: 'token_update', data });
-      }
-    }
+    broadcastToPublic({ type: 'token_update', data });
   });
 }
 
 // Start polling
-const POLL_INTERVAL = 2000; // 2 seconds for faster token detection
-const PUBLIC_BROADCAST_INTERVAL = 15000; // Check every 15 seconds for delayed tokens
+const POLL_INTERVAL = 2000; // 2 seconds for instant token detection
 
 setInterval(pollStalkFun, POLL_INTERVAL);
 setInterval(broadcastRealtimeMcaps, REALTIME_MCAP_BROADCAST_INTERVAL_MS);
-setInterval(broadcastPublicFeed, PUBLIC_BROADCAST_INTERVAL);
 
 // Initial poll
 setTimeout(pollStalkFun, 1000);

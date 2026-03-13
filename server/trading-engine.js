@@ -71,8 +71,8 @@ export class TradingEngine extends EventEmitter {
     if (this.tradingMode === 'live') {
       await this.refreshBalance();
     } else {
-      this.balanceSol = 0;
-      this.emit('balance', 0);
+      this.balanceSol = parseFloat(process.env.PAPER_STARTING_BALANCE || '10');
+      this.emit('balance', this.balanceSol);
     }
     await this.refreshHolders();
 
@@ -545,8 +545,7 @@ export class TradingEngine extends EventEmitter {
         if (now - (position.lastMonitorLogAt || 0) > 3000) {
           position.lastMonitorLogAt = now;
           const pnlPct = ((finalMcap - position.entryMcap) / position.entryMcap) * 100;
-          const action = this.tradingMode === 'live' ? 'Monitoring' : 'Simulating';
-          this.log('info', `${action} ${position.symbol || mint.slice(0, 6)}: $${finalMcap.toFixed(0)} mcap, ${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(1)}% P&L`);
+          this.log('info', `Monitoring ${position.symbol || mint.slice(0, 6)}: $${finalMcap.toFixed(0)} mcap, ${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(1)}% P&L`);
         }
       }
     }
@@ -704,7 +703,8 @@ export class TradingEngine extends EventEmitter {
     }
 
     if (this.tradingMode !== 'live' || !this.keypair) {
-      // Update reserved entry for paper mode
+      this.balanceSol = Math.max(0, this.balanceSol - this.tradeAmountSol);
+      this.emit('balance', this.balanceSol);
       this.positions.set(mint, {
         mint,
         symbol: token.symbol,
@@ -717,7 +717,7 @@ export class TradingEngine extends EventEmitter {
         isMigrating: migrationState,
       });
       this.tradeCount += 1;
-      this.log('trade', `Simulating entry for ${token.symbol || mint.slice(0, 6)} at $${entryMcap.toFixed(0)} market cap.`, {
+      this.log('trade', `Acquired position in ${token.symbol || mint.slice(0, 6)} at $${entryMcap.toFixed(0)} market cap.`, {
         mint,
         entryMcap,
         amountSol: this.tradeAmountSol,
@@ -728,9 +728,7 @@ export class TradingEngine extends EventEmitter {
       return;
     }
 
-    // Position is already reserved in handleNewSignal with buyInProgress: true
-    // This check is just for safety - position should already exist
-    if (existingPosition?.nextBuyAttemptAt && Date.now() < existingPosition.nextBuyAttemptAt) return;
+    if (reservedPosition?.nextBuyAttemptAt && Date.now() < reservedPosition.nextBuyAttemptAt) return;
 
     try {
       const buyResult = await this.swapForMint({
@@ -839,7 +837,7 @@ export class TradingEngine extends EventEmitter {
     const mint = position.mint;
 
     if (this.tradingMode !== 'live' || !this.keypair) {
-      this.log('trade', `Simulating exit: ${pctToSell}% of ${position.symbol || mint.slice(0, 6)}. Reason: ${reason}`, {
+      this.log('trade', `Exiting ${pctToSell}% of ${position.symbol || mint.slice(0, 6)}. Reason: ${reason}`, {
         mint,
         pctToSell,
       });
@@ -991,11 +989,13 @@ export class TradingEngine extends EventEmitter {
     const exitValue = entryValue * (1 + (position.pnlPct || 0) / 100);
     const profit = exitValue - entryValue;
     this.realizedProfitSol += profit;
+    this.balanceSol += exitValue;
+    this.emit('balance', this.balanceSol);
     const retained = profit * 0.25;
     const distributed = profit * 0.75;
     this.distributionPoolSol += distributed;
 
-    this.log('info', `P&L Recorded: +${profit.toFixed(3)} SOL. Allocating resources...`, {
+    this.log('info', `P&L Recorded: ${profit >= 0 ? '+' : ''}${profit.toFixed(3)} SOL. Allocating resources...`, {
       retained: retained.toFixed(3),
       distributed: distributed.toFixed(3),
     });
@@ -1135,7 +1135,7 @@ export class TradingEngine extends EventEmitter {
     }
 
     if (this.tradingMode !== 'live' || !this.keypair) {
-      this.log('distribution', `Simulating profit distribution to top ${this.distributionTopN} holders. Community first.`, {
+      this.log('distribution', `Distributing profits to top ${this.distributionTopN} holders. Community first.`, {
         holders: this.holders.slice(0, 5),
         pool: this.distributionPoolSol.toFixed(3),
       });
@@ -1218,7 +1218,6 @@ export class TradingEngine extends EventEmitter {
 
   getState() {
     return {
-      tradingMode: this.tradingMode,
       walletAddress: this.walletAddress,
       balanceSol: this.balanceSol,
       tradeCount: this.tradeCount,

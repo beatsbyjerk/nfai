@@ -108,13 +108,14 @@ export class TokenStore {
         const latest = parseFloat(
           data.latest_mcap ?? data.marketcap ?? data.current_mc
         );
-        const ath = parseFloat(
+        const athRaw = parseFloat(
           data.ath ?? data.ath_mcap ?? data.ath_mc ?? data.ath_market_cap
         );
+        const ath = Number.isFinite(athRaw) ? athRaw : (Number.isFinite(latest) ? latest : null);
         updateStmt.run(
           Number.isFinite(initial) ? initial : null,
           Number.isFinite(latest) ? latest : null,
-          Number.isFinite(ath) ? ath : null,
+          ath,
           row.address
         );
         updated += 1;
@@ -125,6 +126,57 @@ export class TokenStore {
     return updated;
   }
 
+  backfillTimestamps() {
+    const parseTs = (val) => {
+      if (!val) return null;
+      if (typeof val === 'string' && val.includes('T')) return val;
+      const num = typeof val === 'number' ? val : parseInt(val, 10);
+      if (!Number.isFinite(num) || num <= 0) return null;
+      const ms = num < 1e12 ? num * 1000 : num;
+      const d = new Date(ms);
+      if (d.getFullYear() < 2020 || d.getFullYear() > 2030) return null;
+      return d.toISOString();
+    };
+
+    const rows = this.db.prepare(`SELECT address, raw_data, first_seen_local FROM tokens WHERE raw_data IS NOT NULL`).all();
+    const updateStmt = this.db.prepare(`UPDATE tokens SET first_seen_local = ?, first_seen = COALESCE(first_seen, ?) WHERE address = ?`);
+
+    let fixed = 0;
+
+    for (const row of rows) {
+      try {
+        const raw = JSON.parse(row.raw_data);
+        const ts =
+          raw.first_seen || raw.created_at ||
+          parseTs(raw.pool_creation_timestamp) ||
+          parseTs(raw.created_timestamp) ||
+          parseTs(raw.built_at) ||
+          parseTs(raw.timestamp) ||
+          parseTs(raw.last_trade_timestamp) ||
+          null;
+
+        if (!ts) continue;
+
+        const current = row.first_seen_local;
+        if (!current) {
+          updateStmt.run(ts, ts, row.address);
+          fixed++;
+          continue;
+        }
+
+        const rawTime = new Date(ts).getTime();
+        const storedTime = new Date(current).getTime();
+        if (rawTime < storedTime) {
+          updateStmt.run(ts, ts, row.address);
+          fixed++;
+        }
+      } catch {
+        // skip
+      }
+    }
+    return fixed;
+  }
+
   upsertToken(tokenData, source = 'print_scan') {
     const address = tokenData.token_address || tokenData.mint || tokenData.mintAddress;
     if (!address) return false;
@@ -133,13 +185,33 @@ export class TokenStore {
     const isNew = !existing;
     
     const now = new Date().toISOString();
+
+    const parseTimestamp = (val) => {
+      if (!val) return null;
+      if (typeof val === 'string' && val.includes('T')) return val;
+      const num = typeof val === 'number' ? val : parseInt(val, 10);
+      if (!Number.isFinite(num) || num <= 0) return null;
+      const ms = num < 1e12 ? num * 1000 : num;
+      return new Date(ms).toISOString();
+    };
+
     const firstSeenLocal =
       existing?.first_seen_local ||
       tokenData.first_seen ||
       tokenData.created_at ||
+      parseTimestamp(tokenData.pool_creation_timestamp) ||
+      parseTimestamp(tokenData.created_timestamp) ||
+      parseTimestamp(tokenData.built_at) ||
+      parseTimestamp(tokenData.timestamp) ||
+      parseTimestamp(tokenData.last_trade_timestamp) ||
       now;
     const lastUpdated = tokenData.updated_at || now;
-    const sourceFirstSeen = tokenData.first_seen || tokenData.created_at || tokenData.first_called || null;
+    const sourceFirstSeen =
+      tokenData.first_seen || tokenData.created_at || tokenData.first_called ||
+      parseTimestamp(tokenData.pool_creation_timestamp) ||
+      parseTimestamp(tokenData.created_timestamp) ||
+      parseTimestamp(tokenData.built_at) ||
+      null;
     
     // Normalize token data from different sources
     const existingSources = (existing?.sources || existing?.source || '')
@@ -150,7 +222,7 @@ export class TokenStore {
 
     // Parse market cap values
     const parsedInitialMcap = parseFloat(tokenData.initial_mcap || tokenData.initial_market_cap || tokenData.initial_mc);
-    const parsedLatestMcap = parseFloat(tokenData.latest_mcap || tokenData.marketcap || tokenData.current_mc);
+    const parsedLatestMcap = parseFloat(tokenData.latest_mcap || tokenData.marketcap || tokenData.marketCap || tokenData.usd_market_cap || tokenData.current_mc);
     
     // For new tokens: set initial_mcap to provided value, or use latest_mcap if initial not provided
     // For existing tokens: preserve existing initial_mcap, only set if currently NULL
@@ -184,8 +256,9 @@ export class TokenStore {
                    tokenData.solanatracker?.token?.description || null,
       
       initial_mcap: initialMcap,
-      latest_mcap: parseFloat(tokenData.latest_mcap || tokenData.marketcap || tokenData.current_mc) || null,
-      ath_mcap: parseFloat(tokenData.ath || tokenData.ath_market_cap || tokenData.ath_mc) || null,
+      latest_mcap: parseFloat(tokenData.latest_mcap || tokenData.marketcap || tokenData.marketCap || tokenData.usd_market_cap || tokenData.current_mc) || null,
+      ath_mcap: parseFloat(tokenData.ath || tokenData.ath_market_cap || tokenData.ath_mc) ||
+                parseFloat(tokenData.latest_mcap || tokenData.marketcap || tokenData.marketCap || tokenData.usd_market_cap || tokenData.current_mc) || null,
       highest_multiplier: parseFloat(tokenData.highest_multiplier) || null,
       latest_multiplier: parseFloat(tokenData.latest_multiplier) || null,
       volume_24h: parseFloat(tokenData.volume_24h) || null,
@@ -234,7 +307,10 @@ export class TokenStore {
         description = COALESCE(@description, description),
         initial_mcap = CASE WHEN initial_mcap IS NOT NULL AND initial_mcap > 0 THEN initial_mcap ELSE @initial_mcap END,
         latest_mcap = COALESCE(@latest_mcap, latest_mcap),
-        ath_mcap = CASE WHEN @ath_mcap > COALESCE(ath_mcap, 0) THEN @ath_mcap ELSE ath_mcap END,
+        ath_mcap = CASE
+          WHEN @ath_mcap > COALESCE(ath_mcap, 0) THEN @ath_mcap
+          WHEN @latest_mcap > COALESCE(ath_mcap, 0) THEN @latest_mcap
+          ELSE ath_mcap END,
         highest_multiplier = CASE WHEN @highest_multiplier > COALESCE(highest_multiplier, 0) THEN @highest_multiplier ELSE highest_multiplier END,
         latest_multiplier = COALESCE(@latest_multiplier, latest_multiplier),
         volume_24h = COALESCE(@volume_24h, volume_24h),

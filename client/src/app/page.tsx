@@ -1,0 +1,604 @@
+"use client";
+
+import React, { useState, useEffect, useMemo } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Navbar } from "@/components/Navbar";
+import { TokenCard, type Token, displayMcap, getMultiplier, mcapChange } from "@/components/TokenCard";
+import { TokenModal } from "@/components/TokenModal";
+import { HeroSection } from "@/components/HeroSection";
+import { useTokenFeed } from "@/lib/useTokenFeed";
+import { computeConviction } from "@/lib/dexscreener";
+import { formatMcap, formatSol, formatPct } from "@/lib/utils";
+import {
+  Search, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight
+} from "lucide-react";
+import Link from "next/link";
+
+const TOKENS_PER_PAGE = 20;
+
+const SPRING_SMOOTH = { type: "spring" as const, damping: 22, stiffness: 100 };
+
+/* ═══════════════════════════════════════════════════════════════════
+   PROOF OF INTELLIGENCE — Leaderboard
+   Open Claw's top signals by highest multiplier
+   ═══════════════════════════════════════════════════════════════════ */
+
+function LeaderboardEntry({ token, rank, onClick }: { token: Token; rank: number; onClick: () => void }) {
+  const mult = getMultiplier(token);
+  const mcap = displayMcap(token);
+  const isStar = mult != null && mult >= 10;
+  const isGold = mult != null && mult >= 5;
+
+  return (
+    <motion.div
+      className="shrink-0 w-[200px] sm:w-[220px] cursor-pointer group/lb"
+      whileHover={{ y: -4, scale: 1.02 }}
+      transition={{ type: "spring", damping: 20, stiffness: 300 }}
+      onClick={onClick}
+    >
+      <div className={`relative rounded-xl border p-3.5 transition-all duration-300 ${
+        isStar
+          ? "bg-yellow-400/[0.04] border-yellow-400/20 hover:border-yellow-400/40 shadow-[0_0_30px_rgba(250,204,21,0.06)]"
+          : isGold
+          ? "bg-accent/[0.03] border-accent/15 hover:border-accent/30 shadow-[0_0_20px_rgba(0,229,160,0.04)]"
+          : "bg-surface/50 border-border/50 hover:border-border-bright"
+      }`}>
+        {/* Animated bg for top performers */}
+        {isGold && (
+          <div className="absolute inset-0 -z-[1] overflow-hidden rounded-xl opacity-20">
+            <div
+              className="absolute inset-[-60%] animate-[spin_15s_linear_infinite]"
+              style={{
+                background: isStar
+                  ? "conic-gradient(from 0deg, transparent, rgba(250,204,21,0.2), transparent 50%, rgba(250,204,21,0.1), transparent)"
+                  : "conic-gradient(from 0deg, transparent, rgba(0,229,160,0.15), transparent 50%, rgba(0,229,160,0.08), transparent)",
+              }}
+            />
+          </div>
+        )}
+
+        {/* Rank */}
+        <div className={`absolute -top-2 -left-1 w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-black ${
+          rank === 1 ? "bg-yellow-400 text-black" :
+          rank === 2 ? "bg-foreground/80 text-black" :
+          rank === 3 ? "bg-orange-400 text-black" :
+          "bg-surface-raised text-muted border border-border"
+        }`}>
+          {rank}
+        </div>
+
+        <div className="flex items-center gap-2.5 mb-2.5">
+          {token.image ? (
+            <img src={token.image} alt="" className="w-9 h-9 rounded-lg ring-1 ring-border/50 object-cover shrink-0" />
+          ) : (
+            <div className="w-9 h-9 rounded-lg bg-surface-raised ring-1 ring-border flex items-center justify-center text-xs font-bold text-muted shrink-0">
+              {(token.symbol || "?")[0]}
+            </div>
+          )}
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-bold text-foreground truncate">{token.symbol || "???"}</div>
+            <div className="text-[10px] text-muted/40 truncate">{token.name || "Unknown"}</div>
+          </div>
+        </div>
+
+        <div className="flex items-baseline justify-between">
+          <span className={`text-lg font-mono font-black ${
+            isStar ? "text-yellow-400" : isGold ? "text-accent" : "text-foreground"
+          }`} style={{ textShadow: isGold ? "0 0 12px currentColor" : "none" }}>
+            {mult != null ? `${mult.toFixed(1)}x` : "—"}
+          </span>
+          <span className="text-[10px] font-mono text-muted/40">{formatMcap(mcap)}</span>
+        </div>
+
+        {token.initial_mcap && token.ath_mcap && (
+          <div className="flex items-center gap-1.5 mt-2 text-[9px] text-muted/35 font-mono">
+            <span>{formatMcap(token.initial_mcap)}</span>
+            <span className="text-accent/40">→</span>
+            <span className="text-foreground/50">{formatMcap(token.ath_mcap)}</span>
+          </div>
+        )}
+      </div>
+    </motion.div>
+  );
+}
+
+export default function HomePage() {
+  const { tokens, allTokens, stats, search, setSearch, dexCache, connected, flashSet, trading } = useTokenFeed({
+    sortBy: "recent",
+    limit: 500,
+  });
+  const [selectedToken, setSelectedToken] = useState<Token | null>(null);
+  const [page, setPage] = useState(0);
+
+  const hotCount = useMemo(
+    () => allTokens.filter((t) => { const c = mcapChange(t); return c != null && c > 100; }).length,
+    [allTokens]
+  );
+
+  const hotTokens = useMemo(() => {
+    return allTokens
+      .filter((t) => {
+        const c = mcapChange(t);
+        const m = getMultiplier(t);
+        return (c != null && c > 50) || (m != null && m >= 2);
+      })
+      .sort((a, b) => (getMultiplier(b) || 0) - (getMultiplier(a) || 0))
+      .slice(0, 12);
+  }, [allTokens]);
+
+  const leaderboard = useMemo(() => {
+    return allTokens
+      .filter((t) => {
+        const m = getMultiplier(t);
+        return m != null && m > 1.5;
+      })
+      .sort((a, b) => (getMultiplier(b) || 0) - (getMultiplier(a) || 0))
+      .slice(0, 15);
+  }, [allTokens]);
+
+  const totalPages = Math.max(1, Math.ceil(tokens.length / TOKENS_PER_PAGE));
+  useEffect(() => {
+    if (page >= totalPages) setPage(Math.max(0, totalPages - 1));
+  }, [page, totalPages]);
+
+  const pageTokens = useMemo(() => {
+    const start = page * TOKENS_PER_PAGE;
+    return tokens.slice(start, start + TOKENS_PER_PAGE);
+  }, [tokens, page]);
+
+  const getGradeInfo = (token: Token) => {
+    const dex = dexCache.get(token.address) || null;
+    const mcap = displayMcap(token);
+    const conviction = computeConviction(dex, mcap, token.ath_mcap, token.initial_mcap);
+    return { displayGrade: conviction.grade, displayScore: conviction.score, allFactors: conviction.factors || [] };
+  };
+
+  return (
+    <div className="min-h-screen flex flex-col relative">
+      <div className="fixed inset-0 pointer-events-none -z-10 overflow-hidden">
+        <div className="absolute -top-32 left-1/4 w-[700px] h-[700px] bg-accent/[0.04] rounded-full blur-[220px]" />
+        <div className="absolute bottom-0 right-1/3 w-[500px] h-[500px] bg-blue-600/[0.025] rounded-full blur-[180px]" />
+        <div className="absolute top-1/2 -right-20 w-[300px] h-[600px] bg-purple-600/[0.02] rounded-full blur-[160px]" />
+      </div>
+
+      <Navbar />
+      <main className="flex-grow pt-14">
+        {/* ═══ HERO ═══ */}
+        <HeroSection
+          tokens={tokens}
+          hotTokens={hotTokens}
+          allTokens={allTokens}
+          stats={stats}
+          hotCount={hotCount}
+          dexCacheSize={dexCache.size}
+          connected={connected}
+          onTokenClick={setSelectedToken}
+        />
+
+        {/* ═══ PROOF OF INTELLIGENCE — Leaderboard ═══ */}
+        {leaderboard.length > 0 && (
+          <section className="relative overflow-hidden border-b border-border/30 bg-gradient-to-b from-background to-background/95">
+            <div className="absolute inset-0 pointer-events-none">
+              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] bg-accent/[0.02] rounded-full blur-[120px]" />
+            </div>
+            <div className="max-w-[1800px] mx-auto px-4 py-12">
+              <motion.div
+                className="text-center mb-8"
+                initial={{ opacity: 0, y: 16 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={SPRING_SMOOTH}
+              >
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-accent/8 border border-accent/12 text-[10px] font-bold text-accent uppercase tracking-widest mb-4">
+                  <motion.div
+                    className="w-1.5 h-1.5 rounded-full bg-accent"
+                    animate={{ opacity: [0.4, 1, 0.4] }}
+                    transition={{ duration: 1.5, repeat: Infinity }}
+                  />
+                  Proof of Intelligence
+                </div>
+                <h2 className="text-2xl sm:text-3xl font-heading font-black mb-2">
+                  Open Claw&apos;s <span className="text-gradient-accent">Top Signals</span>
+                </h2>
+                <p className="text-muted/40 text-sm max-w-md mx-auto">
+                  Every signal below was identified by Open Claw before the move. These aren&apos;t predictions — they&apos;re results. Real-time performance, verified on-chain.
+                </p>
+              </motion.div>
+
+              <div className="relative">
+                <div className="flex gap-3 overflow-x-auto pb-4 scrollbar-thin snap-x snap-mandatory px-2" style={{ scrollbarWidth: "thin" }}>
+                  {leaderboard.map((token, i) => (
+                    <LeaderboardEntry
+                      key={token.address}
+                      token={token}
+                      rank={i + 1}
+                      onClick={() => setSelectedToken(token)}
+                    />
+                  ))}
+                </div>
+                <div className="absolute top-0 right-0 bottom-4 w-20 bg-gradient-to-l from-background to-transparent pointer-events-none z-10" />
+              </div>
+            </div>
+          </section>
+        )}
+
+        {/* ═══ AUTO-TRADING ENGINE SECTION ═══ */}
+        <section className="relative border-b border-border/30">
+          <div className="max-w-[1800px] mx-auto px-4 py-14">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 items-center max-w-5xl mx-auto">
+              {/* Left: Content */}
+              <motion.div
+                initial={{ opacity: 0, x: -20 }}
+                whileInView={{ opacity: 1, x: 0 }}
+                viewport={{ once: true }}
+                transition={SPRING_SMOOTH}
+              >
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-accent/8 border border-accent/12 text-[10px] font-bold text-accent uppercase tracking-widest mb-4">
+                  <motion.div
+                    className="w-1.5 h-1.5 rounded-full bg-accent"
+                    animate={{ opacity: [0.4, 1, 0.4] }}
+                    transition={{ duration: 1.5, repeat: Infinity }}
+                  />
+                  Automated Execution
+                </div>
+                <h2 className="text-2xl sm:text-3xl font-heading font-black mb-3">
+                  Signal Detection to <span className="text-gradient-accent">Trade Execution</span>
+                </h2>
+                <p className="text-foreground/50 text-sm leading-relaxed mb-4">
+                  Open Claw doesn&apos;t just identify opportunities — it acts on them. Our autonomous trading engine converts high-conviction signals into precisely timed entries and exits, operating at speeds no manual trader can match.
+                </p>
+                <p className="text-muted/35 text-xs leading-relaxed mb-6">
+                  Position sizing, risk management, and exit strategies are handled algorithmically based on real-time market conditions. Connect your wallet to let Open Claw work for you — the same intelligence that generated the signals above, now executing on your behalf.
+                </p>
+                <div className="flex flex-wrap gap-3">
+                  <Link href="/trading" className="inline-flex items-center gap-2 h-10 px-6 rounded-xl bg-accent text-black font-bold text-sm hover:bg-accent-bright transition-all shadow-[0_0_20px_rgba(0,229,160,0.15)] hover:shadow-[0_0_30px_rgba(0,229,160,0.3)]">
+                    Open Trading Engine
+                  </Link>
+                  <Link href="/wallet" className="inline-flex items-center gap-2 h-10 px-6 rounded-xl bg-surface border border-border text-foreground font-medium text-sm hover:border-border-bright hover:bg-surface-raised transition-all">
+                    Connect Wallet
+                  </Link>
+                </div>
+              </motion.div>
+
+              {/* Right: Visual feature list */}
+              <motion.div
+                className="space-y-3"
+                initial={{ opacity: 0, x: 20 }}
+                whileInView={{ opacity: 1, x: 0 }}
+                viewport={{ once: true }}
+                transition={{ ...SPRING_SMOOTH, delay: 0.15 }}
+              >
+                {[
+                  {
+                    title: "Real-Time Signal Conversion",
+                    desc: "The moment Open Claw grades a token above threshold, the engine evaluates entry conditions and position parameters within milliseconds.",
+                  },
+                  {
+                    title: "Algorithmic Position Management",
+                    desc: "Dynamic sizing based on conviction score, market cap, liquidity depth, and current portfolio exposure. No emotional decisions.",
+                  },
+                  {
+                    title: "Autonomous Exit Strategy",
+                    desc: "Trailing stops, take-profit targets, and time-decay exits calibrated per-token based on volatility profile and momentum decay.",
+                  },
+                  {
+                    title: "Multi-Source Intelligence",
+                    desc: "Aggregates data from on-chain analytics, volume tracking, holder analysis, and market microstructure — simultaneously.",
+                  },
+                ].map((feature, i) => (
+                  <motion.div
+                    key={feature.title}
+                    className="rounded-xl bg-surface/40 border border-border/40 p-4 hover:border-accent/15 hover:bg-surface/60 transition-all duration-300"
+                    initial={{ opacity: 0, y: 10 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ ...SPRING_SMOOTH, delay: 0.1 + i * 0.08 }}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="w-1.5 h-1.5 rounded-full bg-accent/60 mt-1.5 shrink-0" />
+                      <div>
+                        <div className="text-sm font-bold text-foreground/80 mb-0.5">{feature.title}</div>
+                        <div className="text-xs text-muted/40 leading-relaxed">{feature.desc}</div>
+                      </div>
+                    </div>
+                  </motion.div>
+                ))}
+              </motion.div>
+            </div>
+          </div>
+        </section>
+
+        {/* ═══ LIVE ENGINE PERFORMANCE ═══ */}
+        <section className="relative border-b border-border/30 bg-gradient-to-b from-background/95 to-background">
+          <div className="absolute inset-0 pointer-events-none">
+            <div className="absolute bottom-0 left-1/3 w-[500px] h-[250px] bg-accent/[0.015] rounded-full blur-[100px]" />
+          </div>
+          <div className="max-w-[1800px] mx-auto px-4 py-12">
+            <motion.div
+              className="text-center mb-8"
+              initial={{ opacity: 0, y: 16 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={SPRING_SMOOTH}
+            >
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-accent/8 border border-accent/12 text-[10px] font-bold text-accent uppercase tracking-widest mb-4">
+                <motion.div
+                  className="w-1.5 h-1.5 rounded-full bg-accent"
+                  animate={{ opacity: [0.4, 1, 0.4] }}
+                  transition={{ duration: 1.5, repeat: Infinity }}
+                />
+                Live Performance
+              </div>
+              <h2 className="text-2xl sm:text-3xl font-heading font-black mb-2">
+                Engine <span className="text-gradient-accent">Status</span>
+              </h2>
+              <p className="text-muted/40 text-sm max-w-md mx-auto">
+                Open Claw&apos;s real-time execution metrics. Every position tracked, every outcome measured.
+              </p>
+            </motion.div>
+
+            {(() => {
+              const openPositions = trading.positions.filter((p) => p.remainingPct > 0);
+              const totalInvested = openPositions.reduce((sum, p) => sum + p.amountSol * (p.remainingPct / 100), 0);
+              const totalPnl = openPositions.reduce((sum, p) => sum + p.amountSol * (p.remainingPct / 100) * (p.pnlPct / 100), 0);
+              const winningPositions = openPositions.filter((p) => p.pnlPct > 0).length;
+
+              return (
+                <div className="space-y-6">
+                  {/* Stat Cards */}
+                  <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+                    {[
+                      { label: "Wallet Balance", value: formatSol(trading.balanceSol, 3), accent: true },
+                      { label: "Open Positions", value: String(openPositions.length), accent: true },
+                      { label: "Total Invested", value: formatSol(totalInvested, 3), accent: true },
+                      { label: "Unrealized P&L", value: formatSol(totalPnl, 4), positive: totalPnl >= 0 },
+                      { label: "Realized Profit", value: formatSol(trading.realizedProfitSol, 4), positive: trading.realizedProfitSol >= 0 },
+                    ].map((stat) => (
+                      <motion.div
+                        key={stat.label}
+                        className="relative rounded-xl border border-border/40 bg-surface/30 p-4 group hover:border-accent/15 transition-all duration-300"
+                        whileHover={{ y: -2 }}
+                        transition={{ type: "spring", damping: 20, stiffness: 300 }}
+                      >
+                        <div className="text-[10px] text-muted/45 uppercase tracking-wider font-bold mb-1">{stat.label}</div>
+                        <div className={`text-lg font-mono font-black ${
+                          stat.positive !== undefined
+                            ? stat.positive ? "text-accent" : "text-danger"
+                            : "text-foreground"
+                        }`}>
+                          {stat.value}
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+
+                  {/* Active Positions */}
+                  {openPositions.length > 0 && (
+                    <motion.div
+                      className="rounded-xl border border-border/40 bg-surface/20 overflow-hidden"
+                      initial={{ opacity: 0, y: 12 }}
+                      whileInView={{ opacity: 1, y: 0 }}
+                      viewport={{ once: true }}
+                      transition={SPRING_SMOOTH}
+                    >
+                      <div className="flex items-center justify-between px-4 py-3 border-b border-border/30 bg-surface/30">
+                        <div className="flex items-center gap-2.5">
+                          <motion.div
+                            className="w-2 h-2 rounded-full bg-accent"
+                            animate={{ scale: [1, 1.3, 1], opacity: [0.6, 1, 0.6] }}
+                            transition={{ duration: 2, repeat: Infinity }}
+                          />
+                          <span className="text-sm font-bold">Active Trades</span>
+                          <span className="text-[10px] text-muted/40 font-mono">{openPositions.length} open</span>
+                        </div>
+                        {winningPositions > 0 && (
+                          <span className="text-[10px] font-bold text-accent">
+                            {winningPositions}/{openPositions.length} profitable
+                          </span>
+                        )}
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="border-b border-border/20 text-muted/40 uppercase tracking-wider text-[10px]">
+                              <th className="text-left p-3 font-bold">Token</th>
+                              <th className="text-right p-3 font-bold">Entry MCap</th>
+                              <th className="text-right p-3 font-bold">Current MCap</th>
+                              <th className="text-right p-3 font-bold">Size</th>
+                              <th className="text-right p-3 font-bold">P&L</th>
+                              <th className="text-right p-3 font-bold">Status</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <AnimatePresence mode="popLayout">
+                              {openPositions.slice(0, 10).map((pos) => (
+                                <motion.tr
+                                  key={pos.mint}
+                                  className="border-b border-border/10 hover:bg-surface-raised/20 transition-colors"
+                                  initial={{ opacity: 0, x: -10 }}
+                                  animate={{ opacity: 1, x: 0 }}
+                                  exit={{ opacity: 0, x: 10 }}
+                                  transition={{ duration: 0.25 }}
+                                >
+                                  <td className="p-3">
+                                    <div className="font-bold text-foreground">{pos.symbol || pos.mint.slice(0, 8)}</div>
+                                    <div className="text-muted/30 font-mono text-[10px]">{pos.mint.slice(0, 6)}...{pos.mint.slice(-4)}</div>
+                                  </td>
+                                  <td className="p-3 text-right font-mono text-muted/60">{formatMcap(pos.entryMcap)}</td>
+                                  <td className="p-3 text-right font-mono">{formatMcap(pos.currentMcap || pos.maxMcap)}</td>
+                                  <td className="p-3 text-right font-mono text-muted/60">{pos.amountSol.toFixed(3)} SOL</td>
+                                  <td className={`p-3 text-right font-mono font-black ${pos.pnlPct >= 0 ? "text-accent" : "text-danger"}`}>
+                                    {formatPct(pos.pnlPct)}
+                                  </td>
+                                  <td className="p-3 text-right">
+                                    {pos.buyInProgress && <span className="px-2 py-0.5 rounded-full text-[10px] bg-yellow-400/10 text-yellow-400 border border-yellow-400/20 font-bold">ACQUIRING</span>}
+                                    {pos.sellInProgress && <span className="px-2 py-0.5 rounded-full text-[10px] bg-danger/10 text-danger border border-danger/20 font-bold">EXITING</span>}
+                                    {pos.isMigrating && <span className="px-2 py-0.5 rounded-full text-[10px] bg-surface text-muted border border-border font-bold">MIGRATING</span>}
+                                    {!pos.buyInProgress && !pos.sellInProgress && !pos.isMigrating && (
+                                      <span className="px-2 py-0.5 rounded-full text-[10px] bg-accent/10 text-accent border border-accent/20 font-bold">ACTIVE</span>
+                                    )}
+                                  </td>
+                                </motion.tr>
+                              ))}
+                            </AnimatePresence>
+                          </tbody>
+                        </table>
+                      </div>
+                      {openPositions.length > 10 && (
+                        <div className="px-4 py-2.5 border-t border-border/20 text-center">
+                          <Link href="/trading" className="text-[11px] text-accent font-bold hover:underline">
+                            View all {openPositions.length} positions →
+                          </Link>
+                        </div>
+                      )}
+                    </motion.div>
+                  )}
+
+                  {/* Recent Activity */}
+                  {trading.activityLog.length > 0 && (
+                    <motion.div
+                      className="rounded-xl border border-border/40 bg-surface/20 overflow-hidden"
+                      initial={{ opacity: 0, y: 12 }}
+                      whileInView={{ opacity: 1, y: 0 }}
+                      viewport={{ once: true }}
+                      transition={{ ...SPRING_SMOOTH, delay: 0.1 }}
+                    >
+                      <div className="flex items-center justify-between px-4 py-3 border-b border-border/30 bg-surface/30">
+                        <div className="flex items-center gap-2.5">
+                          <span className="w-2 h-2 rounded-full bg-accent/60" />
+                          <span className="text-sm font-bold">Recent Activity</span>
+                        </div>
+                        <Link href="/trading" className="text-[10px] text-accent font-bold hover:underline">
+                          Full log →
+                        </Link>
+                      </div>
+                      <div className="divide-y divide-border/10 max-h-[200px] overflow-y-auto" style={{ scrollbarWidth: "thin" }}>
+                        {trading.activityLog.slice(0, 8).map((entry, i) => (
+                          <div key={`${entry.timestamp}-${i}`} className="px-4 py-2.5 text-xs flex items-start gap-2.5 hover:bg-surface-raised/10 transition-colors">
+                            <div className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${
+                              entry.type === "trade" ? "bg-accent" :
+                              entry.type === "signal" ? "bg-blue-400" :
+                              entry.type === "error" ? "bg-danger" :
+                              "bg-muted/40"
+                            }`} />
+                            <p className="text-foreground/60 leading-relaxed min-w-0 break-words">{entry.message}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </motion.div>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+        </section>
+
+        {/* ═══ TOKEN FEED WITH PAGINATION ═══ */}
+        <section className="max-w-[1800px] mx-auto px-4 py-8">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
+            <div className="flex items-center gap-3">
+              <motion.div
+                className="w-2.5 h-2.5 rounded-full bg-accent"
+                animate={{ scale: [1, 1.3, 1], opacity: [0.6, 1, 0.6] }}
+                transition={{ duration: 2, repeat: Infinity }}
+              />
+              <h2 className="text-xl font-heading font-bold">The Pit</h2>
+              <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${connected ? "bg-accent/10 text-accent border border-accent/20" : "bg-danger/10 text-danger border border-danger/20"}`}>
+                <div className={`w-1.5 h-1.5 rounded-full ${connected ? "bg-accent animate-pulse" : "bg-danger"}`} />
+                {connected ? "STREAMING" : "OFFLINE"}
+              </div>
+              <span className="text-xs text-muted/50 font-mono">{tokens.length} tokens</span>
+            </div>
+            <div className="relative w-full sm:w-auto">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted" />
+              <input
+                type="text"
+                placeholder="Search tokens..."
+                value={search}
+                onChange={(e) => { setSearch(e.target.value); setPage(0); }}
+                className="w-full sm:w-60 h-10 pl-9 pr-3 rounded-xl bg-surface border border-border text-sm placeholder:text-muted/40 focus:outline-none focus:border-accent/30 transition-colors"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3">
+            {pageTokens.map((token, i) => (
+              <TokenCard
+                key={token.address}
+                token={token}
+                dex={dexCache.get(token.address) || null}
+                index={i}
+                isFlash={flashSet.current.has(token.address)}
+                onClick={() => setSelectedToken(token)}
+              />
+            ))}
+          </div>
+
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center gap-2 mt-8">
+              <button onClick={() => setPage(0)} disabled={page === 0} className="p-2 rounded-lg bg-surface border border-border text-muted hover:text-foreground hover:border-border-bright disabled:opacity-30 disabled:cursor-not-allowed transition-all">
+                <ChevronsLeft className="w-4 h-4" />
+              </button>
+              <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0} className="p-2 rounded-lg bg-surface border border-border text-muted hover:text-foreground hover:border-border-bright disabled:opacity-30 disabled:cursor-not-allowed transition-all">
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <div className="flex items-center gap-1">
+                {Array.from({ length: Math.min(7, totalPages) }, (_, i) => {
+                  let pageNum: number;
+                  if (totalPages <= 7) pageNum = i;
+                  else if (page < 3) pageNum = i;
+                  else if (page > totalPages - 4) pageNum = totalPages - 7 + i;
+                  else pageNum = page - 3 + i;
+                  return (
+                    <button
+                      key={pageNum}
+                      onClick={() => setPage(pageNum)}
+                      className={`w-9 h-9 rounded-lg text-xs font-bold transition-all ${
+                        page === pageNum
+                          ? "bg-accent/15 text-accent border border-accent/30 shadow-[0_0_10px_rgba(0,229,160,0.1)]"
+                          : "bg-surface border border-border text-muted hover:text-foreground hover:border-border-bright"
+                      }`}
+                    >
+                      {pageNum + 1}
+                    </button>
+                  );
+                })}
+              </div>
+              <button onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1} className="p-2 rounded-lg bg-surface border border-border text-muted hover:text-foreground hover:border-border-bright disabled:opacity-30 disabled:cursor-not-allowed transition-all">
+                <ChevronRight className="w-4 h-4" />
+              </button>
+              <button onClick={() => setPage(totalPages - 1)} disabled={page >= totalPages - 1} className="p-2 rounded-lg bg-surface border border-border text-muted hover:text-foreground hover:border-border-bright disabled:opacity-30 disabled:cursor-not-allowed transition-all">
+                <ChevronsRight className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
+          {tokens.length === 0 && (
+            <div className="text-center py-28">
+              <p className="text-foreground/50 text-base font-heading font-bold mb-1">Open Claw is scanning the Solana network...</p>
+              <p className="text-muted/40 text-sm">Tokens will appear here as they&apos;re detected and scored</p>
+              {!connected && (
+                <p className="text-danger/60 text-xs mt-3">WebSocket disconnected — make sure the backend is running on port 3001</p>
+              )}
+            </div>
+          )}
+        </section>
+      </main>
+
+      {selectedToken && (() => {
+        const dex = dexCache.get(selectedToken.address) || null;
+        const { displayGrade, displayScore, allFactors } = getGradeInfo(selectedToken);
+        return (
+          <TokenModal
+            token={selectedToken}
+            dex={dex}
+            onClose={() => setSelectedToken(null)}
+            grade={displayGrade}
+            score={displayScore}
+            factors={allFactors}
+          />
+        );
+      })()}
+    </div>
+  );
+}

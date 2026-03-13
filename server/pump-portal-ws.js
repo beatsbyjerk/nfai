@@ -110,7 +110,18 @@ export class PumpPortalWebSocket extends EventEmitter {
       this.emit('migration', { mint, state: migrationState, payload: message });
     }
 
-    if (message?.method?.toLowerCase?.().includes('trade') || message?.type?.toLowerCase?.().includes('trade')) {
+    // Detect new token creation events
+    const isCreate = message?.txType === 'create' ||
+      message?.event_type === 'create_coin' ||
+      message?.method === 'createEventNotification' ||
+      (message?.initialBuy != null && !this.subscribedTokenKeys.has(mint));
+    if (isCreate && mint) {
+      this.emit('newToken', { mint, payload: message });
+    }
+
+    if (message?.txType === 'buy' || message?.txType === 'sell' ||
+        message?.method?.toLowerCase?.().includes('trade') ||
+        message?.type?.toLowerCase?.().includes('trade')) {
       if (this.debug && mint && this.subscribedTokenKeys.has(mint)) {
         console.log(`PumpPortal trade update received for ${mint.slice(0, 6)}…`);
       }

@@ -99,6 +99,26 @@ export class StalkFunAPI {
     return this.fetchAPI('/api/trending');
   }
 
+  async fetchKoth() {
+    return this.fetchAPI('/api/koth');
+  }
+
+  async fetchDexPaid() {
+    return this.fetchAPI('/api/dexpaid');
+  }
+
+  async fetchLiveScan(limit = 100, timeWindow = '1h') {
+    return this.fetchAPI(`/api/live-scan?limit=${limit}&timeWindow=${timeWindow}`);
+  }
+
+  async fetchBoosted() {
+    return this.fetchAPI('/api/boosted');
+  }
+
+  async fetchPositions(walletAddress) {
+    return this.fetchAPI(`/api/positions?walletAddress=${walletAddress}&forceRefresh=true`);
+  }
+
   async fetchJackpotStatus() {
     return this.fetchAPI('/api/jackpot/status');
   }
@@ -117,12 +137,8 @@ export class StalkFunAPI {
     return this.fetchAPI(`/api/meme-radar?sortBy=${sortBy}&limit=${limit}&refresh=true`, {}, true);
   }
 
-  async fetchLiveScan(limit = 100, timeWindow = '1h') {
-    return this.fetchAPI(`/api/live-scan?limit=${limit}&timeWindow=${timeWindow}`, {}, true);
-  }
-
-  async fetchDexPaid() {
-    return this.fetchAPI('/api/dexpaid', {}, true);
+  async fetchSmartPump(limit = 500) {
+    return this.fetchAPI(`/api/smart-pump?limit=${limit}`, {}, true);
   }
 
   async fetchTokenTracker(listType = 'combined', limit = 20) {

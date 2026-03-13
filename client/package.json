@@ -1,25 +1,34 @@
 {
-  "name": "stalk-monitor-client",
+  "name": "client",
+  "version": "0.1.0",
   "private": true,
-  "version": "0.0.0",
-  "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint"
   },
   "dependencies": {
-    "@remotion/player": "^4.0.419",
-    "@remotion/shapes": "^4.0.419",
-    "@remotion/transitions": "^4.0.419",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "remotion": "^4.0.419"
+    "@remotion/player": "^4.0.435",
+    "@remotion/shapes": "^4.0.435",
+    "@remotion/transitions": "^4.0.435",
+    "clsx": "^2.1.1",
+    "framer-motion": "^12.36.0",
+    "lucide-react": "^0.577.0",
+    "next": "16.1.6",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "remotion": "^4.0.435",
+    "tailwind-merge": "^3.5.0"
   },
   "devDependencies": {
-    "@types/react": "^18.3.18",
-    "@types/react-dom": "^18.3.5",
-    "@vitejs/plugin-react": "^4.3.4",
-    "vite": "^6.0.7"
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.1.6",
+    "tailwindcss": "^4",
+    "typescript": "^5"
   }
 }
