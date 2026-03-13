@@ -1218,6 +1218,7 @@ export class TradingEngine extends EventEmitter {
 
   getState() {
     return {
+      tradingMode: this.tradingMode,
       walletAddress: this.walletAddress,
       balanceSol: this.balanceSol,
       tradeCount: this.tradeCount,

@@ -21,6 +21,7 @@ export interface TradingPosition {
 }
 
 export interface TradingState {
+  tradingMode: string;
   balanceSol: number;
   positions: TradingPosition[];
   tradeCount: number;
@@ -45,6 +46,7 @@ export function useTokenFeed(options: UseTokenFeedOptions = {}) {
   const flashSet = useRef<Set<string>>(new Set());
   const enrichingRef = useRef(false);
   const [trading, setTrading] = useState<TradingState>({
+    tradingMode: 'paper',
     balanceSol: 0,
     positions: [],
     tradeCount: 0,
@@ -59,6 +61,7 @@ export function useTokenFeed(options: UseTokenFeedOptions = {}) {
     if (msg.data.trading) {
       const t = msg.data.trading;
       setTrading({
+        tradingMode: t.tradingMode ?? 'paper',
         balanceSol: t.balanceSol ?? 0,
         positions: t.positions ?? [],
         tradeCount: t.tradeCount ?? 0,

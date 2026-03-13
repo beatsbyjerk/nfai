@@ -43,6 +43,7 @@ export default function TradingPage() {
     if (t) {
       setEngineState(t);
       setPositions(t.positions || []);
+      if (t.balanceSol != null) setBalanceSol(t.balanceSol);
       if (t.activityLog) setActivityLog(t.activityLog);
     }
   }, []);

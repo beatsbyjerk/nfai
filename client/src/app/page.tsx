@@ -239,22 +239,22 @@ export default function HomePage() {
                     animate={{ opacity: [0.4, 1, 0.4] }}
                     transition={{ duration: 1.5, repeat: Infinity }}
                   />
-                  Automated Execution
+                  How It Works
                 </div>
                 <h2 className="text-2xl sm:text-3xl font-heading font-black mb-3">
-                  Signal Detection to <span className="text-gradient-accent">Trade Execution</span>
+                  From Signal to <span className="text-gradient-accent">Execution</span>
                 </h2>
-                <p className="text-foreground/50 text-sm leading-relaxed mb-4">
-                  Open Claw doesn&apos;t just identify opportunities — it acts on them. Our autonomous trading engine converts high-conviction signals into precisely timed entries and exits, operating at speeds no manual trader can match.
+                <p className="text-foreground/55 text-sm leading-relaxed mb-4">
+                  When Open Claw spots a token worth trading, it doesn&apos;t just tell you about it — it handles the trade. Buys in early, sets stop-losses, takes profit, and exits before momentum dies. All hands-free.
                 </p>
-                <p className="text-muted/35 text-xs leading-relaxed mb-6">
-                  Position sizing, risk management, and exit strategies are handled algorithmically based on real-time market conditions. Connect your wallet to let Open Claw work for you — the same intelligence that generated the signals above, now executing on your behalf.
+                <p className="text-foreground/40 text-xs leading-relaxed mb-6">
+                  You set your risk. The engine does the rest. Every trade shows up in real-time on your dashboard so you always know what&apos;s happening with your capital.
                 </p>
                 <div className="flex flex-wrap gap-3">
-                  <Link href="/trading" className="inline-flex items-center gap-2 h-10 px-6 rounded-xl bg-accent text-black font-bold text-sm hover:bg-accent-bright transition-all shadow-[0_0_20px_rgba(0,229,160,0.15)] hover:shadow-[0_0_30px_rgba(0,229,160,0.3)]">
+                  <Link href="/trading" className="inline-flex items-center gap-2 h-11 px-7 rounded-xl bg-accent text-black font-bold text-sm hover:bg-accent-bright transition-all shadow-[0_0_20px_rgba(0,229,160,0.15)] hover:shadow-[0_0_30px_rgba(0,229,160,0.3)]">
                     Open Trading Engine
                   </Link>
-                  <Link href="/wallet" className="inline-flex items-center gap-2 h-10 px-6 rounded-xl bg-surface border border-border text-foreground font-medium text-sm hover:border-border-bright hover:bg-surface-raised transition-all">
+                  <Link href="/wallet" className="inline-flex items-center gap-2 h-11 px-7 rounded-xl bg-surface border border-border text-foreground font-medium text-sm hover:border-border-bright hover:bg-surface-raised transition-all">
                     Connect Wallet
                   </Link>
                 </div>
@@ -270,20 +270,20 @@ export default function HomePage() {
               >
                 {[
                   {
-                    title: "Real-Time Signal Conversion",
-                    desc: "The moment Open Claw grades a token above threshold, the engine evaluates entry conditions and position parameters within milliseconds.",
+                    title: "Catches Tokens Early",
+                    desc: "Open Claw watches every new Solana launch in real-time. When volume, holder count, and momentum line up — it moves fast.",
                   },
                   {
-                    title: "Algorithmic Position Management",
-                    desc: "Dynamic sizing based on conviction score, market cap, liquidity depth, and current portfolio exposure. No emotional decisions.",
+                    title: "Buys and Sells For You",
+                    desc: "No more staring at charts. The engine places entries, locks in profit at your target, and cuts losses before they get ugly.",
                   },
                   {
-                    title: "Autonomous Exit Strategy",
-                    desc: "Trailing stops, take-profit targets, and time-decay exits calibrated per-token based on volatility profile and momentum decay.",
+                    title: "Built-In Risk Controls",
+                    desc: "Stop-losses, take-profit levels, trailing stops, and position sizing — all configured to match your risk tolerance.",
                   },
                   {
-                    title: "Multi-Source Intelligence",
-                    desc: "Aggregates data from on-chain analytics, volume tracking, holder analysis, and market microstructure — simultaneously.",
+                    title: "Everything On-Chain, Transparent",
+                    desc: "Every signal, every trade, every exit — verified on Solana. You can see exactly what happened and why.",
                   },
                 ].map((feature, i) => (
                   <motion.div
@@ -297,8 +297,8 @@ export default function HomePage() {
                     <div className="flex items-start gap-3">
                       <div className="w-1.5 h-1.5 rounded-full bg-accent/60 mt-1.5 shrink-0" />
                       <div>
-                        <div className="text-sm font-bold text-foreground/80 mb-0.5">{feature.title}</div>
-                        <div className="text-xs text-muted/40 leading-relaxed">{feature.desc}</div>
+                        <div className="text-sm font-bold text-foreground/85 mb-0.5">{feature.title}</div>
+                        <div className="text-xs text-foreground/45 leading-relaxed">{feature.desc}</div>
                       </div>
                     </div>
                   </motion.div>
@@ -333,7 +333,7 @@ export default function HomePage() {
                 Engine <span className="text-gradient-accent">Status</span>
               </h2>
               <p className="text-muted/40 text-sm max-w-md mx-auto">
-                Open Claw&apos;s real-time execution metrics. Every position tracked, every outcome measured.
+                Real-time execution metrics. Every position tracked, every outcome measured.
               </p>
             </motion.div>
 

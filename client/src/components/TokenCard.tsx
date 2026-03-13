@@ -1,10 +1,10 @@
 "use client";
 
-import React from "react";
+import React, { useState, useCallback } from "react";
 import { Card, CardBody } from "@/components/Card";
 import { formatMcap, timeAgo } from "@/lib/utils";
 import { computeConviction, type DexPairData } from "@/lib/dexscreener";
-import { TrendingUp, TrendingDown, ExternalLink } from "lucide-react";
+import { TrendingUp, TrendingDown, ExternalLink, Copy, Check } from "lucide-react";
 
 export interface Token {
   address: string;
@@ -59,6 +59,7 @@ interface TokenCardProps {
 }
 
 export function TokenCard({ token, dex, index = 0, isFlash = false, onClick, variant = "default" }: TokenCardProps) {
+  const [copied, setCopied] = useState(false);
   const mcap = displayMcap(token);
   const change = mcapChange(token);
   const multiplier = getMultiplier(token);
@@ -68,6 +69,14 @@ export function TokenCard({ token, dex, index = 0, isFlash = false, onClick, var
   const displayGrade = conviction.grade;
   const displayScore = conviction.score;
   const allFactors = conviction.factors || [];
+
+  const copyAddress = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(token.address).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    }).catch(() => {});
+  }, [token.address]);
   const gradeColor =
     displayGrade === "S" ? "text-yellow-400 bg-yellow-400/10 border-yellow-400/30 shadow-[0_0_8px_rgba(250,204,21,0.15)]" :
     displayGrade === "A" ? "text-accent bg-accent/10 border-accent/30 shadow-[0_0_8px_rgba(0,229,160,0.15)]" :
@@ -142,6 +151,13 @@ export function TokenCard({ token, dex, index = 0, isFlash = false, onClick, var
                 <a href={`https://pump.fun/${token.address}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="text-muted/40 hover:text-accent transition-colors opacity-0 group-hover:opacity-100">
                   <ExternalLink className="w-3 h-3" />
                 </a>
+                <button
+                  onClick={copyAddress}
+                  className="text-muted/40 hover:text-accent transition-colors opacity-0 group-hover:opacity-100"
+                  title="Copy contract address"
+                >
+                  {copied ? <Check className="w-3 h-3 text-accent" /> : <Copy className="w-3 h-3" />}
+                </button>
               </div>
               <div className="text-[11px] text-foreground/50 truncate max-w-[130px]">{token.name || token.address.slice(0, 16)}</div>
             </div>
@@ -193,8 +209,8 @@ export function TokenCard({ token, dex, index = 0, isFlash = false, onClick, var
               { label: "1h", val: m1h },
             ] as const).map(({ label, val }) => (
               <div key={label} className="flex-1 rounded-lg bg-background/80 border border-border/40 px-1.5 py-1.5 text-center">
-                <div className="text-[9px] text-foreground/40 uppercase tracking-wider">{label}</div>
-                <div className={`text-[11px] font-mono font-bold ${val != null ? (val >= 0 ? "text-accent" : "text-danger") : "text-foreground/20"}`}>
+                <div className="text-[9px] text-foreground/50 uppercase tracking-wider">{label}</div>
+                <div className={`text-xs font-mono font-bold ${val != null ? (val >= 0 ? "text-accent" : "text-danger") : "text-foreground/25"}`}>
                   {val != null ? `${val >= 0 ? "+" : ""}${val.toFixed(1)}%` : "—"}
                 </div>
               </div>
@@ -206,43 +222,43 @@ export function TokenCard({ token, dex, index = 0, isFlash = false, onClick, var
           <div className="flex gap-1 mb-3">
             {token.volume_24h != null && (
               <div className="flex-1 rounded-lg bg-background/80 border border-border/40 px-1 py-1 text-center">
-                <div className="text-[8px] text-foreground/35 uppercase tracking-wider">Vol 24h</div>
-                <div className="text-[11px] font-mono font-bold text-foreground/80">{formatMcap(token.volume_24h)}</div>
+                <div className="text-[9px] text-foreground/50 uppercase tracking-wider">Vol 24h</div>
+                <div className="text-xs font-mono font-bold text-foreground/90">{formatMcap(token.volume_24h)}</div>
               </div>
             )}
             {token.transactions_24h != null && (
               <div className="flex-1 rounded-lg bg-background/80 border border-border/40 px-1 py-1 text-center">
-                <div className="text-[8px] text-foreground/35 uppercase tracking-wider">Txns 24h</div>
-                <div className="text-[11px] font-mono font-bold text-foreground/80">{token.transactions_24h.toLocaleString()}</div>
+                <div className="text-[9px] text-foreground/50 uppercase tracking-wider">Txns 24h</div>
+                <div className="text-xs font-mono font-bold text-foreground/90">{token.transactions_24h.toLocaleString()}</div>
               </div>
             )}
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[11px]">
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
           <div className="flex justify-between">
-            <span className="text-foreground/40">ATH</span>
-            <span className="font-mono font-medium text-foreground/80">{formatMcap(token.ath_mcap)}</span>
+            <span className="text-foreground/50">ATH</span>
+            <span className="font-mono font-medium text-foreground/90">{formatMcap(token.ath_mcap)}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-foreground/40">Entry</span>
-            <span className="font-mono font-medium text-foreground/80">{formatMcap(token.initial_mcap)}</span>
+            <span className="text-foreground/50">Entry</span>
+            <span className="font-mono font-medium text-foreground/90">{formatMcap(token.initial_mcap)}</span>
           </div>
           {dex && (
             <>
               <div className="flex justify-between">
-                <span className="text-foreground/40">Vol</span>
-                <span className="font-mono font-medium text-foreground/80">{dex.volume24h != null ? formatMcap(dex.volume24h) : "—"}</span>
+                <span className="text-foreground/50">Vol</span>
+                <span className="font-mono font-medium text-foreground/90">{dex.volume24h != null ? formatMcap(dex.volume24h) : "—"}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-foreground/40">Liq</span>
-                <span className="font-mono font-medium text-foreground/80">{dex.liquidity != null ? formatMcap(dex.liquidity) : "—"}</span>
+                <span className="text-foreground/50">Liq</span>
+                <span className="font-mono font-medium text-foreground/90">{dex.liquidity != null ? formatMcap(dex.liquidity) : "—"}</span>
               </div>
             </>
           )}
           <div className="col-span-2 flex justify-between mt-0.5">
-            <span className="text-foreground/40">Detected</span>
-            <span className="font-mono text-foreground/60">{timeAgo(token.first_seen_local)}</span>
+            <span className="text-foreground/50">Detected</span>
+            <span className="font-mono text-foreground/70">{timeAgo(token.first_seen_local)}</span>
           </div>
         </div>
 
