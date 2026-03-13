@@ -813,7 +813,9 @@ async function pollStalkFun() {
     return ageMs >= 0 && ageMs <= 120000;
   };
 
-  const SIGNAL_SOURCES = new Set(['print_scan', 'smart_pump', 'meme_radar', 'movers', 'koth']);
+  // Sources that are allowed to generate auto-trading signals.
+  // For now we only use public feeds (no VIP / auth required).
+  const SIGNAL_SOURCES = new Set(['movers', 'koth', 'dex_paid', 'live_scan', 'trending']);
 
   // Generic ingestion — returns { new: Token[], updated: Token[], tradeSignals: Token[] }
   const ingestTokenList = (data, source) => {
@@ -839,6 +841,11 @@ async function pollStalkFun() {
         const record = tokenStore.getToken(mint);
         if (isNew && record) result.new.push({ ...record, isNew: true });
         else if (record) result.updated.push(record);
+
+        // Allow fresh trending tokens to become trade signals when using public feeds
+        if (SIGNAL_SOURCES.has(source) && isNew && record && isFreshFirstCall(token, record)) {
+          result.tradeSignals.push(record);
+        }
       }
       return result;
     }
