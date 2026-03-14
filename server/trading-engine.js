@@ -856,6 +856,7 @@ export class TradingEngine extends EventEmitter {
       }
 
       const position = this.positions.get(mint);
+      if (!position || position.buyInProgress) continue; // Skip positions that haven't finished acquisition
       const currentMcap = parseFloat(token.latest_mcap || token.initial_mcap || 0);
       if (!currentMcap) continue;
 
@@ -863,7 +864,8 @@ export class TradingEngine extends EventEmitter {
       // Update max
       if (currentMcap > position.maxMcap) position.maxMcap = currentMcap;
 
-      let pnlPct = ((currentMcap - position.entryMcap) / position.entryMcap) * 100;
+      const entryMcap = position.entryMcap || 1; // Safeguard against division by zero
+      let pnlPct = ((currentMcap - entryMcap) / entryMcap) * 100;
       
       // Hard cap P&L at 10,000% (100x) to prevent dirty data or extreme anomalies from destroying paper balance
       if (pnlPct > 10000) pnlPct = 10000;
@@ -913,6 +915,22 @@ export class TradingEngine extends EventEmitter {
       if (staleMs >= STALE_TIMEOUT_MS && position.remainingPct > 0) {
         await this.executeSell(position, position.remainingPct, `No significant price movement for 120 seconds (P&L stuck at ${pnlPct.toFixed(1)}%). Freeing capital.`);
         continue;
+      }
+
+      // Profit stall protection — anti-rug: if P&L is 10%+ but below take-profit for 2+ min, exit
+      const PROFIT_STALL_FLOOR = 10;
+      const PROFIT_STALL_MS = 120 * 1000; // 2 minutes
+      if (pnlPct >= PROFIT_STALL_FLOOR && pnlPct < this.takeProfitPct && position.remainingPct > 0) {
+        if (!position.profitStallSince) {
+          position.profitStallSince = Date.now();
+        }
+        if (Date.now() - position.profitStallSince >= PROFIT_STALL_MS) {
+          await this.executeSell(position, position.remainingPct, `Profit stall: P&L at ${pnlPct.toFixed(1)}% for 2+ min without hitting take-profit (${this.takeProfitPct}%). Anti-rug exit.`);
+          continue;
+        }
+      } else {
+        // Reset timer if P&L drops below 10% or exceeds take-profit
+        position.profitStallSince = null;
       }
 
       // Trailing stop — institutional style: follows peak from entry, independent of take-profit
@@ -1087,9 +1105,14 @@ export class TradingEngine extends EventEmitter {
     const entryValue = position.amountSol * pct;
     const exitValue = entryValue * (1 + (position.pnlPct || 0) / 100);
     const PAPER_FEE = 0.002; // Simulated transaction fee (institutional style)
-    const profit = (exitValue - entryValue) - PAPER_FEE;
+    
+    // Total profit accounts for BOTH the buy fee (already deducted from balance) and this sell fee
+    const profit = (exitValue - entryValue) - (PAPER_FEE * 2); 
     this.realizedProfitSol += profit;
+    
+    // Balance update only needs to add back the exit value minus the sell fee
     this.balanceSol += (exitValue - PAPER_FEE);
+    
     this.emit('balance', this.balanceSol);
     this.emit('realizedProfit', this.realizedProfitSol);
     
@@ -1097,9 +1120,9 @@ export class TradingEngine extends EventEmitter {
     const distributed = Math.max(0, profit * 0.75);
     this.distributionPoolSol += distributed;
 
-    this.log('info', `P&L Recorded: ${profit >= 0 ? '+' : ''}${profit.toFixed(3)} SOL (Incl. -${PAPER_FEE} fee).`, {
-      retained: retained.toFixed(3),
-      distributed: distributed.toFixed(3),
+    this.log('info', `P&L Recorded: ${profit >= 0 ? '+' : ''}${profit.toFixed(4)} SOL (Incl. entry/exit fees).`, {
+      retained: retained.toFixed(4),
+      distributed: distributed.toFixed(4),
     });
   }
 
