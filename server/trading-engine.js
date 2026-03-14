@@ -911,19 +911,23 @@ export class TradingEngine extends EventEmitter {
 
       const pnlPct = ((currentMcap - position.entryMcap) / position.entryMcap) * 100;
 
-      // Stale position detection: exit if P&L doesn't change for 4 minutes
-      const pnlMovedPct = Math.abs(pnlPct - (position.lastTrackedPnlPct ?? pnlPct)); // exit if < 1% movement
+      // Stale position detection: exit if P&L doesn't move enough
+      const pnlMovedPct = Math.abs(pnlPct - (position.lastTrackedPnlPct ?? pnlPct));
       if (pnlMovedPct > 1.0) {
-        // P&L moved — reset the stale timer
         position.lastTrackedPnlPct = pnlPct;
         position.lastPnlChangedAt = Date.now();
       } else if (!position.lastPnlChangedAt) {
-        // Initialize timer on first look
         position.lastPnlChangedAt = Date.now();
         position.lastTrackedPnlPct = pnlPct;
       }
       const staleMs = Date.now() - position.lastPnlChangedAt;
-      const STALE_TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes
+
+      // FAST EXIT: 90 seconds — low mcap AND flat P&L (stuck near 0% with no volume)
+      const FAST_STALE_MS = 90 * 1000;
+      const isFlatLowMcap = currentMcap < 20000 && pnlPct >= -5 && pnlPct <= 1;
+
+      // GENERAL STALE EXIT: 2 minutes — any position with no movement
+      const STALE_TIMEOUT_MS = 2 * 60 * 1000;
 
       position.pnlPct = pnlPct;
 
@@ -942,9 +946,15 @@ export class TradingEngine extends EventEmitter {
         continue;
       }
 
-      // Stale position exit — P&L frozen for 4+ minutes
+      // Fast stale exit — flat P&L at low mcap for 90+ seconds
+      if (isFlatLowMcap && staleMs >= FAST_STALE_MS && position.remainingPct > 0) {
+        await this.executeSell(position, position.remainingPct, `Low mcap ($${currentMcap.toFixed(0)}) with no movement for 90s (${pnlPct.toFixed(1)}%). Freeing capital.`);
+        continue;
+      }
+
+      // General stale exit — any position frozen 2+ minutes
       if (staleMs >= STALE_TIMEOUT_MS && position.remainingPct > 0) {
-        await this.executeSell(position, position.remainingPct, `No significant price movement for 3 minutes (P&L stuck at ${pnlPct.toFixed(1)}%). Freeing capital.`);
+        await this.executeSell(position, position.remainingPct, `No significant price movement for 2 minutes (P&L stuck at ${pnlPct.toFixed(1)}%). Freeing capital.`);
         continue;
       }
 
