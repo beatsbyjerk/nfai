@@ -629,6 +629,15 @@ export class TradingEngine extends EventEmitter {
     // Check if already bought or being bought - this is the ONLY check needed
     if (this.positions.has(mint)) return; // already in position or buy in progress
 
+    // Enforce maximum of 15 active trades
+    if (this.positions.size >= 15) {
+      // Throttle logging so we don't spam the console/frontend on every signal
+      if (!this._lastMaxTradesLog || Date.now() - this._lastMaxTradesLog > 60000) {
+        this.log('warn', `Maximum active trades (15) reached. Skipping new signals until positions are closed.`);
+        this._lastMaxTradesLog = Date.now();
+      }
+      return;
+    }
     // Reserve position IMMEDIATELY to prevent duplicate buys (synchronous, no await)
     this.positions.set(mint, {
       mint,
@@ -856,12 +865,12 @@ export class TradingEngine extends EventEmitter {
       }
       const staleMs = Date.now() - position.lastPnlChangedAt;
 
-      // FAST EXIT: 90 seconds — low mcap AND flat P&L (stuck near 0% with no volume)
-      const FAST_STALE_MS = 90 * 1000;
-      const isFlatLowMcap = currentMcap < 20000 && pnlPct >= -5 && pnlPct <= 1;
+      // FAST EXIT: 30 seconds — low mcap AND flat P&L (stuck near 0% with no volume)
+      const FAST_STALE_MS = 30 * 1000;
+      const isFlatLowMcap = currentMcap < 40000 && pnlPct >= -5 && pnlPct <= 3;
 
-      // GENERAL STALE EXIT: 2 minutes — any position with no movement
-      const STALE_TIMEOUT_MS = 2 * 60 * 1000;
+      // GENERAL STALE EXIT: 60 seconds — any position with no movement
+      const STALE_TIMEOUT_MS = 60 * 1000;
 
       position.pnlPct = pnlPct;
 
@@ -871,24 +880,24 @@ export class TradingEngine extends EventEmitter {
       }
 
       // Stop loss and dead token protection
-      const isDeadToken = currentMcap < 6000 && pnlPct < 0;
+      const isDeadToken = currentMcap < 10000 && pnlPct <= 0;
       if ((pnlPct <= this.stopLossPct || isDeadToken) && position.remainingPct > 0) {
         const reason = isDeadToken 
-          ? `Dead token detected (mcap $${currentMcap.toFixed(0)} < $6k). Selling to free capital.`
+          ? `Dead token detected (mcap $${currentMcap.toFixed(0)} < $10k). Selling to free capital.`
           : `Stop loss triggered (${pnlPct.toFixed(1)}%). Protect capital.`;
         await this.executeSell(position, 100, reason);
         continue;
       }
 
-      // Fast stale exit — flat P&L at low mcap for 90+ seconds
+      // Fast stale exit — flat P&L at low mcap for 30+ seconds
       if (isFlatLowMcap && staleMs >= FAST_STALE_MS && position.remainingPct > 0) {
-        await this.executeSell(position, position.remainingPct, `Low mcap ($${currentMcap.toFixed(0)}) with no movement for 90s (${pnlPct.toFixed(1)}%). Freeing capital.`);
+        await this.executeSell(position, position.remainingPct, `Low mcap ($${currentMcap.toFixed(0)}) with no movement for 30s (${pnlPct.toFixed(1)}%). Freeing capital.`);
         continue;
       }
 
-      // General stale exit — any position frozen 2+ minutes
+      // General stale exit — any position frozen 60+ seconds
       if (staleMs >= STALE_TIMEOUT_MS && position.remainingPct > 0) {
-        await this.executeSell(position, position.remainingPct, `No significant price movement for 2 minutes (P&L stuck at ${pnlPct.toFixed(1)}%). Freeing capital.`);
+        await this.executeSell(position, position.remainingPct, `No significant price movement for 60 seconds (P&L stuck at ${pnlPct.toFixed(1)}%). Freeing capital.`);
         continue;
       }
 
