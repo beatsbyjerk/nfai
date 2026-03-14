@@ -31,12 +31,12 @@ function LeaderboardEntry({ token, rank, onClick }: { token: Token; rank: number
 
   return (
     <motion.div
-      className="shrink-0 w-[200px] sm:w-[220px] cursor-pointer group/lb"
+      className="shrink-0 w-[240px] sm:w-[270px] cursor-pointer group/lb"
       whileHover={{ y: -4, scale: 1.02 }}
       transition={{ type: "spring", damping: 20, stiffness: 300 }}
       onClick={onClick}
     >
-      <div className={`relative rounded-xl border p-3.5 transition-all duration-300 ${
+      <div className={`relative rounded-xl border p-4 transition-all duration-300 ${
         isStar
           ? "bg-yellow-400/[0.04] border-yellow-400/20 hover:border-yellow-400/40 shadow-[0_0_30px_rgba(250,204,21,0.06)]"
           : isGold
@@ -67,11 +67,11 @@ function LeaderboardEntry({ token, rank, onClick }: { token: Token; rank: number
           {rank}
         </div>
 
-        <div className="flex items-center gap-2.5 mb-2.5">
+        <div className="flex items-center gap-3 mb-3">
           {token.image ? (
-            <img src={token.image} alt="" className="w-9 h-9 rounded-lg ring-1 ring-border/50 object-cover shrink-0" />
+            <img src={token.image} alt="" className="w-11 h-11 rounded-lg ring-1 ring-border/50 object-cover shrink-0" />
           ) : (
-            <div className="w-9 h-9 rounded-lg bg-surface-raised ring-1 ring-border flex items-center justify-center text-xs font-bold text-muted shrink-0">
+            <div className="w-11 h-11 rounded-lg bg-surface-raised ring-1 ring-border flex items-center justify-center text-xs font-bold text-muted shrink-0">
               {(token.symbol || "?")[0]}
             </div>
           )}
@@ -82,7 +82,7 @@ function LeaderboardEntry({ token, rank, onClick }: { token: Token; rank: number
         </div>
 
         <div className="flex items-baseline justify-between">
-          <span className={`text-lg font-mono font-black ${
+          <span className={`text-xl font-mono font-black ${
             isStar ? "text-yellow-400" : isGold ? "text-accent" : "text-foreground"
           }`} style={{ textShadow: isGold ? "0 0 12px currentColor" : "none" }}>
             {mult != null ? `${mult.toFixed(1)}x` : "—"}
@@ -91,7 +91,7 @@ function LeaderboardEntry({ token, rank, onClick }: { token: Token; rank: number
         </div>
 
         {token.initial_mcap && token.ath_mcap && (
-          <div className="flex items-center gap-1.5 mt-2 text-[9px] text-muted/35 font-mono">
+          <div className="flex items-center gap-1.5 mt-2.5 text-[10px] text-muted/35 font-mono">
             <span>{formatMcap(token.initial_mcap)}</span>
             <span className="text-accent/40">→</span>
             <span className="text-foreground/50">{formatMcap(token.ath_mcap)}</span>
@@ -206,7 +206,7 @@ export default function HomePage() {
               </motion.div>
 
               <div className="relative">
-                <div className="flex gap-3 overflow-x-auto pb-4 scrollbar-thin snap-x snap-mandatory px-2" style={{ scrollbarWidth: "thin" }}>
+                <div className="flex gap-3.5 overflow-x-auto pt-4 pb-4 scrollbar-thin snap-x snap-mandatory px-2" style={{ scrollbarWidth: "thin" }}>
                   {leaderboard.map((token, i) => (
                     <LeaderboardEntry
                       key={token.address}
@@ -216,11 +216,162 @@ export default function HomePage() {
                     />
                   ))}
                 </div>
+                <div className="absolute top-0 left-0 bottom-4 w-16 bg-gradient-to-r from-background to-transparent pointer-events-none z-10" />
                 <div className="absolute top-0 right-0 bottom-4 w-20 bg-gradient-to-l from-background to-transparent pointer-events-none z-10" />
               </div>
             </div>
           </section>
         )}
+
+        {/* ═══ LIVE TRADING DASHBOARD ═══ */}
+        <section className="relative border-b border-border/30">
+          <div className="absolute inset-0 pointer-events-none">
+            <div className="absolute top-0 left-1/3 w-[400px] h-[200px] bg-accent/[0.015] rounded-full blur-[100px]" />
+          </div>
+          <div className="max-w-[1800px] mx-auto px-4 py-12">
+            <motion.div
+              className="text-center mb-8"
+              initial={{ opacity: 0, y: 16 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={SPRING_SMOOTH}
+            >
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-accent/8 border border-accent/12 text-[10px] font-bold text-accent uppercase tracking-widest mb-4">
+                <motion.div
+                  className="w-1.5 h-1.5 rounded-full bg-accent"
+                  animate={{ opacity: [0.4, 1, 0.4] }}
+                  transition={{ duration: 1.5, repeat: Infinity }}
+                />
+                Engine Status
+              </div>
+              <h2 className="text-2xl sm:text-3xl font-heading font-black mb-2">
+                Trading <span className="text-gradient-accent">Dashboard</span>
+              </h2>
+              <p className="text-muted/40 text-sm max-w-md mx-auto">
+                Real-time overview of ClawFi&apos;s autonomous trading engine. Every metric updates live.
+              </p>
+            </motion.div>
+
+            {/* Stats Row */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6 max-w-4xl mx-auto">
+              {[
+                { label: "SOL Balance", value: trading.balanceSol > 0 ? trading.balanceSol.toFixed(3) : "0.000", accent: true },
+                { label: "Active Trades", value: String(trading.positions.filter(p => p.remainingPct > 0).length), accent: false },
+                { label: "Unrealized P&L", value: (() => {
+                  const open = trading.positions.filter(p => p.remainingPct > 0);
+                  const pnl = open.reduce((sum, p) => sum + (p.amountSol * (p.remainingPct / 100) * (p.pnlPct / 100)), 0);
+                  return `${pnl >= 0 ? "+" : ""}${pnl.toFixed(4)}`;
+                })(), isPnl: true },
+                { label: "Total Trades", value: String(trading.tradeCount), accent: false },
+              ].map((s) => {
+                const isPnlPositive = s.isPnl ? parseFloat(s.value) >= 0 : true;
+                return (
+                  <motion.div
+                    key={s.label}
+                    className="rounded-xl bg-surface/50 border border-border/50 p-4 hover:border-border-bright transition-all duration-300"
+                    initial={{ opacity: 0, y: 10 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    transition={SPRING_SMOOTH}
+                  >
+                    <div className="text-[10px] text-muted/50 uppercase tracking-wider mb-1 font-bold">{s.label}</div>
+                    <div className={`text-xl font-mono font-black ${
+                      s.isPnl ? (isPnlPositive ? "text-accent" : "text-danger") :
+                      s.accent ? "text-accent" : "text-foreground"
+                    }`}>
+                      {s.value}
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </div>
+
+            {/* Active Positions + Recent Activity */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 max-w-5xl mx-auto">
+              {/* Compact Positions */}
+              <motion.div
+                className="rounded-xl bg-surface/40 border border-border/40 overflow-hidden"
+                initial={{ opacity: 0, x: -10 }}
+                whileInView={{ opacity: 1, x: 0 }}
+                viewport={{ once: true }}
+                transition={SPRING_SMOOTH}
+              >
+                <div className="px-4 py-3 border-b border-border/30 flex items-center justify-between bg-surface-raised/20">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-accent animate-pulse" />
+                    <span className="text-xs font-bold">Active Positions</span>
+                  </div>
+                  <span className="text-[10px] text-muted font-mono">
+                    {trading.positions.filter(p => p.remainingPct > 0).length} open
+                  </span>
+                </div>
+                {trading.positions.filter(p => p.remainingPct > 0).length === 0 ? (
+                  <div className="px-4 py-8 text-center">
+                    <div className="w-8 h-8 mx-auto mb-2 rounded-full border border-muted/15 flex items-center justify-center">
+                      <div className="w-2 h-2 rounded-full bg-muted/20 animate-pulse" />
+                    </div>
+                    <p className="text-muted/40 text-xs">Scanning for entries...</p>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-border/20 max-h-[250px] overflow-y-auto">
+                    {trading.positions.filter(p => p.remainingPct > 0).slice(0, 8).map((pos) => (
+                      <div key={pos.mint} className="px-4 py-2.5 flex items-center justify-between hover:bg-surface-raised/20 transition-colors">
+                        <div>
+                          <span className="text-xs font-bold text-foreground">{pos.symbol || pos.mint.slice(0, 6)}</span>
+                          <span className="text-[10px] text-muted/40 ml-2 font-mono">{pos.amountSol.toFixed(3)} SOL</span>
+                        </div>
+                        <span className={`text-xs font-mono font-black ${pos.pnlPct >= 0 ? "text-accent" : "text-danger"}`}>
+                          {pos.pnlPct >= 0 ? "+" : ""}{pos.pnlPct.toFixed(1)}%
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </motion.div>
+
+              {/* Recent Activity */}
+              <motion.div
+                className="rounded-xl bg-surface/40 border border-border/40 overflow-hidden"
+                initial={{ opacity: 0, x: 10 }}
+                whileInView={{ opacity: 1, x: 0 }}
+                viewport={{ once: true }}
+                transition={SPRING_SMOOTH}
+              >
+                <div className="px-4 py-3 border-b border-border/30 flex items-center justify-between bg-surface-raised/20">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-accent" />
+                    <span className="text-xs font-bold">Recent Activity</span>
+                  </div>
+                  <span className="text-[10px] text-muted font-mono">
+                    {trading.activityLog.length} events
+                  </span>
+                </div>
+                {trading.activityLog.length === 0 ? (
+                  <div className="px-4 py-8 text-center">
+                    <p className="text-muted/40 text-xs">Waiting for activity...</p>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-border/20 max-h-[250px] overflow-y-auto">
+                    {trading.activityLog.slice(0, 8).map((entry, i) => (
+                      <div key={i} className="px-4 py-2.5 hover:bg-surface-raised/20 transition-colors">
+                        <div className="flex items-start gap-2">
+                          <div className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${
+                            entry.type === "trade" ? "bg-accent" :
+                            entry.type === "error" ? "bg-warning" :
+                            "bg-muted/40"
+                          }`} />
+                          <p className="text-[11px] text-foreground/60 break-words leading-relaxed line-clamp-2">
+                            {entry.message}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </motion.div>
+            </div>
+          </div>
+        </section>
 
         {/* ═══ AUTO-TRADING ENGINE SECTION ═══ */}
         <section className="relative border-b border-border/30">

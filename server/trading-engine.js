@@ -68,12 +68,18 @@ export class TradingEngine extends EventEmitter {
   }
 
   async start() {
+    console.log(`[TradingEngine] Starting in ${this.tradingMode.toUpperCase()} mode`);
+    console.log(`[TradingEngine] Trade amount: ${this.tradeAmountSol} SOL | Stop-loss: ${this.stopLossPct}% | Take-profit: ${this.takeProfitPct}%`);
+    console.log(`[TradingEngine] Auto-execution: ${this.autoExecutionEnabled ? 'ENABLED' : 'DISABLED'}`);
+    
     if (this.tradingMode === 'live') {
       await this.refreshBalance();
+      console.log(`[TradingEngine] Live wallet: ${this.walletAddress || 'NOT SET'} | Balance: ${this.balanceSol} SOL`);
     } else {
       const startingBalance = parseFloat(process.env.PAPER_STARTING_BALANCE);
       this.balanceSol = Number.isFinite(startingBalance) ? startingBalance : 10;
       this.emit('balance', this.balanceSol);
+      console.log(`[TradingEngine] Paper starting balance: ${this.balanceSol} SOL`);
     }
     await this.refreshHolders();
 
@@ -640,7 +646,7 @@ export class TradingEngine extends EventEmitter {
   }
 
   async executeBuy(token, sourceLabel) {
-    let entryMcap = parseFloat(token.latest_mcap || token.initial_mcap || 0);
+    let entryMcap = parseFloat(token.latest_mcap || token.initial_mcap || token.market_cap || token.marketCap || token.mcap || 0);
     const mint = token.mint || token.token_address || token.address;
 
     // Position should already be reserved in handleNewSignal - this is just a safety check
@@ -696,6 +702,24 @@ export class TradingEngine extends EventEmitter {
           entryMcap = storeMcap;
         }
       }
+    }
+
+    // Additional fallbacks for mcap — try raw token data fields
+    if (entryMcap <= 0 && tokenRecord) {
+      const rawMcap = parseFloat(
+        tokenRecord.market_cap || tokenRecord.marketCap || tokenRecord.mcap ||
+        tokenRecord.usd_market_cap || tokenRecord.fdv || 0
+      );
+      if (Number.isFinite(rawMcap) && rawMcap > 0) {
+        entryMcap = rawMcap;
+        this.log('info', `Using raw token record mcap for ${token.symbol || mint.slice(0, 6)}: $${rawMcap.toFixed(0)}`);
+      }
+    }
+
+    // Paper mode: use a sensible default mcap if still missing (so trades always simulate)
+    if (entryMcap <= 0 && this.tradingMode !== 'live') {
+      entryMcap = 5000; // Default $5K mcap for paper mode — new pump.fun tokens start around this
+      this.log('info', `Using default paper mcap ($5,000) for ${token.symbol || mint.slice(0, 6)} — no mcap data available yet`);
     }
 
     if (entryMcap <= 0) {

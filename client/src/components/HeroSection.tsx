@@ -35,6 +35,14 @@ const ANALYSIS_STEPS = [
   "Computing signal strength",
 ];
 
+const THINKING_LABELS = [
+  "Thinking...",
+  "Analyzing tokens...",
+  "Scanning the chain...",
+  "Computing signals...",
+  "Evaluating momentum...",
+];
+
 /* ═══════════════════════════════════════════════════════════════════
    TYPES
    ═══════════════════════════════════════════════════════════════════ */
@@ -742,6 +750,38 @@ function OrbitTooltip({ token }: { token: Token }) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
+   THINKING CYCLER — Animated text cycling through AI states
+   ═══════════════════════════════════════════════════════════════════ */
+
+function ThinkingCycler() {
+  const [index, setIndex] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setIndex((prev) => (prev + 1) % THINKING_LABELS.length);
+    }, 2800);
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <div className="relative h-4 overflow-hidden min-w-[130px]">
+      <AnimatePresence mode="wait">
+        <motion.span
+          key={index}
+          className="absolute inset-0 text-[11px] font-mono text-foreground/45 whitespace-nowrap"
+          initial={{ y: 12, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{ y: -12, opacity: 0 }}
+          transition={{ duration: 0.3, ease: "easeInOut" }}
+        >
+          {THINKING_LABELS[index]}
+        </motion.span>
+      </AnimatePresence>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
    MAIN HERO
    ═══════════════════════════════════════════════════════════════════ */
 
@@ -796,7 +836,7 @@ export function HeroSection({ tokens, hotTokens, allTokens, stats, hotCount, dex
   ], []);
 
   return (
-    <section ref={containerRef} className="relative overflow-hidden border-b border-border/50" style={{ minHeight: "max(88vh, 720px)" }}>
+    <section ref={containerRef} className="relative overflow-hidden border-b border-border/50" style={{ minHeight: "100vh" }}>
       <NeuralCanvas mouseRef={mouseRef} />
 
       {/* Vignette */}
@@ -812,7 +852,7 @@ export function HeroSection({ tokens, hotTokens, allTokens, stats, hotCount, dex
       {/* Noise */}
       <div className="absolute inset-0 pointer-events-none z-[2] opacity-[0.02]" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")` }} />
 
-      <div className="relative z-10 max-w-[1800px] mx-auto px-4 flex flex-col items-center justify-center" style={{ minHeight: "max(88vh, 720px)" }}>
+      <div className="relative z-10 max-w-[1800px] mx-auto px-4 flex flex-col items-center justify-center" style={{ minHeight: "100vh" }}>
         {/* Top: Branding */}
         <motion.div className="text-center mb-8 relative z-20" initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} transition={{ ...SPRING_SMOOTH, delay: 0.1 }}>
           <motion.div
@@ -841,7 +881,7 @@ export function HeroSection({ tokens, hotTokens, allTokens, stats, hotCount, dex
           </div>
 
           <motion.p
-            className="text-foreground/55 text-base sm:text-lg max-w-xl mx-auto leading-relaxed"
+            className="text-foreground/55 text-base sm:text-lg max-w-2xl mx-auto leading-relaxed"
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ ...SPRING_SMOOTH, delay: 0.45 }}
@@ -849,12 +889,32 @@ export function HeroSection({ tokens, hotTokens, allTokens, stats, hotCount, dex
             We scan every new Solana token the second it launches.
             The ones worth watching? We grade them, track them, and trade them — before the crowd shows up.
           </motion.p>
+
+          {/* Live Intelligence Indicator */}
+          <motion.div
+            className="mt-5 flex items-center gap-3 px-5 py-2.5 rounded-full bg-background/60 backdrop-blur-xl border border-accent/15 shadow-[0_0_30px_rgba(0,229,160,0.06)]"
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ ...SPRING_SMOOTH, delay: 0.6 }}
+          >
+            <div className="relative flex items-center justify-center w-5 h-5">
+              <motion.div
+                className="absolute inset-0 rounded-full bg-accent/20"
+                animate={{ scale: [1, 1.8, 1], opacity: [0.6, 0, 0.6] }}
+                transition={{ duration: 2, repeat: Infinity }}
+              />
+              <div className="w-2.5 h-2.5 rounded-full bg-accent" />
+            </div>
+            <span className="text-[11px] font-bold text-accent/90 uppercase tracking-widest">Live Intelligence</span>
+            <span className="text-[10px] text-foreground/40">—</span>
+            <ThinkingCycler />
+          </motion.div>
         </motion.div>
 
         {/* Center: Visualization */}
         <motion.div
-          className="relative w-full max-w-[950px] mx-auto"
-          style={{ height: "clamp(380px, 48vh, 530px)" }}
+          className="relative w-full max-w-[1050px] mx-auto"
+          style={{ height: "clamp(400px, 50vh, 580px)" }}
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.8, delay: 0.2 }}
