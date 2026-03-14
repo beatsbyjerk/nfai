@@ -41,7 +41,9 @@ export function TokenModal({ token, dex, onClose, grade, score, factors }: Props
   const mcap = token.realtime_mcap || token.latest_mcap || token.initial_mcap;
   const entry = token.initial_mcap;
   const ath = token.ath_mcap;
-  const multiplier = token.highest_multiplier || (mcap && entry && entry > 0 ? mcap / entry : null);
+  const multiplier = (token.highest_multiplier && token.highest_multiplier > 1 && token.highest_multiplier < 10000)
+    ? token.highest_multiplier
+    : (mcap && entry && entry >= 1000 ? Math.min(mcap / entry, 10000) : null);
   const athMultiplier = ath && entry && entry > 0 ? ath / entry : null;
   const change = mcap && entry && entry > 0 ? ((mcap - entry) / entry) * 100 : null;
 

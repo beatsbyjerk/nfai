@@ -42,11 +42,15 @@ export function mcapChange(t: Token) {
 }
 
 export function getMultiplier(t: Token) {
-  if (t.highest_multiplier && t.highest_multiplier > 0) return t.highest_multiplier;
+  // Only trust highest_multiplier if it's a sane value (> 1 and < 10,000x)
+  if (t.highest_multiplier && t.highest_multiplier > 1 && t.highest_multiplier < 10000) return t.highest_multiplier;
   const current = displayMcap(t);
   const initial = t.initial_mcap;
-  if (!current || !initial || initial === 0) return null;
-  return current / initial;
+  // Require initial_mcap >= $1,000 to avoid junk $1 values inflating to massive multipliers
+  if (!current || !initial || initial < 1000) return null;
+  const computed = current / initial;
+  // Cap at 10,000x — anything higher is a data error
+  return computed > 10000 ? null : computed;
 }
 
 interface TokenCardProps {

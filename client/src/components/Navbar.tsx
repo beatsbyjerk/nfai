@@ -46,6 +46,7 @@ export function Navbar() {
               <Link
                 key={item.path}
                 href={item.path}
+                prefetch={true}
                 className={cn(
                   "relative px-4 py-1.5 rounded-lg text-sm font-medium transition-all duration-200",
                   isActive
