@@ -418,7 +418,16 @@ export class TradingEngine extends EventEmitter {
         // Fall through to Jupiter
       }
 
-      // PRIORITY 3: Jupiter quote (accurate for bonding curve tokens)
+      // PRIORITY 3: Stalk.fun fallback (Token Store)
+      // This relies heavily on stalk.fun apis before hammering Helius/Jupiter, preventing 429 rate limits
+      const tokenRecord = this.getTokenRecord(mint);
+      const stalkMcap = parseFloat(tokenRecord?.latest_mcap || tokenRecord?.realtime_mcap || 0);
+      if (Number.isFinite(stalkMcap) && stalkMcap > 0) {
+        this.mcapCache.set(mint, { value: stalkMcap, ts: Date.now() });
+        return stalkMcap;
+      }
+
+      // PRIORITY 4: Jupiter quote (accurate for bonding curve tokens)
       try {
         const supply = await this.helius.getTokenSupply(mint);
         if (supply?.uiAmount && supply.uiAmount > 0) {
@@ -646,8 +655,15 @@ export class TradingEngine extends EventEmitter {
   }
 
   async executeBuy(token, sourceLabel) {
-    let entryMcap = parseFloat(token.latest_mcap || token.initial_mcap || token.market_cap || token.marketCap || token.mcap || 0);
     const mint = token.mint || token.token_address || token.address;
+
+    if (this.balanceSol < this.tradeAmountSol) {
+      this.log('warn', `Insufficient balance to acquire ${token.symbol || mint?.slice(0, 6)} (Need ${this.tradeAmountSol} SOL, have ${this.balanceSol.toFixed(3)} SOL)`);
+      this.positions.delete(mint);
+      return;
+    }
+
+    let entryMcap = parseFloat(token.latest_mcap || token.initial_mcap || token.market_cap || token.marketCap || token.mcap || 0);
 
     // Position should already be reserved in handleNewSignal - this is just a safety check
     const reservedPosition = this.positions.get(mint);
@@ -716,11 +732,7 @@ export class TradingEngine extends EventEmitter {
       }
     }
 
-    // Paper mode: use a sensible default mcap if still missing (so trades always simulate)
-    if (entryMcap <= 0 && this.tradingMode !== 'live') {
-      entryMcap = 5000; // Default $5K mcap for paper mode — new pump.fun tokens start around this
-      this.log('info', `Using default paper mcap ($5,000) for ${token.symbol || mint.slice(0, 6)} — no mcap data available yet`);
-    }
+
 
     if (entryMcap <= 0) {
       this.log('warn', `Analysis incomplete: Market cap data missing for ${token.symbol || mint.slice(0, 6)}. Skipping acquisition.`);
@@ -827,6 +839,7 @@ export class TradingEngine extends EventEmitter {
       const currentMcap = parseFloat(token.latest_mcap || token.initial_mcap || 0);
       if (!currentMcap) continue;
 
+
       // Update max
       if (currentMcap > position.maxMcap) position.maxMcap = currentMcap;
 
@@ -838,9 +851,13 @@ export class TradingEngine extends EventEmitter {
         continue;
       }
 
-      // Stop loss
-      if (pnlPct <= this.stopLossPct && position.remainingPct > 0) {
-        await this.executeSell(position, 100, `Stop loss triggered (${pnlPct.toFixed(1)}%). Protect capital.`);
+      // Stop loss and dead token protection
+      const isDeadToken = currentMcap < 6000 && pnlPct < 0;
+      if ((pnlPct <= this.stopLossPct || isDeadToken) && position.remainingPct > 0) {
+        const reason = isDeadToken 
+          ? `Dead token detected (mcap $${currentMcap.toFixed(0)} < $6k). Selling to free capital.`
+          : `Stop loss triggered (${pnlPct.toFixed(1)}%). Protect capital.`;
+        await this.executeSell(position, 100, reason);
         continue;
       }
 
