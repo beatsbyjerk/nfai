@@ -36,7 +36,7 @@ export class TradingEngine extends EventEmitter {
     this.privateKey = process.env.TRADING_PRIVATE_KEY || null;
     // Jupiter API base - use env var if set, otherwise default to v6 endpoint
     this.jupiterBase = process.env.JUPITER_API_BASE || 'https://quote-api.jup.ag/v6';
-    this.slippageBps = parseInt(process.env.JUPITER_SLIPPAGE_BPS || '1000', 10); // 10% default
+    this.slippageBps = parseInt(process.env.JUPITER_SLIPPAGE_BPS || '1200', 10); // 12% default
 
     this.positions = new Map(); // mint -> position
     this.mcapCache = new Map(); // mint -> { value, ts }
@@ -626,6 +626,9 @@ export class TradingEngine extends EventEmitter {
     const mint = token.mint || token.token_address || token.address;
     if (!mint) return;
 
+    // Only trade pump.fun tokens (mint address ends with "pump")
+    if (!mint.endsWith('pump')) return;
+
     // Check if already bought or being bought - this is the ONLY check needed
     if (this.positions.has(mint)) return; // already in position or buy in progress
 
@@ -904,17 +907,19 @@ export class TradingEngine extends EventEmitter {
         continue;
       }
 
-      // Take profit
-      if (pnlPct >= this.takeProfitPct && position.remainingPct === 100) {
-        await this.executeSell(position, this.takeProfitSellPct, `Take profit target reached (${pnlPct.toFixed(1)}%). Securing gains.`);
-      }
-
-      // Trailing stop (only after take profit has been triggered)
-      if (position.remainingPct > 0 && position.remainingPct < 100) {
+      // Trailing stop — institutional style: follows peak from entry, independent of take-profit
+      if (position.remainingPct > 0 && position.maxMcap > position.entryMcap) {
         const trailingFloor = position.maxMcap * (1 - this.trailingStopPct / 100);
         if (currentMcap < trailingFloor) {
-          await this.executeSell(position, position.remainingPct, 'Momentum reversal detected. Exiting position.');
+          const drawdownPct = ((position.maxMcap - currentMcap) / position.maxMcap * 100).toFixed(1);
+          await this.executeSell(position, position.remainingPct, `Trailing stop: ${drawdownPct}% drawdown from peak ($${position.maxMcap.toFixed(0)} → $${currentMcap.toFixed(0)}). Protecting gains.`);
+          continue;
         }
+      }
+
+      // Take profit — sell full position at target
+      if (pnlPct >= this.takeProfitPct && position.remainingPct === 100) {
+        await this.executeSell(position, this.takeProfitSellPct, `Take profit target reached (${pnlPct.toFixed(1)}%). Securing gains.`);
       }
     }
   }
