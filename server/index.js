@@ -1162,7 +1162,15 @@ setInterval(() => {
 // Fallback route for SPA
 app.get('*', (req, res) => {
   if (existsSync(clientDist)) {
-    res.sendFile(join(clientDist, 'index.html'));
+    // If user requests /trading or /trading/, check for trading.html
+    const path = req.path === '/' ? '/index' : req.path.replace(/\/$/, '');
+    const htmlPath = join(clientDist, `${path}.html`);
+
+    if (existsSync(htmlPath)) {
+      res.sendFile(htmlPath);
+    } else {
+      res.sendFile(join(clientDist, 'index.html'));
+    }
   } else {
     res.json({ message: 'API server running. Build client with: cd client && npm run build' });
   }
