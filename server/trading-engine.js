@@ -669,16 +669,23 @@ export class TradingEngine extends EventEmitter {
   async executeBuy(token, sourceLabel) {
     const mint = token.mint || token.token_address || token.address;
 
-    if (this.balanceSol < this.tradeAmountSol) {
-      this.log('warn', `Insufficient balance to acquire ${token.symbol || mint?.slice(0, 6)} (Need ${this.tradeAmountSol} SOL, have ${this.balanceSol.toFixed(3)} SOL)`);
-      this.positions.delete(mint);
-      return;
+    const SAFE_FLOOR = 0.02; // Absolute emergency floor (institutional style)
+    const ESTIMATED_FEE = 0.002; // Estimated cost per transaction
+    let effectiveTradeAmount = this.tradeAmountSol;
+
+    if (this.balanceSol < effectiveTradeAmount + SAFE_FLOOR + ESTIMATED_FEE) {
+      effectiveTradeAmount = Math.max(0, this.balanceSol - SAFE_FLOOR - ESTIMATED_FEE);
+      if (effectiveTradeAmount < 0.001) {
+        this.log('warn', `Insufficient balance to acquire ${token.symbol || mint?.slice(0, 6)} while maintaining ${SAFE_FLOOR} SOL floor (Have ${this.balanceSol.toFixed(3)} SOL)`);
+        this.positions.delete(mint);
+        return;
+      }
+      this.log('info', `Institutional safeguard: Adjusted trade size for ${token.symbol || mint.slice(0, 6)} to ${effectiveTradeAmount.toFixed(4)} SOL to protect ${SAFE_FLOOR} SOL floor.`);
     }
 
-    let entryMcap = parseFloat(token.latest_mcap || token.initial_mcap || token.market_cap || token.marketCap || token.mcap || 0);
-
-    // Position should already be reserved in handleNewSignal - this is just a safety check
+    // Update reserved position with effective amount
     const reservedPosition = this.positions.get(mint);
+    if (reservedPosition) reservedPosition.amountSol = effectiveTradeAmount;
     if (!reservedPosition || !reservedPosition.buyInProgress) {
       // This shouldn't happen, but if it does, reserve it now
       if (!this.positions.has(mint)) {
@@ -746,31 +753,32 @@ export class TradingEngine extends EventEmitter {
 
 
 
-    if (!Number.isFinite(entryMcap) || entryMcap < 1000) {
-      this.log('warn', `Analysis incomplete: Market cap data too low or invalid ($${(entryMcap || 0).toFixed(0)}) for ${token.symbol || mint.slice(0, 6)}. Skipping acquisition to avoid inflation bugs.`);
+    if (!Number.isFinite(entryMcap) || entryMcap <= 4000) {
+      this.log('warn', `Analysis incomplete: Market cap too low ($${(entryMcap || 0).toFixed(0)} <= $4k) for ${token.symbol || mint.slice(0, 6)}. Skipping acquisition.`);
       this.positions.delete(mint);
       return;
     }
 
     if (this.tradingMode !== 'live' || !this.keypair) {
-      this.balanceSol = Math.max(0, this.balanceSol - this.tradeAmountSol);
+      const PAPER_FEE = 0.002; // Simulated transaction fee (institutional style)
+      this.balanceSol = Math.max(0, this.balanceSol - (effectiveTradeAmount + PAPER_FEE));
       this.emit('balance', this.balanceSol);
       this.positions.set(mint, {
         mint,
         symbol: token.symbol,
         entryMcap,
         maxMcap: entryMcap,
-        amountSol: this.tradeAmountSol,
+        amountSol: effectiveTradeAmount,
         openAt: Date.now(),
         remainingPct: 100,
         pnlPct: 0,
         isMigrating: migrationState,
       });
       this.tradeCount += 1;
-      this.log('trade', `Acquired position in ${token.symbol || mint.slice(0, 6)} at $${entryMcap.toFixed(0)} market cap.`, {
+      this.log('trade', `Acquired position in ${token.symbol || mint.slice(0, 6)} at $${entryMcap.toFixed(0)} market cap (-${PAPER_FEE} SOL fee).`, {
         mint,
         entryMcap,
-        amountSol: this.tradeAmountSol,
+        amountSol: effectiveTradeAmount,
         source: sourceLabel,
       });
       this.emitPositions();
@@ -784,7 +792,7 @@ export class TradingEngine extends EventEmitter {
       const buyResult = await this.swapForMint({
         inputMint: 'So11111111111111111111111111111111111111112',
         outputMint: mint,
-        amount: Math.round(this.tradeAmountSol * 1e9),
+        amount: Math.round(effectiveTradeAmount * 1e9),
         isInputSol: true,
         migrationState,
       });
@@ -808,7 +816,7 @@ export class TradingEngine extends EventEmitter {
         symbol: token.symbol,
         entryMcap,
         maxMcap: entryMcap,
-        amountSol: this.tradeAmountSol,
+        amountSol: effectiveTradeAmount,
         openAt: Date.now(),
         remainingPct: 100,
         tokenAmount: tokenBalance.amount,
@@ -821,7 +829,7 @@ export class TradingEngine extends EventEmitter {
       this.log('trade', `Acquisition executed for ${token.symbol || mint.slice(0, 6)}. Awaiting market response.`, {
         mint,
         txid: buyResult?.txid,
-        amountSol: this.tradeAmountSol,
+        amountSol: effectiveTradeAmount,
         tokenAmount: tokenBalance.amount,
       });
       this.emitPositions();
@@ -1078,16 +1086,18 @@ export class TradingEngine extends EventEmitter {
     const pct = pctToSell / 100;
     const entryValue = position.amountSol * pct;
     const exitValue = entryValue * (1 + (position.pnlPct || 0) / 100);
-    const profit = exitValue - entryValue;
+    const PAPER_FEE = 0.002; // Simulated transaction fee (institutional style)
+    const profit = (exitValue - entryValue) - PAPER_FEE;
     this.realizedProfitSol += profit;
-    this.balanceSol += exitValue;
+    this.balanceSol += (exitValue - PAPER_FEE);
     this.emit('balance', this.balanceSol);
     this.emit('realizedProfit', this.realizedProfitSol);
-    const retained = profit * 0.25;
-    const distributed = profit * 0.75;
+    
+    const retained = Math.max(0, profit * 0.25);
+    const distributed = Math.max(0, profit * 0.75);
     this.distributionPoolSol += distributed;
 
-    this.log('info', `P&L Recorded: ${profit >= 0 ? '+' : ''}${profit.toFixed(3)} SOL. Allocating resources...`, {
+    this.log('info', `P&L Recorded: ${profit >= 0 ? '+' : ''}${profit.toFixed(3)} SOL (Incl. -${PAPER_FEE} fee).`, {
       retained: retained.toFixed(3),
       distributed: distributed.toFixed(3),
     });
