@@ -71,7 +71,7 @@ export class TradingEngine extends EventEmitter {
     console.log(`[TradingEngine] Starting in ${this.tradingMode.toUpperCase()} mode`);
     console.log(`[TradingEngine] Trade amount: ${this.tradeAmountSol} SOL | Stop-loss: ${this.stopLossPct}% | Take-profit: ${this.takeProfitPct}%`);
     console.log(`[TradingEngine] Auto-execution: ${this.autoExecutionEnabled ? 'ENABLED' : 'DISABLED'}`);
-    
+
     if (this.tradingMode === 'live') {
       await this.refreshBalance();
       console.log(`[TradingEngine] Live wallet: ${this.walletAddress || 'NOT SET'} | Balance: ${this.balanceSol} SOL`);
@@ -630,10 +630,10 @@ export class TradingEngine extends EventEmitter {
     if (this.positions.has(mint)) return; // already in position or buy in progress
 
     // Enforce maximum of 15 active trades
-    if (this.positions.size >= 15) {
+    if (this.positions.size >= 20) {
       // Throttle logging so we don't spam the console/frontend on every signal
       if (!this._lastMaxTradesLog || Date.now() - this._lastMaxTradesLog > 60000) {
-        this.log('warn', `Maximum active trades (15) reached. Skipping new signals until positions are closed.`);
+        this.log('warn', `Maximum active trades (20) reached. Skipping new signals until positions are closed.`);
         this._lastMaxTradesLog = Date.now();
       }
       return;
@@ -869,8 +869,8 @@ export class TradingEngine extends EventEmitter {
       const FAST_STALE_MS = 30 * 1000;
       const isFlatLowMcap = currentMcap < 40000 && pnlPct >= -5 && pnlPct <= 3;
 
-      // GENERAL STALE EXIT: 60 seconds — any position with no movement
-      const STALE_TIMEOUT_MS = 60 * 1000;
+      // GENERAL STALE EXIT: 120 seconds — any position with no movement
+      const STALE_TIMEOUT_MS = 120 * 1000;
 
       position.pnlPct = pnlPct;
 
@@ -882,7 +882,7 @@ export class TradingEngine extends EventEmitter {
       // Stop loss and dead token protection
       const isDeadToken = currentMcap < 10000 && pnlPct <= 0;
       if ((pnlPct <= this.stopLossPct || isDeadToken) && position.remainingPct > 0) {
-        const reason = isDeadToken 
+        const reason = isDeadToken
           ? `Dead token detected (mcap $${currentMcap.toFixed(0)} < $10k). Selling to free capital.`
           : `Stop loss triggered (${pnlPct.toFixed(1)}%). Protect capital.`;
         await this.executeSell(position, 100, reason);
@@ -895,9 +895,9 @@ export class TradingEngine extends EventEmitter {
         continue;
       }
 
-      // General stale exit — any position frozen 60+ seconds
+      // General stale exit — any position frozen 120+ seconds
       if (staleMs >= STALE_TIMEOUT_MS && position.remainingPct > 0) {
-        await this.executeSell(position, position.remainingPct, `No significant price movement for 60 seconds (P&L stuck at ${pnlPct.toFixed(1)}%). Freeing capital.`);
+        await this.executeSell(position, position.remainingPct, `No significant price movement for 120 seconds (P&L stuck at ${pnlPct.toFixed(1)}%). Freeing capital.`);
         continue;
       }
 
