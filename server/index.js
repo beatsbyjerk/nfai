@@ -258,6 +258,7 @@ const syncWatchedTokens = () => {
 tradingEngine.on('positions', (positions) => {
   syncWatchedTokens();
   broadcast({ type: 'positions', data: positions });
+  broadcastToPublic({ type: 'positions', data: positions });
 });
 
 syncWatchedTokens();
@@ -276,10 +277,12 @@ const sanitizeActivity = (entry) => ({
 
 tradingEngine.on('activity', (entry) => {
   broadcast({ type: 'activity', data: sanitizeActivity(entry) });
+  broadcastToPublic({ type: 'activity', data: sanitizeActivity(entry) });
 });
 
 tradingEngine.on('balance', (balanceSol) => {
   broadcast({ type: 'balance', data: { balanceSol } });
+  broadcastToPublic({ type: 'balance', data: { balanceSol } });
 });
 
 tradingEngine.on('holders', (holders) => {
