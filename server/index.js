@@ -479,7 +479,11 @@ wss.on('connection', async (ws, req) => {
         type: 'init',
         data: {
           tokens: recentPublic,
-          stats: tokenStore.getStats()
+          stats: tokenStore.getStats(),
+          trading: {
+            ...tradingEngine.getState(),
+            activityLog: tradingEngine.activityLog.map(sanitizeActivity),
+          }
         }
       }));
 
@@ -960,7 +964,10 @@ async function pollStalkFun() {
         data: {
           tokens: tokensWithRealtimeMcap,
           stats: tokenStore.getStats(),
-          trading: tradingEngine.getState()
+          trading: {
+            ...tradingEngine.getState(),
+            activityLog: tradingEngine.activityLog.map(sanitizeActivity),
+          }
         }
       };
       broadcast(initPayload);
