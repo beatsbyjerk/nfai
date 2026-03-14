@@ -313,6 +313,11 @@ tradingEngine.on('balance', (balanceSol) => {
   broadcastToPublic({ type: 'balance', data: { balanceSol } });
 });
 
+tradingEngine.on('realizedProfit', (realizedProfitSol) => {
+  broadcast({ type: 'realizedProfit', data: { realizedProfitSol } });
+  broadcastToPublic({ type: 'realizedProfit', data: { realizedProfitSol } });
+});
+
 tradingEngine.on('holders', (holders) => {
   broadcast({ type: 'holders', data: { holders } });
   // Auto token gate: monitor holder licenses using existing holder data

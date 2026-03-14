@@ -109,6 +109,12 @@ export function useTokenFeed(options: UseTokenFeedOptions = {}) {
     }
   }, []);
 
+  const handleRealizedProfit = useCallback((msg: WSMessage) => {
+    if (msg.data?.realizedProfitSol != null) {
+      setTrading((prev) => ({ ...prev, realizedProfitSol: msg.data.realizedProfitSol }));
+    }
+  }, []);
+
   const handleActivity = useCallback((msg: WSMessage) => {
     if (msg.data) {
       setTrading((prev) => ({
@@ -126,10 +132,11 @@ export function useTokenFeed(options: UseTokenFeedOptions = {}) {
       on("token_update", handleTokenUpdate),
       on("positions", handlePositions),
       on("balance", handleBalance),
+      on("realizedProfit", handleRealizedProfit),
       on("activity", handleActivity),
     ];
     return () => unsubs.forEach((u) => u());
-  }, [on, handleRefresh, handleNewTokens, handleTokenUpdate, handlePositions, handleBalance, handleActivity]);
+  }, [on, handleRefresh, handleNewTokens, handleTokenUpdate, handlePositions, handleBalance, handleRealizedProfit, handleActivity]);
 
   const filtered = useMemo(() => {
     let list = sourceFilter

@@ -302,10 +302,11 @@ export default function HomePage() {
               {[
                 { label: "SOL Balance", value: trading.balanceSol > 0 ? trading.balanceSol.toFixed(3) : "0.000", accent: true },
                 { label: "Active Trades", value: String(trading.positions.filter(p => p.remainingPct > 0).length), accent: false },
-                { label: "Unrealized P&L", value: (() => {
+                { label: "Total P&L", value: (() => {
                   const open = trading.positions.filter(p => p.remainingPct > 0);
-                  const pnl = open.reduce((sum, p) => sum + (p.amountSol * (p.remainingPct / 100) * (p.pnlPct / 100)), 0);
-                  return `${pnl >= 0 ? "+" : ""}${pnl.toFixed(4)}`;
+                  const unrealized = open.reduce((sum, p) => sum + (p.amountSol * (p.remainingPct / 100) * (p.pnlPct / 100)), 0);
+                  const total = unrealized + (trading.realizedProfitSol || 0);
+                  return `${total >= 0 ? "+" : ""}${total.toFixed(4)}`;
                 })(), isPnl: true },
                 { label: "Total Trades", value: String(trading.tradeCount), accent: false },
               ].map((s) => {

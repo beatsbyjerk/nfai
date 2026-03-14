@@ -1074,6 +1074,7 @@ export class TradingEngine extends EventEmitter {
     this.realizedProfitSol += profit;
     this.balanceSol += exitValue;
     this.emit('balance', this.balanceSol);
+    this.emit('realizedProfit', this.realizedProfitSol);
     const retained = profit * 0.25;
     const distributed = profit * 0.75;
     this.distributionPoolSol += distributed;

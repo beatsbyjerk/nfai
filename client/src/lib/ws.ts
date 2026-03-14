@@ -18,6 +18,7 @@ export type WSMessageType =
   | "positions"
   | "activity"
   | "balance"
+  | "realizedProfit"
   | "holders"
   | "new_tokens"
   | "token_update";
