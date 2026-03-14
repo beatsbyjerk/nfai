@@ -743,8 +743,8 @@ export class TradingEngine extends EventEmitter {
 
 
 
-    if (entryMcap <= 0) {
-      this.log('warn', `Analysis incomplete: Market cap data missing for ${token.symbol || mint.slice(0, 6)}. Skipping acquisition.`);
+    if (!Number.isFinite(entryMcap) || entryMcap < 1000) {
+      this.log('warn', `Analysis incomplete: Market cap data too low or invalid ($${(entryMcap || 0).toFixed(0)}) for ${token.symbol || mint.slice(0, 6)}. Skipping acquisition to avoid inflation bugs.`);
       this.positions.delete(mint);
       return;
     }
@@ -852,7 +852,10 @@ export class TradingEngine extends EventEmitter {
       // Update max
       if (currentMcap > position.maxMcap) position.maxMcap = currentMcap;
 
-      const pnlPct = ((currentMcap - position.entryMcap) / position.entryMcap) * 100;
+      let pnlPct = ((currentMcap - position.entryMcap) / position.entryMcap) * 100;
+      
+      // Hard cap P&L at 10,000% (100x) to prevent dirty data or extreme anomalies from destroying paper balance
+      if (pnlPct > 10000) pnlPct = 10000;
 
       // Stale position detection: exit if P&L doesn't move enough
       const pnlMovedPct = Math.abs(pnlPct - (position.lastTrackedPnlPct ?? pnlPct));
