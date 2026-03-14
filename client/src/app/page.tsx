@@ -109,18 +109,6 @@ export default function HomePage() {
   });
   const [selectedToken, setSelectedToken] = useState<Token | null>(null);
   const [page, setPage] = useState(0);
-  const [leaderboardPage, setLeaderboardPage] = useState(0);
-  const leaderboardRef = useRef<HTMLDivElement>(null);
-  const LEADERBOARD_PAGE_SIZE = 5;
-
-  const leaderboardTotalPages = Math.max(1, Math.ceil(leaderboard.length / LEADERBOARD_PAGE_SIZE));
-  const leaderboardPageTokens = useMemo(() => {
-    const start = leaderboardPage * LEADERBOARD_PAGE_SIZE;
-    return leaderboard.slice(start, start + LEADERBOARD_PAGE_SIZE);
-  }, [leaderboard, leaderboardPage]);
-
-  const leaderboardPrev = useCallback(() => setLeaderboardPage(p => Math.max(0, p - 1)), []);
-  const leaderboardNext = useCallback(() => setLeaderboardPage(p => Math.min(leaderboardTotalPages - 1, p + 1)), [leaderboardTotalPages]);
 
   const hotCount = useMemo(
     () => allTokens.filter((t) => { const c = mcapChange(t); return c != null && c > 100; }).length,
@@ -147,6 +135,17 @@ export default function HomePage() {
       .sort((a, b) => (getMultiplier(b) || 0) - (getMultiplier(a) || 0))
       .slice(0, 15);
   }, [allTokens]);
+
+  const [leaderboardPage, setLeaderboardPage] = useState(0);
+  const leaderboardRef = useRef<HTMLDivElement>(null);
+  const LEADERBOARD_PAGE_SIZE = 5;
+  const leaderboardTotalPages = Math.max(1, Math.ceil(leaderboard.length / LEADERBOARD_PAGE_SIZE));
+  const leaderboardPageTokens = useMemo(() => {
+    const start = leaderboardPage * LEADERBOARD_PAGE_SIZE;
+    return leaderboard.slice(start, start + LEADERBOARD_PAGE_SIZE);
+  }, [leaderboard, leaderboardPage]);
+  const leaderboardPrev = useCallback(() => setLeaderboardPage(p => Math.max(0, p - 1)), []);
+  const leaderboardNext = useCallback(() => setLeaderboardPage(p => Math.min(leaderboardTotalPages - 1, p + 1)), [leaderboardTotalPages]);
 
   const totalPages = Math.max(1, Math.ceil(tokens.length / TOKENS_PER_PAGE));
   useEffect(() => {

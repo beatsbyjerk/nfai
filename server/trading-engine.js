@@ -912,8 +912,8 @@ export class TradingEngine extends EventEmitter {
       const pnlPct = ((currentMcap - position.entryMcap) / position.entryMcap) * 100;
 
       // Stale position detection: exit if P&L doesn't change for 4 minutes
-      const pnlMovedPct = Math.abs(pnlPct - (position.lastTrackedPnlPct ?? pnlPct));
-      if (pnlMovedPct > 0.1) {
+      const pnlMovedPct = Math.abs(pnlPct - (position.lastTrackedPnlPct ?? pnlPct)); // exit if < 1% movement
+      if (pnlMovedPct > 1.0) {
         // P&L moved — reset the stale timer
         position.lastTrackedPnlPct = pnlPct;
         position.lastPnlChangedAt = Date.now();
@@ -923,7 +923,7 @@ export class TradingEngine extends EventEmitter {
         position.lastTrackedPnlPct = pnlPct;
       }
       const staleMs = Date.now() - position.lastPnlChangedAt;
-      const STALE_TIMEOUT_MS = 4 * 60 * 1000; // 4 minutes
+      const STALE_TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes
 
       position.pnlPct = pnlPct;
 
@@ -944,7 +944,7 @@ export class TradingEngine extends EventEmitter {
 
       // Stale position exit — P&L frozen for 4+ minutes
       if (staleMs >= STALE_TIMEOUT_MS && position.remainingPct > 0) {
-        await this.executeSell(position, position.remainingPct, `No price movement for 4 minutes (P&L stuck at ${pnlPct.toFixed(1)}%). Freeing capital.`);
+        await this.executeSell(position, position.remainingPct, `No significant price movement for 3 minutes (P&L stuck at ${pnlPct.toFixed(1)}%). Freeing capital.`);
         continue;
       }
 
