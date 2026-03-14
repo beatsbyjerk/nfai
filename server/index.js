@@ -137,8 +137,7 @@ app.post('/api/admin/reset-paper-state', async (req, res) => {
   }
 
   try {
-    tradingEngine.resetState();
-    // Also clear in-memory state immediately
+    // Clear in-memory state immediately
     tradingEngine.positions.clear();
     tradingEngine.tradeCount = 0;
     tradingEngine.realizedProfitSol = 0;
