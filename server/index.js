@@ -125,6 +125,35 @@ app.post('/api/admin/revoke', async (req, res) => {
   }
 });
 
+// ── Admin: Reset Paper Trading State ──────────────────────────────────────────
+// Call this then restart the server to get a clean paper trading slate.
+// Old state is backed up as paper-state.json.bak automatically.
+app.post('/api/admin/reset-paper-state', async (req, res) => {
+  const sessionToken = extractSession(req);
+  const deviceId = req.body?.deviceId || req.query?.deviceId || null;
+  const authResult = await authService.validateSession({ sessionToken, deviceId });
+  if (!authResult.ok || authResult.plan !== 'admin') {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  try {
+    tradingEngine.resetState();
+    // Also clear in-memory state immediately
+    tradingEngine.positions.clear();
+    tradingEngine.tradeCount = 0;
+    tradingEngine.realizedProfitSol = 0;
+    tradingEngine.distributionPoolSol = 0;
+    const startingBalance = parseFloat(process.env.PAPER_STARTING_BALANCE);
+    tradingEngine.balanceSol = Number.isFinite(startingBalance) ? startingBalance : 10;
+    tradingEngine.emit('balance', tradingEngine.balanceSol);
+    tradingEngine.emitPositions();
+    tradingEngine.log('info', 'Paper trading state has been manually reset by admin.');
+    return res.json({ ok: true, message: 'Paper state reset. Engine running fresh.', balanceSol: tradingEngine.balanceSol });
+  } catch (error) {
+    return res.status(500).json({ error: error.message || 'Reset failed' });
+  }
+});
+
 app.post('/api/auth/validate', async (req, res) => {
   const sessionToken = extractSession(req);
   const deviceId = req.body?.deviceId || req.query?.deviceId || null;

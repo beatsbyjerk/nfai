@@ -4,6 +4,12 @@ import axios from 'axios';
 import fetch from 'node-fetch';
 import { Keypair, PublicKey, VersionedTransaction } from '@solana/web3.js';
 import { HeliusService } from './helius-service.js';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname_engine = dirname(fileURLToPath(import.meta.url));
+const STATE_FILE = join(__dirname_engine, '..', 'data', 'paper-state.json');
 
 export class TradingEngine extends EventEmitter {
   constructor({ tokenStore, pumpPortalWs = null }) {
@@ -67,6 +73,61 @@ export class TradingEngine extends EventEmitter {
     }
   }
 
+  // ── Persistent State ── 
+  saveState() {
+    if (this.tradingMode === 'live') return; // Only persist paper state
+    try {
+      mkdirSync(join(__dirname_engine, '..', 'data'), { recursive: true });
+      const state = {
+        balanceSol: this.balanceSol,
+        tradeCount: this.tradeCount,
+        realizedProfitSol: this.realizedProfitSol,
+        distributionPoolSol: this.distributionPoolSol,
+        positions: Array.from(this.positions.entries()),
+        savedAt: new Date().toISOString(),
+      };
+      writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
+    } catch (e) {
+      console.error('[TradingEngine] Failed to save paper state:', e.message);
+    }
+  }
+
+  loadState() {
+    if (this.tradingMode === 'live') return false;
+    try {
+      if (!existsSync(STATE_FILE)) return false;
+      const raw = readFileSync(STATE_FILE, 'utf-8');
+      const state = JSON.parse(raw);
+      if (typeof state.balanceSol === 'number') this.balanceSol = state.balanceSol;
+      if (typeof state.tradeCount === 'number') this.tradeCount = state.tradeCount;
+      if (typeof state.realizedProfitSol === 'number') this.realizedProfitSol = state.realizedProfitSol;
+      if (typeof state.distributionPoolSol === 'number') this.distributionPoolSol = state.distributionPoolSol;
+      if (Array.isArray(state.positions)) {
+        for (const [mint, pos] of state.positions) {
+          if (mint && pos) this.positions.set(mint, pos);
+        }
+      }
+      console.log(`[TradingEngine] Restored paper state from ${state.savedAt}: ${this.balanceSol.toFixed(3)} SOL, ${this.positions.size} open positions, ${this.tradeCount} total trades`);
+      return true;
+    } catch (e) {
+      console.error('[TradingEngine] Failed to load paper state, starting fresh:', e.message);
+      return false;
+    }
+  }
+
+  resetState() {
+    if (this.tradingMode === 'live') return;
+    try {
+      if (existsSync(STATE_FILE)) {
+        writeFileSync(STATE_FILE + '.bak', readFileSync(STATE_FILE)); // keep a backup
+      }
+      writeFileSync(STATE_FILE, JSON.stringify({ reset: true, resetAt: new Date().toISOString() }));
+      console.log('[TradingEngine] Paper state reset. Server restart will begin fresh.');
+    } catch (e) {
+      console.error('[TradingEngine] Failed to reset paper state:', e.message);
+    }
+  }
+
   async start() {
     console.log(`[TradingEngine] Starting in ${this.tradingMode.toUpperCase()} mode`);
     console.log(`[TradingEngine] Trade amount: ${this.tradeAmountSol} SOL | Stop-loss: ${this.stopLossPct}% | Take-profit: ${this.takeProfitPct}%`);
@@ -76,10 +137,14 @@ export class TradingEngine extends EventEmitter {
       await this.refreshBalance();
       console.log(`[TradingEngine] Live wallet: ${this.walletAddress || 'NOT SET'} | Balance: ${this.balanceSol} SOL`);
     } else {
-      const startingBalance = parseFloat(process.env.PAPER_STARTING_BALANCE);
-      this.balanceSol = Number.isFinite(startingBalance) ? startingBalance : 10;
+      const restored = this.loadState();
+      if (!restored) {
+        // Fresh start — use env var starting balance
+        const startingBalance = parseFloat(process.env.PAPER_STARTING_BALANCE);
+        this.balanceSol = Number.isFinite(startingBalance) ? startingBalance : 10;
+        console.log(`[TradingEngine] Paper fresh start: ${this.balanceSol} SOL`);
+      }
       this.emit('balance', this.balanceSol);
-      console.log(`[TradingEngine] Paper starting balance: ${this.balanceSol} SOL`);
     }
     await this.refreshHolders();
 
@@ -762,6 +827,7 @@ export class TradingEngine extends EventEmitter {
         source: sourceLabel,
       });
       this.emitPositions();
+      this.saveState();
       await this.maybeDistribute();
       return;
     }
@@ -844,6 +910,21 @@ export class TradingEngine extends EventEmitter {
       if (currentMcap > position.maxMcap) position.maxMcap = currentMcap;
 
       const pnlPct = ((currentMcap - position.entryMcap) / position.entryMcap) * 100;
+
+      // Stale position detection: exit if P&L doesn't change for 4 minutes
+      const pnlMovedPct = Math.abs(pnlPct - (position.lastTrackedPnlPct ?? pnlPct));
+      if (pnlMovedPct > 0.1) {
+        // P&L moved — reset the stale timer
+        position.lastTrackedPnlPct = pnlPct;
+        position.lastPnlChangedAt = Date.now();
+      } else if (!position.lastPnlChangedAt) {
+        // Initialize timer on first look
+        position.lastPnlChangedAt = Date.now();
+        position.lastTrackedPnlPct = pnlPct;
+      }
+      const staleMs = Date.now() - position.lastPnlChangedAt;
+      const STALE_TIMEOUT_MS = 4 * 60 * 1000; // 4 minutes
+
       position.pnlPct = pnlPct;
 
       // Skip all auto-executions if disabled (only buy, no sells)
@@ -858,6 +939,12 @@ export class TradingEngine extends EventEmitter {
           ? `Dead token detected (mcap $${currentMcap.toFixed(0)} < $6k). Selling to free capital.`
           : `Stop loss triggered (${pnlPct.toFixed(1)}%). Protect capital.`;
         await this.executeSell(position, 100, reason);
+        continue;
+      }
+
+      // Stale position exit — P&L frozen for 4+ minutes
+      if (staleMs >= STALE_TIMEOUT_MS && position.remainingPct > 0) {
+        await this.executeSell(position, position.remainingPct, `No price movement for 4 minutes (P&L stuck at ${pnlPct.toFixed(1)}%). Freeing capital.`);
         continue;
       }
 
@@ -891,6 +978,7 @@ export class TradingEngine extends EventEmitter {
       }
       this.recordPaperProfit(position, pctToSell, reason);
       this.emitPositions();
+      this.saveState();
       return;
     }
 
@@ -1042,6 +1130,7 @@ export class TradingEngine extends EventEmitter {
       retained: retained.toFixed(3),
       distributed: distributed.toFixed(3),
     });
+    this.saveState();
   }
 
   async getTokenBalance(mint) {

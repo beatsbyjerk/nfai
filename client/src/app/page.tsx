@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Navbar } from "@/components/Navbar";
 import { TokenCard, type Token, displayMcap, getMultiplier, mcapChange } from "@/components/TokenCard";
@@ -109,6 +109,18 @@ export default function HomePage() {
   });
   const [selectedToken, setSelectedToken] = useState<Token | null>(null);
   const [page, setPage] = useState(0);
+  const [leaderboardPage, setLeaderboardPage] = useState(0);
+  const leaderboardRef = useRef<HTMLDivElement>(null);
+  const LEADERBOARD_PAGE_SIZE = 5;
+
+  const leaderboardTotalPages = Math.max(1, Math.ceil(leaderboard.length / LEADERBOARD_PAGE_SIZE));
+  const leaderboardPageTokens = useMemo(() => {
+    const start = leaderboardPage * LEADERBOARD_PAGE_SIZE;
+    return leaderboard.slice(start, start + LEADERBOARD_PAGE_SIZE);
+  }, [leaderboard, leaderboardPage]);
+
+  const leaderboardPrev = useCallback(() => setLeaderboardPage(p => Math.max(0, p - 1)), []);
+  const leaderboardNext = useCallback(() => setLeaderboardPage(p => Math.min(leaderboardTotalPages - 1, p + 1)), [leaderboardTotalPages]);
 
   const hotCount = useMemo(
     () => allTokens.filter((t) => { const c = mcapChange(t); return c != null && c > 100; }).length,
@@ -205,19 +217,53 @@ export default function HomePage() {
                 </p>
               </motion.div>
 
-              <div className="relative">
-                <div className="flex gap-3.5 overflow-x-auto pt-4 pb-4 scrollbar-thin snap-x snap-mandatory px-2" style={{ scrollbarWidth: "thin" }}>
-                  {leaderboard.map((token, i) => (
+              {/* Arrow Navigation Leaderboard */}
+              <div className="relative flex items-center gap-3">
+                {/* Left Arrow */}
+                <button
+                  onClick={leaderboardPrev}
+                  disabled={leaderboardPage === 0}
+                  className="flex-shrink-0 w-9 h-9 rounded-full border border-border/50 bg-surface/60 hover:bg-surface hover:border-accent/40 disabled:opacity-20 disabled:cursor-not-allowed transition-all duration-200 flex items-center justify-center group z-20"
+                  aria-label="Previous signals"
+                >
+                  <ChevronLeft className="w-4 h-4 text-muted/60 group-hover:text-accent transition-colors" />
+                </button>
+
+                {/* Cards — fixed 5 visible */}
+                <div ref={leaderboardRef} className="flex gap-3.5 flex-1 overflow-hidden pt-4 pb-4 min-w-0">
+                  {leaderboardPageTokens.map((token, i) => (
                     <LeaderboardEntry
                       key={token.address}
                       token={token}
-                      rank={i + 1}
+                      rank={leaderboardPage * LEADERBOARD_PAGE_SIZE + i + 1}
                       onClick={() => setSelectedToken(token)}
                     />
                   ))}
                 </div>
-                <div className="absolute top-0 left-0 bottom-4 w-16 bg-gradient-to-r from-background to-transparent pointer-events-none z-10" />
-                <div className="absolute top-0 right-0 bottom-4 w-20 bg-gradient-to-l from-background to-transparent pointer-events-none z-10" />
+
+                {/* Right Arrow */}
+                <button
+                  onClick={leaderboardNext}
+                  disabled={leaderboardPage >= leaderboardTotalPages - 1}
+                  className="flex-shrink-0 w-9 h-9 rounded-full border border-border/50 bg-surface/60 hover:bg-surface hover:border-accent/40 disabled:opacity-20 disabled:cursor-not-allowed transition-all duration-200 flex items-center justify-center group z-20"
+                  aria-label="Next signals"
+                >
+                  <ChevronRight className="w-4 h-4 text-muted/60 group-hover:text-accent transition-colors" />
+                </button>
+              </div>
+
+              {/* Page dots */}
+              <div className="flex items-center justify-center gap-1.5 mt-3">
+                {Array.from({ length: leaderboardTotalPages }).map((_, i) => (
+                  <button
+                    key={i}
+                    onClick={() => setLeaderboardPage(i)}
+                    className={`w-1.5 h-1.5 rounded-full transition-all duration-200 ${
+                      i === leaderboardPage ? 'bg-accent w-4' : 'bg-border/40 hover:bg-border'
+                    }`}
+                    aria-label={`Page ${i + 1}`}
+                  />
+                ))}
               </div>
             </div>
           </section>
