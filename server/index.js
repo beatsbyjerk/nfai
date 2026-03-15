@@ -11,7 +11,7 @@ import { TradingEngine } from './trading-engine.js';
 import { PumpPortalWebSocket } from './pump-portal-ws.js';
 import { AuthService } from './auth-service.js';
 import { UserTradingEngine } from './user-trading-engine.js';
-// PumpSignalTracker removed — using stalk.fun APIs only for signals
+import { StalkFunWebSocket } from './stalkfun-ws.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -880,6 +880,11 @@ let pollInFlight = false;
 const SERVER_STARTED_AT = Date.now();
 const STARTUP_COOLDOWN_MS = 30000; // 30s — suppress trade signals while initial API dump loads
 
+// ── Layer 3: Differential Snapshot Comparison ────────────────────────────────
+// Track previous poll mint sets so we can detect genuinely new emits even if
+// token store already has the token from another source (e.g. movers).
+const _prevSnapshot = { print_scan: new Set(), meme_radar: new Set() };
+
 async function pollStalkFun() {
   if (pollInFlight) return;
   pollInFlight = true;
@@ -1012,6 +1017,58 @@ async function pollStalkFun() {
         allTradeSignals.push(...r.tradeSignals);
       }
 
+      // ── Layer 3: Differential Snapshot Comparison ──────────────────────────
+      // Compare current poll mints to previous poll mints. Tokens that appear
+      // in this response but NOT the previous one are genuinely new emits —
+      // even if the token store already had them from movers/trending.
+      if (Date.now() - SERVER_STARTED_AT > STARTUP_COOLDOWN_MS) {
+        const extractMints = (data) => {
+          if (!data) return new Set();
+          const list = data?.tokens || data?.data || (Array.isArray(data) ? data : []);
+          const arr = Array.isArray(list) ? list : (Array.isArray(list?.data) ? list.data : []);
+          return new Set(arr.map(t => t?.token_address || t?.mint || t?.address).filter(Boolean));
+        };
+
+        const currentPS = extractMints(printScan);
+        const currentMR = extractMints(memeRadar);
+        let layer3Hits = 0;
+
+        for (const [currentSet, prevSet, source] of [
+          [currentPS, _prevSnapshot.print_scan, 'print_scan'],
+          [currentMR, _prevSnapshot.meme_radar, 'meme_radar'],
+        ]) {
+          if (prevSet.size > 0) {
+            const newMints = [...currentSet].filter(m => !prevSet.has(m));
+            const removedMints = [...prevSet].filter(m => !currentSet.has(m));
+            if (newMints.length > 0 || removedMints.length > 0) {
+              console.log(`[Layer3-Diff] ${source}: ${newMints.length} new, ${removedMints.length} removed (prev: ${prevSet.size}, curr: ${currentSet.size})`);
+            }
+            for (const mint of newMints) {
+              const alreadySignaled = allTradeSignals.some(s => (s.address || s.mint) === mint);
+              if (!alreadySignaled) {
+                const record = tokenStore.getToken(mint);
+                if (record && !tradingEngine.positions.has(mint)) {
+                  layer3Hits++;
+                  console.log(`[Layer3-Diff] CATCH: ${record.symbol || mint.slice(0, 8)} (${source}) — missed by Layer 1+2, caught by diff!`);
+                  allTradeSignals.push(record);
+                } else if (record && tradingEngine.positions.has(mint)) {
+                  console.log(`[Layer3-Diff] ${record.symbol || mint.slice(0, 8)} (${source}) — new in diff but already in position.`);
+                }
+              }
+            }
+          } else if (currentSet.size > 0) {
+            console.log(`[Layer3-Diff] ${source}: initial snapshot loaded (${currentSet.size} mints)`);
+          }
+        }
+
+        if (layer3Hits > 0) {
+          console.log(`[Layer3-Diff] Caught ${layer3Hits} signal(s) that Layer 1+2 missed!`);
+        }
+
+        _prevSnapshot.print_scan = currentPS;
+        _prevSnapshot.meme_radar = currentMR;
+      }
+
       // Cross-reference Smart Pump KOL data with active trading positions
       if (smartPump) {
         const spList = smartPump?.data?.tokens || smartPump?.tokens || smartPump?.data || (Array.isArray(smartPump) ? smartPump : []);
@@ -1021,7 +1078,7 @@ async function pollStalkFun() {
       }
     }
 
-    // Fire trade signals from all quality sources
+    // Fire trade signals from all quality sources (Layer 2 polling + Layer 3 diff)
     if (allTradeSignals.length > 0) {
       const unique = [];
       const seen = new Set();
@@ -1029,6 +1086,7 @@ async function pollStalkFun() {
         if (s?.address && !seen.has(s.address)) { seen.add(s.address); unique.push(s); }
       }
       if (unique.length > 0) {
+        console.log(`[Layer2+3] Firing ${unique.length} trade signal(s) from poll cycle: ${unique.map(s => s.symbol || s.address?.slice(0, 8)).join(', ')}`);
         await tradingEngine.handleSignals(unique, 'Signal Detected');
       }
     }
@@ -1183,6 +1241,101 @@ setTimeout(() => {
   console.log(`[Startup] Cooldown expired. Trade signals from print_scan/meme_radar are now LIVE.`);
 }, STARTUP_COOLDOWN_MS);
 
+// ── Layer 1: StalkFun Socket.IO WebSocket (real-time push, ~0ms latency) ─────
+// Connects to stalk.fun's own real-time system — same one their frontend uses.
+// Tokens arrive the instant stalk.fun's backend detects them, not on next poll.
+const SIGNAL_SOURCES_WS = new Set(['print_scan', 'meme_radar']);
+
+const stalkFunWs = new StalkFunWebSocket({
+  cookies: api.cookies,
+  bearer: api.bearer,
+  onToken: ({ token, source, eventName, mint }) => {
+    if (!mint) return;
+
+    // Respect startup cooldown — log suppressed signals during cooldown
+    if (Date.now() - SERVER_STARTED_AT <= STARTUP_COOLDOWN_MS) {
+      if (source === 'print_scan' || source === 'meme_radar') {
+        console.log(`[Layer1-WS] Cooldown active, suppressing: ${token.token_symbol || token.symbol || mint.slice(0, 8)} (${source})`);
+      }
+      return;
+    }
+
+    // Ingest into token store (deduplicates automatically)
+    const isNew = tokenStore.upsertToken(token, source);
+    const record = tokenStore.getToken(mint);
+    if (!record) return;
+
+    const symbol = record.symbol || token.token_symbol || token.symbol || mint.slice(0, 8);
+
+    // Broadcast to connected clients
+    if (isNew) {
+      console.log(`[Layer1-WS] New token ingested: ${symbol} (${source}) via "${eventName}"`);
+      const payload = { type: 'new_tokens', data: [{ ...record, isNew: true }] };
+      broadcast(payload);
+      broadcastToPublic(payload);
+    } else {
+      const updateMsg = { type: 'token_update', data: { ...record, address: record.address || mint } };
+      broadcast(updateMsg);
+      broadcastToPublic(updateMsg);
+    }
+
+    // Fire trade signal if this is a signal source and token is fresh to this source
+    if (SIGNAL_SOURCES_WS.has(source)) {
+      const existing = tokenStore.getToken(mint);
+      const existingSources = (existing?.sources || existing?.source || '').split(',').map(s => s.trim()).filter(Boolean);
+      const hadSourceBefore = existingSources.filter(s => s === source).length > 1;
+
+      if (isNew || !hadSourceBefore) {
+        if (tradingEngine.positions.has(mint)) {
+          console.log(`[Layer1-WS] Signal source ${source} confirmed ${symbol} — already in position, skipping buy.`);
+        } else {
+          console.log(`[Layer1-WS] TRADE SIGNAL: ${symbol} (${source} via "${eventName}") — triggering handleNewSignal`);
+          tradingEngine.handleNewSignal(record, 'Signal Detected').catch(e => {
+            console.error(`[Layer1-WS] Signal execution error for ${symbol}: ${e.message}`);
+          });
+        }
+      } else {
+        console.log(`[Layer1-WS] ${symbol} already had ${source} source — no new signal.`);
+      }
+    }
+  },
+});
+
+// Start WebSocket after a short delay to let auth initialize
+setTimeout(() => {
+  if (api.isAuthenticated() && api.authMode === 'privy') {
+    console.log('[Layer1-WS] Starting stalk.fun Socket.IO connection (Layer 1 — real-time push)...');
+    console.log(`[Layer1-WS] Auth mode: ${api.authMode}, Cookie length: ${(api.cookies || '').length}, Bearer: ${api.bearer ? 'present' : 'none'}`);
+    stalkFunWs.start();
+  } else {
+    console.log(`[Layer1-WS] Skipped — auth mode is "${api.authMode}", no privy cookies. Using Layer 2 (polling) + Layer 3 (diff) only.`);
+  }
+}, 2000);
+
+// Log detection layer health every 5 minutes
+setInterval(() => {
+  const wsStats = stalkFunWs.getStats();
+  const uptime = ((Date.now() - SERVER_STARTED_AT) / 60000).toFixed(1);
+  console.log(`[Detection] Uptime: ${uptime}min | Layer1-WS: ${wsStats.connected ? 'CONNECTED' : 'OFFLINE'} (msgs: ${wsStats.messagesReceived}, signals: ${wsStats.signalSourceTokens}, events: ${wsStats.discoveredEvents.length}) | Layer2-Poll: active | Layer3-Diff: PS=${_prevSnapshot.print_scan.size} MR=${_prevSnapshot.meme_radar.size}`);
+}, 5 * 60 * 1000);
+
+// Expose detection layer stats
+app.get('/api/detection/stats', (req, res) => {
+  res.json({
+    layer1_ws: stalkFunWs.getStats(),
+    layer2_polling: { interval: POLL_INTERVAL, initialized },
+    layer3_diff: {
+      print_scan_snapshot_size: _prevSnapshot.print_scan.size,
+      meme_radar_snapshot_size: _prevSnapshot.meme_radar.size,
+    },
+    startup: {
+      cooldownMs: STARTUP_COOLDOWN_MS,
+      cooldownExpired: Date.now() - SERVER_STARTED_AT > STARTUP_COOLDOWN_MS,
+      uptimeMs: Date.now() - SERVER_STARTED_AT,
+    },
+  });
+});
+
 setInterval(pollStalkFun, POLL_INTERVAL);
 setInterval(broadcastRealtimeMcaps, REALTIME_MCAP_BROADCAST_INTERVAL_MS);
 
@@ -1232,8 +1385,10 @@ server.listen(PORT, () => {
 ╠═══════════════════════════════════════════════════════════╣
 ║  Server:    http://localhost:${PORT}                         ║
 ║  WebSocket: ws://localhost:${PORT}                           ║
-║  Polling:   Every ${POLL_INTERVAL / 1000}s                                      ║
+║  Detection:                                               ║
+║    Layer 1: Socket.IO push  (~0ms)                        ║
+║    Layer 2: REST polling    (${POLL_INTERVAL / 1000}s interval)                  ║
+║    Layer 3: Diff snapshots  (backup)                      ║
 ╚═══════════════════════════════════════════════════════════╝
   `);
-  // Deployment trigger
 });
