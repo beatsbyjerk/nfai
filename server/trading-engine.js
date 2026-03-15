@@ -1,6 +1,7 @@
 import EventEmitter from 'events';
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import bs58 from 'bs58';
 import axios from 'axios';
 import fetch from 'node-fetch';
@@ -54,6 +55,12 @@ export class TradingEngine extends EventEmitter {
     this.realtimePausedUntil = 0;
     this.lastRealtimeErrorAt = 0;
 
+    // State persistence
+    this._stateDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'data');
+    this._stateFile = path.join(this._stateDir, 'engine-state.json');
+    this._saveDebounce = null;
+    this._lastSaveHash = '';
+
     this.keypair = null; // Initialize to null, only set if live mode
     if (this.privateKey && this.tradingMode === 'live') {
       try {
@@ -74,13 +81,24 @@ export class TradingEngine extends EventEmitter {
     console.log(`[TradingEngine] Trade amount: ${this.tradeAmountSol} SOL | Stop-loss: ${this.stopLossPct}% | Take-profit: ${this.takeProfitPct}%`);
     console.log(`[TradingEngine] Auto-execution: ${this.autoExecutionEnabled ? 'ENABLED' : 'DISABLED'}`);
 
+    // ── Restore persisted state ──────────────────────────────────────────────
+    const restored = this._loadState();
+
     if (this.tradingMode === 'live') {
-      await this.refreshBalance();
+      await this.refreshBalance(); // Always fetch real on-chain balance
       console.log(`[TradingEngine] Live wallet: ${this.walletAddress || 'NOT SET'} | Balance: ${this.balanceSol} SOL`);
+      if (restored) {
+        console.log(`[TradingEngine] Restored ${this.positions.size} positions, ${this.tradeCount} trades, P&L: ${this.realizedProfitSol.toFixed(4)} SOL`);
+      }
     } else {
-      const startingBalance = parseFloat(process.env.PAPER_STARTING_BALANCE);
-      this.balanceSol = Number.isFinite(startingBalance) ? startingBalance : 10;
-      console.log(`[TradingEngine] Paper fresh start: ${this.balanceSol} SOL`);
+      if (restored) {
+        // Paper mode: restore everything including balance
+        console.log(`[TradingEngine] Paper state restored: ${this.balanceSol.toFixed(4)} SOL, ${this.positions.size} positions, ${this.tradeCount} trades`);
+      } else {
+        const startingBalance = parseFloat(process.env.PAPER_STARTING_BALANCE);
+        this.balanceSol = Number.isFinite(startingBalance) ? startingBalance : 10;
+        console.log(`[TradingEngine] Paper fresh start: ${this.balanceSol} SOL`);
+      }
       this.emit('balance', this.balanceSol);
     }
     await this.refreshHolders();
@@ -91,6 +109,9 @@ export class TradingEngine extends EventEmitter {
     }
     setInterval(() => this.refreshHolders(), 30000);
     this.startRealtimeMonitor();
+
+    // Auto-save state every 30s as safety net
+    setInterval(() => this._saveState(), 30000);
   }
 
   log(type, message, payload = {}) {
@@ -130,6 +151,7 @@ export class TradingEngine extends EventEmitter {
 
   emitPositions() {
     this.emit('positions', Array.from(this.positions.values()));
+    this._debouncedSave();
   }
 
   getOpenPositionMints() {
@@ -1455,5 +1477,114 @@ export class TradingEngine extends EventEmitter {
       realizedProfitSol: this.realizedProfitSol,
       distributionPoolSol: this.distributionPoolSol,
     };
+  }
+
+  // ── State Persistence ───────────────────────────────────────────────────────
+  // Saves critical trading state to disk so restarts pick up exactly where left off.
+  // Called automatically on every trade, balance change, and position update.
+
+  _saveState() {
+    try {
+      const state = {
+        v: 1, // schema version
+        savedAt: new Date().toISOString(),
+        tradingMode: this.tradingMode,
+        balanceSol: this.balanceSol,
+        tradeCount: this.tradeCount,
+        realizedProfitSol: this.realizedProfitSol,
+        distributionPoolSol: this.distributionPoolSol,
+        positions: Array.from(this.positions.entries()).map(([mint, pos]) => ({
+          mint,
+          symbol: pos.symbol,
+          entryMcap: pos.entryMcap,
+          maxMcap: pos.maxMcap,
+          amountSol: pos.amountSol,
+          openAt: pos.openAt,
+          remainingPct: pos.remainingPct,
+          tokenAmount: pos.tokenAmount,
+          tokenDecimals: pos.tokenDecimals,
+          pnlPct: pos.pnlPct,
+          isMigrating: pos.isMigrating,
+          sellInProgress: false, // never persist mid-sell flag
+          buyInProgress: false,
+        })),
+      };
+
+      const json = JSON.stringify(state);
+      // Skip write if nothing changed
+      if (json === this._lastSaveHash) return;
+      this._lastSaveHash = json;
+
+      if (!fs.existsSync(this._stateDir)) {
+        fs.mkdirSync(this._stateDir, { recursive: true });
+      }
+      // Atomic write: write to tmp then rename
+      const tmpFile = this._stateFile + '.tmp';
+      fs.writeFileSync(tmpFile, json, 'utf-8');
+      fs.renameSync(tmpFile, this._stateFile);
+    } catch (e) {
+      // Never crash for persistence — log and move on
+      console.error(`[TradingEngine] State save error: ${e.message}`);
+    }
+  }
+
+  // Debounced save — coalesces rapid state changes into one write
+  _debouncedSave() {
+    if (this._saveDebounce) clearTimeout(this._saveDebounce);
+    this._saveDebounce = setTimeout(() => this._saveState(), 500);
+  }
+
+  _loadState() {
+    try {
+      if (!fs.existsSync(this._stateFile)) return false;
+      const raw = fs.readFileSync(this._stateFile, 'utf-8');
+      const state = JSON.parse(raw);
+      if (!state || state.v !== 1) return false;
+
+      // Only restore if trading mode matches
+      if (state.tradingMode && state.tradingMode !== this.tradingMode) {
+        console.log(`[TradingEngine] Saved state is ${state.tradingMode} mode but running ${this.tradingMode} — starting fresh.`);
+        return false;
+      }
+
+      // Restore positions
+      if (Array.isArray(state.positions)) {
+        this.positions.clear();
+        for (const pos of state.positions) {
+          if (!pos.mint) continue;
+          this.positions.set(pos.mint, {
+            mint: pos.mint,
+            symbol: pos.symbol,
+            entryMcap: pos.entryMcap,
+            maxMcap: pos.maxMcap || pos.entryMcap,
+            amountSol: pos.amountSol,
+            openAt: pos.openAt,
+            remainingPct: pos.remainingPct ?? 100,
+            tokenAmount: pos.tokenAmount || 0,
+            tokenDecimals: pos.tokenDecimals,
+            pnlPct: pos.pnlPct || 0,
+            isMigrating: pos.isMigrating,
+            sellInProgress: false,
+            buyInProgress: false,
+          });
+        }
+      }
+
+      // Restore scalars
+      if (Number.isFinite(state.tradeCount)) this.tradeCount = state.tradeCount;
+      if (Number.isFinite(state.realizedProfitSol)) this.realizedProfitSol = state.realizedProfitSol;
+      if (Number.isFinite(state.distributionPoolSol)) this.distributionPoolSol = state.distributionPoolSol;
+
+      // Paper mode: restore balance from state. Live mode: balance is fetched from chain.
+      if (this.tradingMode !== 'live' && Number.isFinite(state.balanceSol)) {
+        this.balanceSol = state.balanceSol;
+      }
+
+      this.log('info', `State restored from ${state.savedAt}. ${this.positions.size} positions, ${this.tradeCount} trades.`);
+      return true;
+    } catch (e) {
+      console.error(`[TradingEngine] State load error: ${e.message}`);
+      return false;
+    }
   }
 }
