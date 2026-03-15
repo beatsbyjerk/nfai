@@ -921,7 +921,8 @@ export class TradingEngine extends EventEmitter {
       }
 
       // Stop loss and dead token protection
-      const isDeadToken = currentMcap < 10000 && pnlPct <= 0;
+      // Only flag as dead if the token ENTERED above $10k and crashed below — not for low-mcap entries
+      const isDeadToken = currentMcap < 10000 && pnlPct <= 0 && entryMcap >= 10000;
       if ((pnlPct <= this.stopLossPct || isDeadToken) && position.remainingPct > 0) {
         const reason = isDeadToken
           ? `Dead token detected (mcap $${currentMcap.toFixed(0)} < $10k). Selling to free capital.`
