@@ -131,7 +131,7 @@ export class TradingEngine extends EventEmitter {
       const logDir = path.join(process.cwd(), 'logs');
       if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
       const logLine = JSON.stringify(entry) + '\n';
-      fs.appendFile(path.join(logDir, `trading-log-${date}.jsonl`), logLine, () => {});
+      fs.appendFile(path.join(logDir, `trading-log-${date}.jsonl`), logLine, () => { });
     } catch { /* never block trading for log writes */ }
   }
 
@@ -816,8 +816,8 @@ export class TradingEngine extends EventEmitter {
 
 
 
-    if (!Number.isFinite(entryMcap) || entryMcap <= 7000) {
-      this.log('warn', `Analysis incomplete: Market cap too low ($${(entryMcap || 0).toFixed(0)} <= $7k) for ${token.symbol || mint.slice(0, 6)}. Skipping acquisition.`);
+    if (!Number.isFinite(entryMcap) || entryMcap <= 4500) {
+      this.log('warn', `Analysis incomplete: Market cap too low ($${(entryMcap || 0).toFixed(0)} <= $4.5k) for ${token.symbol || mint.slice(0, 6)}. Skipping acquisition.`);
       this.positions.delete(mint);
       return;
     }
@@ -959,7 +959,7 @@ export class TradingEngine extends EventEmitter {
       const entryMcap = position.entryMcap;
       if (!entryMcap || entryMcap <= 0) continue; // Skip positions with no valid entry mcap
       let pnlPct = ((currentMcap - entryMcap) / entryMcap) * 100;
-      
+
       // Hard cap P&L at 10,000% (100x) to prevent dirty data or extreme anomalies from destroying paper balance
       if (pnlPct > 10000) pnlPct = 10000;
 
