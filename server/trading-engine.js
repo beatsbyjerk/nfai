@@ -817,7 +817,7 @@ export class TradingEngine extends EventEmitter {
 
 
     if (!Number.isFinite(entryMcap) || entryMcap <= 12000) {
-      this.log('warn', `Analysis incomplete: Market cap too low ($${(entryMcap || 0).toFixed(0)} <= $20k) for ${token.symbol || mint.slice(0, 6)}. Skipping acquisition.`);
+      this.log('warn', `Analysis incomplete: Market cap too low ($${(entryMcap || 0).toFixed(0)} <= $12k) for ${token.symbol || mint.slice(0, 6)}. Skipping acquisition.`);
       this.positions.delete(mint);
       return;
     }
