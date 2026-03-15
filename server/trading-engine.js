@@ -769,8 +769,8 @@ export class TradingEngine extends EventEmitter {
 
 
 
-    if (!Number.isFinite(entryMcap) || entryMcap <= 4000) {
-      this.log('warn', `Analysis incomplete: Market cap too low ($${(entryMcap || 0).toFixed(0)} <= $4k) for ${token.symbol || mint.slice(0, 6)}. Skipping acquisition.`);
+    if (!Number.isFinite(entryMcap) || entryMcap <= 3000) {
+      this.log('warn', `Analysis incomplete: Market cap too low ($${(entryMcap || 0).toFixed(0)} <= $3k) for ${token.symbol || mint.slice(0, 6)}. Skipping acquisition.`);
       this.positions.delete(mint);
       return;
     }
@@ -906,8 +906,10 @@ export class TradingEngine extends EventEmitter {
       }
       const staleMs = Date.now() - position.lastPnlChangedAt;
 
-      // FAST EXIT: 30 seconds — low mcap AND flat P&L (stuck near 0% with no volume)
-      const FAST_STALE_MS = 30 * 1000;
+      // FAST EXIT: dynamic timeout based on mcap range
+      // Sub-$15K: 30s (micro-caps need to move fast or they're dead)
+      // $15K+: 60s (give mid-cap tokens room to breathe — FART got killed at 30s then pumped 200%)
+      const FAST_STALE_MS = currentMcap < 15000 ? 30 * 1000 : 60 * 1000;
       const isFlatLowMcap = currentMcap < 40000 && pnlPct >= -5 && pnlPct <= 3;
 
       // GENERAL STALE EXIT: 120 seconds — any position with no movement
@@ -931,9 +933,10 @@ export class TradingEngine extends EventEmitter {
         continue;
       }
 
-      // Fast stale exit — flat P&L at low mcap for 30+ seconds
+      // Fast stale exit — flat P&L at low mcap
+      const fastStaleLabel = currentMcap < 15000 ? '30s' : '60s';
       if (isFlatLowMcap && staleMs >= FAST_STALE_MS && position.remainingPct > 0) {
-        await this.executeSell(position, position.remainingPct, `Low mcap ($${currentMcap.toFixed(0)}) with no movement for 30s (${pnlPct.toFixed(1)}%). Freeing capital.`);
+        await this.executeSell(position, position.remainingPct, `Low mcap ($${currentMcap.toFixed(0)}) with no movement for ${fastStaleLabel} (${pnlPct.toFixed(1)}%). Freeing capital.`);
         continue;
       }
 
