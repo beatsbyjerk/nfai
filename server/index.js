@@ -382,6 +382,8 @@ const ingestApiTokens = (data, source) => {
       if (!token || typeof token !== 'object') continue;
       const mint = token.mint || token.token_address || token.address;
       if (!mint) continue;
+      // Only ingest pump.fun tokens — matches trading engine filter
+      if (!mint.endsWith('pump')) continue;
       // Enrich with momentum data from trending response
       token._momentum = {
         price_change_1m: token.price_change_percent1m,
@@ -405,6 +407,8 @@ const ingestApiTokens = (data, source) => {
     if (!token || typeof token !== 'object') continue;
     const mint = token.mint || token.token_address || token.address;
     if (!mint) continue;
+    // Only ingest pump.fun tokens (mint ends with "pump") — matches trading engine filter
+    if (!mint.endsWith('pump')) continue;
     const isNew = tokenStore.upsertToken(token, source);
     if (isNew && tradingEngine) {
       tradingEngine.handleNewSignal(token, source).catch(e => console.error(e));
@@ -908,8 +912,9 @@ async function pollStalkFun() {
   };
 
   // Sources that are allowed to generate auto-trading signals.
-  // For now we only use public feeds (no VIP / auth required).
-  const SIGNAL_SOURCES = new Set(['movers', 'koth', 'dex_paid', 'live_scan', 'trending']);
+  // EXCLUSIVE: Only Print Scan and Meme Radar from stalk.fun VIP APIs.
+  // These are the only proven high-signal feeds (80% and 66% success rates).
+  const SIGNAL_SOURCES = new Set(['print_scan', 'meme_radar']);
 
   // Generic ingestion — returns { new: Token[], updated: Token[], tradeSignals: Token[] }
   const ingestTokenList = (data, source) => {
@@ -1023,6 +1028,14 @@ async function pollStalkFun() {
         newTokens.push(...r.new);
         updatedTokens.push(...r.updated);
         allTradeSignals.push(...r.tradeSignals);
+      }
+
+      // Cross-reference Smart Pump KOL data with active trading positions
+      if (smartPump) {
+        const spList = smartPump?.data?.tokens || smartPump?.tokens || smartPump?.data || (Array.isArray(smartPump) ? smartPump : []);
+        if (Array.isArray(spList) && spList.length > 0) {
+          tradingEngine.updatePositionsFromSmartPump(spList);
+        }
       }
     }
 
