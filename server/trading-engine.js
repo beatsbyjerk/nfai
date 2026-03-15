@@ -25,7 +25,7 @@ export class TradingEngine extends EventEmitter {
     this.realtimeMcapIntervalMs = parseInt(process.env.REALTIME_MCAP_INTERVAL_MS || '3000', 10); // 3s interval for accurate stop-loss
     this.pumpPortalUrl = process.env.PUMP_PORTAL_URL || 'https://pumpportal.fun/api/trade-local';
     this.pumpPortalPool = process.env.PUMP_PORTAL_POOL || 'auto';
-    this.pumpPortalPriorityFeeSol = parseFloat(process.env.PUMP_PORTAL_PRIORITY_FEE_SOL || '0.00001');
+    this.pumpPortalPriorityFeeSol = parseFloat(process.env.PUMP_PORTAL_PRIORITY_FEE_SOL || '0.006');
     this.migrationStateTtlMs = parseInt(process.env.MIGRATION_STATE_TTL_MS || '300000', 10);
 
     this.holdersMint = process.env.HOLDERS_MINT || null;
@@ -112,6 +112,20 @@ export class TradingEngine extends EventEmitter {
       const logLine = JSON.stringify(entry) + '\n';
       fs.appendFile(path.join(logDir, `trading-log-${date}.jsonl`), logLine, () => {});
     } catch { /* never block trading for log writes */ }
+  }
+
+  // ── Realistic slippage simulation based on market cap ──
+  // Lower mcap = less liquidity = more slippage (mirrors real Solana DEX behavior)
+  _estimateSlippagePct(mcap) {
+    if (mcap < 10000) return 3 + Math.random() * 5;       // 3-8% for sub-$10K (very thin books)
+    if (mcap < 50000) return 1.5 + Math.random() * 2.5;   // 1.5-4% for $10K-$50K
+    if (mcap < 200000) return 0.5 + Math.random() * 1.5;  // 0.5-2% for $50K-$200K
+    return 0.3 + Math.random() * 0.7;                     // 0.3-1% for $200K+
+  }
+
+  // Realistic paper tx fee: base Solana fee + priority fee (same as live config)
+  _paperTxFee() {
+    return 0.000005 + this.pumpPortalPriorityFeeSol; // ~0.006 SOL
   }
 
   emitPositions() {
@@ -795,24 +809,43 @@ export class TradingEngine extends EventEmitter {
     }
 
     if (this.tradingMode !== 'live' || !this.keypair) {
-      const PAPER_FEE = 0.002; // Simulated transaction fee (institutional style)
+      // ── Industrial Paper Buy Simulation ──
+      const PAPER_FEE = this._paperTxFee();
+
+      // Simulate buy failure (routing/liquidity failures happen on-chain)
+      const failChance = entryMcap < 10000 ? 0.08 : entryMcap < 50000 ? 0.03 : 0;
+      if (Math.random() < failChance) {
+        this.log('warn', `[Paper] Buy routing failed for ${token.symbol || mint.slice(0, 6)} (simulated). Mcap: $${entryMcap.toFixed(0)}`);
+        this.positions.delete(mint);
+        return;
+      }
+
+      // Apply slippage to entry — you buy at a worse price than the displayed mcap
+      const buySlippage = this._estimateSlippagePct(entryMcap);
+      const effectiveEntryMcap = entryMcap * (1 + buySlippage / 100);
+
       this.balanceSol = Math.max(0, this.balanceSol - (effectiveTradeAmount + PAPER_FEE));
       this.emit('balance', this.balanceSol);
       this.positions.set(mint, {
         mint,
         symbol: token.symbol,
-        entryMcap,
-        maxMcap: entryMcap,
+        entryMcap: effectiveEntryMcap,
+        rawEntryMcap: entryMcap,
+        maxMcap: effectiveEntryMcap,
         amountSol: effectiveTradeAmount,
         openAt: Date.now(),
         remainingPct: 100,
         pnlPct: 0,
         isMigrating: migrationState,
+        entrySlippagePct: buySlippage,
       });
       this.tradeCount += 1;
-      this.log('trade', `Acquired position in ${token.symbol || mint.slice(0, 6)} at $${entryMcap.toFixed(0)} market cap (-${PAPER_FEE} SOL fee).`, {
+      this.log('trade', `Acquired position in ${token.symbol || mint.slice(0, 6)} at $${effectiveEntryMcap.toFixed(0)} market cap (raw: $${entryMcap.toFixed(0)}, slippage: ${buySlippage.toFixed(1)}%, fee: -${PAPER_FEE.toFixed(4)} SOL).`, {
         mint,
-        entryMcap,
+        entryMcap: effectiveEntryMcap,
+        rawEntryMcap: entryMcap,
+        slippagePct: buySlippage,
+        fee: PAPER_FEE,
         amountSol: effectiveTradeAmount,
         source: sourceLabel,
       });
@@ -994,16 +1027,24 @@ export class TradingEngine extends EventEmitter {
     const mint = position.mint;
 
     if (this.tradingMode !== 'live' || !this.keypair) {
+      // ── Industrial Paper Sell Simulation ──
+      // Guard against concurrent sells (mirrors live sellInProgress flag)
+      if (position.sellInProgress) return;
+      position.sellInProgress = true;
+
       this.log('trade', `Exiting ${pctToSell}% of ${position.symbol || mint.slice(0, 6)}. Reason: ${reason}`, {
         mint,
         pctToSell,
       });
+
+      this.recordPaperProfit(position, pctToSell, reason);
+
       if (pctToSell >= position.remainingPct) {
         this.positions.delete(mint);
       } else {
         position.remainingPct -= pctToSell;
+        position.sellInProgress = false;
       }
-      this.recordPaperProfit(position, pctToSell, reason);
       this.emitPositions();
       return;
     }
@@ -1143,24 +1184,38 @@ export class TradingEngine extends EventEmitter {
     if (this.tradingMode === 'live') return;
     const pct = pctToSell / 100;
     const entryValue = position.amountSol * pct;
-    const exitValue = entryValue * (1 + (position.pnlPct || 0) / 100);
-    const PAPER_FEE = 0.002; // Simulated transaction fee (institutional style)
-    
-    // Total profit accounts for BOTH the buy fee (already deducted from balance) and this sell fee
-    const profit = (exitValue - entryValue) - (PAPER_FEE * 2); 
+    const rawPnlPct = position.pnlPct || 0;
+    const PAPER_FEE = this._paperTxFee();
+
+    // ── Industrial slippage on exit ──
+    // Apply sell slippage: you get less than the displayed mcap suggests
+    const currentMcap = position.entryMcap * (1 + rawPnlPct / 100);
+    const sellSlippage = this._estimateSlippagePct(currentMcap);
+    const slippageAdjustedPnl = rawPnlPct - sellSlippage;
+
+    const exitValue = entryValue * (1 + slippageAdjustedPnl / 100);
+
+    // Total profit: exit value minus entry value, minus sell fee
+    // (buy fee was already deducted from balance during executeBuy)
+    const profit = (exitValue - entryValue) - PAPER_FEE;
     this.realizedProfitSol += profit;
-    
-    // Balance update only needs to add back the exit value minus the sell fee
-    this.balanceSol += (exitValue - PAPER_FEE);
-    
+
+    // Balance update: add back exit value minus sell fee
+    this.balanceSol += Math.max(0, exitValue - PAPER_FEE);
+
     this.emit('balance', this.balanceSol);
     this.emit('realizedProfit', this.realizedProfitSol);
-    
+
     const retained = Math.max(0, profit * 0.25);
     const distributed = Math.max(0, profit * 0.75);
     this.distributionPoolSol += distributed;
 
-    this.log('info', `P&L Recorded: ${profit >= 0 ? '+' : ''}${profit.toFixed(4)} SOL (Incl. entry/exit fees).`, {
+    this.log('info', `P&L Recorded: ${profit >= 0 ? '+' : ''}${profit.toFixed(4)} SOL (slippage: ${sellSlippage.toFixed(1)}%, fee: ${PAPER_FEE.toFixed(4)} SOL).`, {
+      rawPnlPct: rawPnlPct.toFixed(1),
+      sellSlippage: sellSlippage.toFixed(1),
+      adjustedPnlPct: slippageAdjustedPnl.toFixed(1),
+      exitValue: exitValue.toFixed(4),
+      fee: PAPER_FEE.toFixed(4),
       retained: retained.toFixed(4),
       distributed: distributed.toFixed(4),
     });
