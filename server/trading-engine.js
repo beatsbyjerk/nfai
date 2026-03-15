@@ -816,16 +816,16 @@ export class TradingEngine extends EventEmitter {
 
 
 
-    if (!Number.isFinite(entryMcap) || entryMcap <= 3000) {
-      this.log('warn', `Analysis incomplete: Market cap too low ($${(entryMcap || 0).toFixed(0)} <= $3k) for ${token.symbol || mint.slice(0, 6)}. Skipping acquisition.`);
+    if (!Number.isFinite(entryMcap) || entryMcap <= 7000) {
+      this.log('warn', `Analysis incomplete: Market cap too low ($${(entryMcap || 0).toFixed(0)} <= $7k) for ${token.symbol || mint.slice(0, 6)}. Skipping acquisition.`);
       this.positions.delete(mint);
       return;
     }
 
-    // Max mcap ceiling — don't buy tokens that have already pumped past $15K
-    const MAX_ENTRY_MCAP = 15000;
+    // Max mcap ceiling — don't buy tokens that have already pumped past $70K
+    const MAX_ENTRY_MCAP = 70000;
     if (entryMcap > MAX_ENTRY_MCAP) {
-      this.log('warn', `Market cap too high ($${entryMcap.toFixed(0)} > $15k) for ${token.symbol || mint.slice(0, 6)}. Already pumped — skipping.`);
+      this.log('warn', `Market cap too high ($${entryMcap.toFixed(0)} > $70k) for ${token.symbol || mint.slice(0, 6)}. Already pumped — skipping.`);
       this.positions.delete(mint);
       return;
     }
