@@ -811,6 +811,7 @@ export class TradingEngine extends EventEmitter {
     if (this.tradingMode !== 'live' || !this.keypair) {
       // ── Industrial Paper Buy Simulation ──
       const PAPER_FEE = this._paperTxFee();
+      const RENT = 0.002; // Solana token account rent (refunded on close)
 
       // Simulate buy failure (routing/liquidity failures happen on-chain)
       const failChance = entryMcap < 10000 ? 0.08 : entryMcap < 50000 ? 0.03 : 0;
@@ -824,7 +825,7 @@ export class TradingEngine extends EventEmitter {
       const buySlippage = this._estimateSlippagePct(entryMcap);
       const effectiveEntryMcap = entryMcap * (1 + buySlippage / 100);
 
-      this.balanceSol = Math.max(0, this.balanceSol - (effectiveTradeAmount + PAPER_FEE));
+      this.balanceSol = Math.max(0, this.balanceSol - (effectiveTradeAmount + PAPER_FEE + RENT));
       this.emit('balance', this.balanceSol);
       this.positions.set(mint, {
         mint,
@@ -840,12 +841,13 @@ export class TradingEngine extends EventEmitter {
         entrySlippagePct: buySlippage,
       });
       this.tradeCount += 1;
-      this.log('trade', `Acquired position in ${token.symbol || mint.slice(0, 6)} at $${effectiveEntryMcap.toFixed(0)} market cap (raw: $${entryMcap.toFixed(0)}, slippage: ${buySlippage.toFixed(1)}%, fee: -${PAPER_FEE.toFixed(4)} SOL).`, {
+      this.log('trade', `Acquired position in ${token.symbol || mint.slice(0, 6)} at $${effectiveEntryMcap.toFixed(0)} market cap (raw: $${entryMcap.toFixed(0)}, slippage: ${buySlippage.toFixed(1)}%, fee: ${PAPER_FEE.toFixed(4)}, rent: ${RENT} SOL).`, {
         mint,
         entryMcap: effectiveEntryMcap,
         rawEntryMcap: entryMcap,
         slippagePct: buySlippage,
         fee: PAPER_FEE,
+        rent: RENT,
         amountSol: effectiveTradeAmount,
         source: sourceLabel,
       });
@@ -1040,6 +1042,11 @@ export class TradingEngine extends EventEmitter {
       this.recordPaperProfit(position, pctToSell, reason);
 
       if (pctToSell >= position.remainingPct) {
+        // Full close — refund token account rent (0.002 SOL)
+        const RENT_REFUND = 0.002;
+        this.balanceSol += RENT_REFUND;
+        this.emit('balance', this.balanceSol);
+        this.log('info', `Rent refunded: +${RENT_REFUND} SOL (token account closed for ${position.symbol || mint.slice(0, 6)})`);
         this.positions.delete(mint);
       } else {
         position.remainingPct -= pctToSell;
