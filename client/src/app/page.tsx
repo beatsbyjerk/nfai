@@ -360,17 +360,23 @@ export default function HomePage() {
                   </div>
                 ) : (
                   <div className="divide-y divide-border/20 max-h-[250px] overflow-y-auto">
-                    {trading.positions.filter(p => p.remainingPct > 0).slice(0, 8).map((pos) => (
+                    {trading.positions.filter(p => p.remainingPct > 0).slice(0, 8).map((pos) => {
+                      const matchedToken = allTokens.find(t => t.address === pos.mint);
+                      return (
                       <div key={pos.mint} className="px-4 py-2.5 flex items-center justify-between hover:bg-surface-raised/20 transition-colors">
                         <div>
-                          <span className="text-xs font-bold text-foreground">{pos.symbol || pos.mint.slice(0, 6)}</span>
+                          <span
+                            className={`text-xs font-bold ${matchedToken ? "text-accent cursor-pointer hover:underline" : "text-foreground"}`}
+                            onClick={() => matchedToken && setSelectedToken(matchedToken)}
+                          >{pos.symbol || pos.mint.slice(0, 6)}</span>
                           <span className="text-[10px] text-muted/40 ml-2 font-mono">{pos.amountSol.toFixed(3)} SOL</span>
                         </div>
                         <span className={`text-xs font-mono font-black ${pos.pnlPct >= 0 ? "text-accent" : "text-danger"}`}>
                           {pos.pnlPct >= 0 ? "+" : ""}{pos.pnlPct.toFixed(1)}%
                         </span>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </motion.div>

@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useWebSocket, type WSMessage } from "@/lib/ws";
 import { Navbar } from "@/components/Navbar";
 import { Card, CardHeader, CardBody } from "@/components/Card";
+import { TokenModal } from "@/components/TokenModal";
 import { formatMcap, formatSol, formatPct, timeAgo } from "@/lib/utils";
 import {
   TrendingUp, TrendingDown
@@ -37,6 +38,7 @@ export default function TradingPage() {
   const [balanceSol, setBalanceSol] = useState<number | null>(null);
   const [holders, setHolders] = useState<any[]>([]);
   const [engineState, setEngineState] = useState<any>(null);
+  const [selectedToken, setSelectedToken] = useState<any>(null);
 
   const handleRefresh = useCallback((msg: WSMessage) => {
     const t = msg.data?.trading;
@@ -168,7 +170,17 @@ export default function TradingPage() {
                       {openPositions.map((pos) => (
                         <tr key={pos.mint} className="border-b border-border/30 hover:bg-surface-raised/30 transition-all duration-150">
                           <td className="p-3">
-                            <div className="font-bold text-foreground">{pos.symbol || pos.mint.slice(0, 8)}</div>
+                            <div
+                              className="font-bold text-accent cursor-pointer hover:underline"
+                              onClick={() => setSelectedToken({
+                                address: pos.mint,
+                                symbol: pos.symbol || pos.mint.slice(0, 8),
+                                name: pos.symbol || pos.mint.slice(0, 8),
+                                initial_mcap: pos.entryMcap,
+                                latest_mcap: pos.currentMcap || pos.maxMcap,
+                                ath_mcap: pos.maxMcap,
+                              })}
+                            >{pos.symbol || pos.mint.slice(0, 8)}</div>
                             <div className="text-muted/40 font-mono text-[10px]">{pos.mint.slice(0, 6)}...{pos.mint.slice(-4)}</div>
                           </td>
                           <td className="p-3 text-right font-mono">{formatMcap(pos.entryMcap)}</td>
@@ -274,6 +286,17 @@ export default function TradingPage() {
           )}
         </div>
       </main>
+
+      {selectedToken && (
+        <TokenModal
+          token={selectedToken}
+          dex={null}
+          onClose={() => setSelectedToken(null)}
+          grade="—"
+          score={0}
+          factors={[]}
+        />
+      )}
     </div>
   );
 }
