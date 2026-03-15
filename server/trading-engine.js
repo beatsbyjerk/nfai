@@ -822,10 +822,10 @@ export class TradingEngine extends EventEmitter {
       return;
     }
 
-    // Max mcap ceiling — don't buy tokens that have already pumped past $70K
-    const MAX_ENTRY_MCAP = 70000;
+    // Max mcap ceiling — don't buy tokens that have already pumped past $100K
+    const MAX_ENTRY_MCAP = 100000;
     if (entryMcap > MAX_ENTRY_MCAP) {
-      this.log('warn', `Market cap too high ($${entryMcap.toFixed(0)} > $70k) for ${token.symbol || mint.slice(0, 6)}. Already pumped — skipping.`);
+      this.log('warn', `Market cap too high ($${entryMcap.toFixed(0)} > $100k) for ${token.symbol || mint.slice(0, 6)}. Already pumped — skipping.`);
       this.positions.delete(mint);
       return;
     }
