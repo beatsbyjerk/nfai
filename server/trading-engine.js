@@ -38,7 +38,7 @@ export class TradingEngine extends EventEmitter {
     this.privateKey = process.env.TRADING_PRIVATE_KEY || null;
     // Jupiter API base - use env var if set, otherwise default to v6 endpoint
     this.jupiterBase = process.env.JUPITER_API_BASE || 'https://quote-api.jup.ag/v6';
-    this.slippageBps = parseInt(process.env.JUPITER_SLIPPAGE_BPS || '1200', 10); // 12% default
+    this.slippageBps = parseInt(process.env.JUPITER_SLIPPAGE_BPS || '2500', 10); // 25% — rarely fails with 0.006 priority fee
 
     this.positions = new Map(); // mint -> position
     this.mcapCache = new Map(); // mint -> { value, ts }
