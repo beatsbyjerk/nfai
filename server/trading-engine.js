@@ -1,4 +1,6 @@
 import EventEmitter from 'events';
+import fs from 'fs';
+import path from 'path';
 import bs58 from 'bs58';
 import axios from 'axios';
 import fetch from 'node-fetch';
@@ -101,6 +103,15 @@ export class TradingEngine extends EventEmitter {
     this.activityLog.unshift(entry);
     this.activityLog = this.activityLog.slice(0, 200);
     this.emit('activity', entry);
+
+    // Persistent file logging (JSONL — one JSON object per line)
+    try {
+      const date = new Date().toISOString().slice(0, 10);
+      const logDir = path.join(process.cwd(), 'logs');
+      if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
+      const logLine = JSON.stringify(entry) + '\n';
+      fs.appendFile(path.join(logDir, `trading-log-${date}.jsonl`), logLine, () => {});
+    } catch { /* never block trading for log writes */ }
   }
 
   emitPositions() {

@@ -4,7 +4,7 @@ import { WebSocketServer } from 'ws';
 import { createServer } from 'http';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'fs';
+import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync, statSync, createReadStream } from 'fs';
 import { StalkFunAPI } from './stalkfun-api.js';
 import { TokenStore } from './token-store.js';
 import { TradingEngine } from './trading-engine.js';
@@ -41,6 +41,32 @@ for (const file of envFiles) {
     break;
   }
 }
+
+// ── Global Console Logger ──
+// Intercept ALL console output and persist to daily JSONL log files
+// This captures everything: WS events, API polls, auth, errors — full system debug
+import { appendFile } from 'fs';
+const _origLog = console.log.bind(console);
+const _origError = console.error.bind(console);
+const _origWarn = console.warn.bind(console);
+
+function persistLog(level, args) {
+  try {
+    const date = new Date().toISOString().slice(0, 10);
+    const logDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'logs');
+    if (!existsSync(logDir)) mkdirSync(logDir, { recursive: true });
+    const line = JSON.stringify({
+      type: `system:${level}`,
+      message: args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' '),
+      timestamp: new Date().toISOString(),
+    }) + '\n';
+    appendFile(join(logDir, `trading-log-${date}.jsonl`), line, () => {});
+  } catch { /* never crash for logging */ }
+}
+
+console.log = (...args) => { _origLog(...args); persistLog('log', args); };
+console.error = (...args) => { _origError(...args); persistLog('error', args); };
+console.warn = (...args) => { _origWarn(...args); persistLog('warn', args); };
 
 const app = express();
 const server = createServer(app);
@@ -639,6 +665,28 @@ app.get('/api/trading/holders', (req, res) => {
 
 app.get('/api/trading/activity', (req, res) => {
   res.json({ activity: tradingEngine.activityLog.map(sanitizeActivity) });
+});
+
+// ── Persistent Log Download ──
+app.get('/api/logs/download', (req, res) => {
+  const date = req.query.date || new Date().toISOString().slice(0, 10);
+  const logPath = join(process.cwd(), 'logs', `trading-log-${date}.jsonl`);
+  if (!existsSync(logPath)) {
+    return res.status(404).json({ error: `No log file for ${date}` });
+  }
+  res.setHeader('Content-Type', 'application/x-ndjson');
+  res.setHeader('Content-Disposition', `attachment; filename="trading-log-${date}.jsonl"`);
+  createReadStream(logPath).pipe(res);
+});
+
+app.get('/api/logs/list', (req, res) => {
+  const logDir = join(process.cwd(), 'logs');
+  if (!existsSync(logDir)) return res.json({ files: [] });
+  const files = readdirSync(logDir)
+    .filter(f => f.endsWith('.jsonl'))
+    .map(f => ({ name: f, size: statSync(join(logDir, f)).size }))
+    .sort((a, b) => b.name.localeCompare(a.name));
+  res.json({ files });
 });
 
 app.get('/api/tokens', (req, res) => {
