@@ -925,10 +925,13 @@ async function pollStalkFun() {
     if (source === 'trending' && data?.data) {
       const swaps1m = data.data.swaps_1m || [];
       const swaps5m = data.data.swaps_5m || [];
+      const VIP_SOURCES = new Set(['print_scan', 'meme_radar', 'smart_pump', 'token_tracker']);
       for (const token of [...swaps5m, ...swaps1m]) {
         if (!token || typeof token !== 'object') continue;
         const mint = token.mint || token.token_address || token.address;
         if (!mint) continue;
+        // Only pump.fun tokens for public feeds; VIP sources are exempt
+        if (!VIP_SOURCES.has(source) && !mint.endsWith('pump')) continue;
         token._momentum = {
           price_change_1m: token.price_change_percent1m,
           price_change_5m: token.price_change_percent5m ?? token.price_change_percent,
@@ -960,10 +963,13 @@ async function pollStalkFun() {
     if (!Array.isArray(list)) return result;
     const seenAddresses = new Set();
 
+    const VIP_SOURCES_STD = new Set(['print_scan', 'meme_radar', 'smart_pump', 'token_tracker']);
     for (const token of list) {
       if (!token || typeof token !== 'object') continue;
       const mint = token.mint || token.token_address || token.address || token.mintAddress;
       if (!mint || seenAddresses.has(mint)) continue;
+      // Only pump.fun tokens for public feeds; VIP sources are exempt
+      if (!VIP_SOURCES_STD.has(source) && !mint.endsWith('pump')) continue;
       seenAddresses.add(mint);
 
       const existing = tokenStore.getToken(mint);

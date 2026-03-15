@@ -1058,6 +1058,22 @@ export class TradingEngine extends EventEmitter {
         continue;
       }
 
+      // Low mcap exit — Meme Radar tokens often start very low
+      // If stuck under $3K for 2+ minutes, cut losses and free capital
+      if (currentMcap < 3000 && position.remainingPct > 0) {
+        if (!position._lowMcapSince) {
+          position._lowMcapSince = Date.now();
+        }
+        const lowMcapDuration = Date.now() - position._lowMcapSince;
+        if (lowMcapDuration >= 2 * 60 * 1000) { // 2 minutes
+          await this.executeSell(position, 100, `Low mcap exit: stuck under $3K for ${(lowMcapDuration/60000).toFixed(1)}min (mcap $${currentMcap.toFixed(0)}, P&L ${pnlPct.toFixed(1)}%). Freeing capital.`);
+          continue;
+        }
+      } else {
+        // Reset timer if mcap goes above $3K
+        position._lowMcapSince = null;
+      }
+
       // Dead token protection — only truly dead tokens (mcap cratered below $2K AND no movement)
       const isDeadToken = currentMcap < 2000 && pnlPct <= -80 && staleMs > 5 * 60 * 1000;
       if (isDeadToken && position.remainingPct > 0) {
@@ -1095,34 +1111,53 @@ export class TradingEngine extends EventEmitter {
         position.profitStallSince = null;
       }
 
-      // ── DATA-DRIVEN TRAILING STOP ───────────────────────────────────────────
-      // Analysis of 215 real tokens (167 Print Scan + 48 Meme Radar):
-      //   Base: activate=1.2x, trail=10% → avg exit 2.74x, 81% profitable
-      //   Dynamic adjustment from confidence signals:
-      //     +5% trail width if dual signal (both MR+PS confirmed = more room)
-      //     +5% trail width if KOL holding (Smart Pump shows whales in token)
-      //     -2% trail width if KOL exited (whales dumped = tighten fast)
+      // ── SMART TWO-TIER TRAILING STOP ─────────────────────────────────────────
+      // Micro-cap entries (entry mcap < $15K, common from Meme Radar):
+      //   Instant 5% trail — no activation threshold. Protects from micro-cap dumps.
+      //   Once mcap crosses $15K, graduates to the standard trailing stop.
+      // Standard entries (entry mcap >= $15K or graduated):
+      //   activate=1.2x, trail=10% base + KOL/dual signal adjustments.
       
       if (position.remainingPct > 0 && entryMcap > 0) {
         const peakMultiplier = position.maxMcap / entryMcap;
         const currentMultiplier = currentMcap / entryMcap;
+        const isMicroCapEntry = entryMcap < 15000;
+        const hasGraduated = isMicroCapEntry && currentMcap >= 15000;
         
-        // Activate once position has reached 1.2x (20% gain)
-        if (peakMultiplier >= 1.2) {
-          // Dynamic trail % based on confidence signals
-          let trailPct = 10; // base: optimal from 215-token simulation
-          if (position.dualSignal) trailPct += 5;        // dual signal = wider room
-          if (position.kolHolding) trailPct += 5;         // KOLs still in = confidence
-          if (position.kolExited) trailPct = Math.max(trailPct - 2, 8); // KOLs dumped = tighten
-          
-          const trailingFloor = position.maxMcap * (1 - trailPct / 100);
+        // Track graduation: once a micro-cap crosses $15K, it stays graduated
+        if (hasGraduated && !position._graduated) {
+          position._graduated = true;
+          this.log('signal', `GRADUATED: ${position.symbol || position.mint.slice(0,6)} crossed $15K mcap ($${currentMcap.toFixed(0)}). Switching to standard trailing stop.`, { mint: position.mint });
+        }
+        
+        if (isMicroCapEntry && !position._graduated) {
+          // ── MICRO-CAP MODE: instant 5% trail, no activation threshold ──
+          const microTrailPct = 5;
+          const trailingFloor = position.maxMcap * (1 - microTrailPct / 100);
           
           if (currentMcap < trailingFloor) {
             const drawdownPct = ((position.maxMcap - currentMcap) / position.maxMcap * 100).toFixed(1);
-            const signals = [position.dualSignal ? 'dual' : null, position.kolHolding ? 'KOL' : null, position.kolExited ? 'KOL-exit' : null].filter(Boolean).join('+') || 'base';
             await this.executeSell(position, position.remainingPct, 
-              `Trailing stop [${trailPct}%, ${signals}]: ${drawdownPct}% drawdown from ${peakMultiplier.toFixed(1)}x peak ($${position.maxMcap.toFixed(0)} → $${currentMcap.toFixed(0)}). Locking in ${currentMultiplier.toFixed(1)}x.`);
+              `Trailing stop [${microTrailPct}%, micro-cap]: ${drawdownPct}% drawdown from peak $${position.maxMcap.toFixed(0)} → $${currentMcap.toFixed(0)}. Entry was $${entryMcap.toFixed(0)}.`);
             continue;
+          }
+        } else {
+          // ── STANDARD MODE: 1.2x activation, dynamic trail ──
+          if (peakMultiplier >= 1.2) {
+            let trailPct = 10; // base: optimal from 215-token simulation
+            if (position.dualSignal) trailPct += 5;        // dual signal = wider room
+            if (position.kolHolding) trailPct += 5;         // KOLs still in = confidence
+            if (position.kolExited) trailPct = Math.max(trailPct - 2, 8); // KOLs dumped = tighten
+            
+            const trailingFloor = position.maxMcap * (1 - trailPct / 100);
+            
+            if (currentMcap < trailingFloor) {
+              const drawdownPct = ((position.maxMcap - currentMcap) / position.maxMcap * 100).toFixed(1);
+              const signals = [position._graduated ? 'graduated' : null, position.dualSignal ? 'dual' : null, position.kolHolding ? 'KOL' : null, position.kolExited ? 'KOL-exit' : null].filter(Boolean).join('+') || 'base';
+              await this.executeSell(position, position.remainingPct, 
+                `Trailing stop [${trailPct}%, ${signals}]: ${drawdownPct}% drawdown from ${peakMultiplier.toFixed(1)}x peak ($${position.maxMcap.toFixed(0)} → $${currentMcap.toFixed(0)}). Locking in ${currentMultiplier.toFixed(1)}x.`);
+              continue;
+            }
           }
         }
       }
