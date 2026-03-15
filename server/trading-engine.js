@@ -561,7 +561,8 @@ export class TradingEngine extends EventEmitter {
         // Log position P&L every 3s (same as monitoring interval)
         if (now - (position.lastMonitorLogAt || 0) > 3000) {
           position.lastMonitorLogAt = now;
-          const pnlPct = ((finalMcap - position.entryMcap) / position.entryMcap) * 100;
+          const entryMcapSafe = position.entryMcap || 0;
+          const pnlPct = entryMcapSafe > 0 ? ((finalMcap - entryMcapSafe) / entryMcapSafe) * 100 : 0;
           this.log('info', `Monitoring ${position.symbol || mint.slice(0, 6)}: $${finalMcap.toFixed(0)} mcap, ${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(1)}% P&L`);
         }
       }
@@ -712,6 +713,8 @@ export class TradingEngine extends EventEmitter {
       this.isTokenMigrating({ raw: token }) ??
       this.isTokenMigrating(tokenRecord) ??
       await this.inferMigrationFromMcap(mint);
+
+    let entryMcap = parseFloat(token.latest_mcap || token.initial_mcap || token.market_cap || token.marketCap || token.mcap || 0);
 
     // Use same method as ClaudeCash feed (reliable, never fails)
     // This ensures entryMcap uses the same data source as monitoring
@@ -864,7 +867,8 @@ export class TradingEngine extends EventEmitter {
       // Update max
       if (currentMcap > position.maxMcap) position.maxMcap = currentMcap;
 
-      const entryMcap = position.entryMcap || 1; // Safeguard against division by zero
+      const entryMcap = position.entryMcap;
+      if (!entryMcap || entryMcap <= 0) continue; // Skip positions with no valid entry mcap
       let pnlPct = ((currentMcap - entryMcap) / entryMcap) * 100;
       
       // Hard cap P&L at 10,000% (100x) to prevent dirty data or extreme anomalies from destroying paper balance
