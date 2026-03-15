@@ -1627,7 +1627,11 @@ export class TradingEngine extends EventEmitter {
           tokenDecimals: pos.tokenDecimals,
           pnlPct: pos.pnlPct,
           isMigrating: pos.isMigrating,
-          sellInProgress: false, // never persist mid-sell flag
+          _entrySource: pos._entrySource,
+          confirmedSources: pos.confirmedSources,
+          dualSignal: pos.dualSignal,
+          _graduated: pos._graduated,
+          sellInProgress: false,
           buyInProgress: false,
         })),
       };
@@ -1686,6 +1690,13 @@ export class TradingEngine extends EventEmitter {
             tokenDecimals: pos.tokenDecimals,
             pnlPct: pos.pnlPct || 0,
             isMigrating: pos.isMigrating,
+            _entrySource: pos._entrySource || 'unknown',
+            confirmedSources: pos.confirmedSources || [pos._entrySource || 'unknown'],
+            dualSignal: pos.dualSignal || false,
+            _graduated: pos._graduated || false,
+            kolHolding: false,
+            kolExited: false,
+            kolCount: 0,
             sellInProgress: false,
             buyInProgress: false,
           });

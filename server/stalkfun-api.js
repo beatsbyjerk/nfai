@@ -141,6 +141,12 @@ export class StalkFunAPI {
     return this.fetchAPI(`/api/smart-pump?limit=${limit}`, {}, true);
   }
 
+  // Momentum Tracker — tracks peak X at different timeframes (1d-4w).
+  // Used for active position monitoring only, NOT as a trade trigger.
+  async fetchMomentum(limit = 200) {
+    return this.fetchAPI(`/api/print-scan-leaderboard?mode=peaks&limit=${limit}&refresh=false`, {}, true);
+  }
+
   async fetchTokenTracker(listType = 'combined', limit = 20) {
     return this.fetchAPI(`/api/token-tracker?listType=${listType}&limit=${limit}&fresh=true`, {}, true);
   }

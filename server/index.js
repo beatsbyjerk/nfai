@@ -60,7 +60,7 @@ function persistLog(level, args) {
       message: args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' '),
       timestamp: new Date().toISOString(),
     }) + '\n';
-    appendFile(join(logDir, `trading-log-${date}.jsonl`), line, () => {});
+    appendFile(join(logDir, `trading-log-${date}.jsonl`), line, () => { });
   } catch { /* never crash for logging */ }
 }
 
@@ -393,7 +393,7 @@ const ingestApiTokens = (data, source) => {
         transactions_24h: token.transactions_24h,
       };
       const isNew = tokenStore.upsertToken(token, source);
-      if (isNew && tradingEngine && (source === 'print_scan' || source === 'meme_radar')) {
+      if (isNew && tradingEngine && (source === 'print_scan' || source === 'meme_radar') && Date.now() - SERVER_STARTED_AT > STARTUP_COOLDOWN_MS) {
         tradingEngine.handleNewSignal(token, source).catch(e => console.error(e));
       }
       count++;
@@ -410,7 +410,7 @@ const ingestApiTokens = (data, source) => {
     // Only ingest pump.fun tokens (mint ends with "pump") — matches trading engine filter
     if (!mint.endsWith('pump')) continue;
     const isNew = tokenStore.upsertToken(token, source);
-    if (isNew && tradingEngine && (source === 'print_scan' || source === 'meme_radar')) {
+    if (isNew && tradingEngine && (source === 'print_scan' || source === 'meme_radar') && Date.now() - SERVER_STARTED_AT > STARTUP_COOLDOWN_MS) {
       tradingEngine.handleNewSignal(token, source).catch(e => console.error(e));
     }
     count++;
@@ -877,39 +877,14 @@ app.post('/api/user/logout', async (req, res) => {
 // Polling function to fetch new data
 let initialized = false;
 let pollInFlight = false;
+const SERVER_STARTED_AT = Date.now();
+const STARTUP_COOLDOWN_MS = 30000; // 30s — suppress trade signals while initial API dump loads
 
 async function pollStalkFun() {
   if (pollInFlight) return;
   pollInFlight = true;
   const newTokens = [];
   const updatedTokens = [];
-
-  const parseFirstSeen = (value) => {
-    if (!value) return null;
-    if (typeof value === 'number' && Number.isFinite(value)) {
-      return value < 1e12 ? value * 1000 : value;
-    }
-    const parsed = new Date(value).getTime();
-    return Number.isFinite(parsed) ? parsed : null;
-  };
-
-  const isFreshFirstCall = (token, record) => {
-    const candidates = [
-      record?.first_seen_print_scan,
-      record?.first_seen_local,
-      record?.first_seen,
-      token?.first_seen,
-      token?.created_at,
-      token?.first_called,
-      token?.timestamp,
-    ];
-    const firstSeenMs = candidates
-      .map(parseFirstSeen)
-      .find((value) => Number.isFinite(value));
-    if (!firstSeenMs) return false;
-    const ageMs = Date.now() - firstSeenMs;
-    return ageMs >= 0 && ageMs <= 120000;
-  };
 
   // Sources that are allowed to generate auto-trading signals.
   // EXCLUSIVE: Only Print Scan and Meme Radar from stalk.fun VIP APIs.
@@ -944,8 +919,8 @@ async function pollStalkFun() {
         if (isNew && record) result.new.push({ ...record, isNew: true });
         else if (record) result.updated.push(record);
 
-        // Allow fresh trending tokens to become trade signals when using public feeds
-        if (SIGNAL_SOURCES.has(source) && isNew && record && isFreshFirstCall(token, record)) {
+        // Signal source detected — trigger trade only after startup cooldown expires
+        if (SIGNAL_SOURCES.has(source) && isNew && record && Date.now() - SERVER_STARTED_AT > STARTUP_COOLDOWN_MS) {
           result.tradeSignals.push(record);
         }
       }
@@ -984,7 +959,8 @@ async function pollStalkFun() {
         result.updated.push(record);
       }
 
-      if (SIGNAL_SOURCES.has(source) && !hadSource && record && isFreshFirstCall(token, record)) {
+      // Signal source detected for first time on this token — trigger trade only after startup cooldown
+      if (SIGNAL_SOURCES.has(source) && !hadSource && record && Date.now() - SERVER_STARTED_AT > STARTUP_COOLDOWN_MS) {
         result.tradeSignals.push(record);
       }
     }
@@ -1201,6 +1177,11 @@ async function broadcastRealtimeMcaps() {
 
 // Start polling
 const POLL_INTERVAL = 2000; // 2 seconds for instant token detection
+
+console.log(`[Startup] Cooldown active: suppressing trade signals for ${STARTUP_COOLDOWN_MS / 1000}s while baseline populates...`);
+setTimeout(() => {
+  console.log(`[Startup] Cooldown expired. Trade signals from print_scan/meme_radar are now LIVE.`);
+}, STARTUP_COOLDOWN_MS);
 
 setInterval(pollStalkFun, POLL_INTERVAL);
 setInterval(broadcastRealtimeMcaps, REALTIME_MCAP_BROADCAST_INTERVAL_MS);
