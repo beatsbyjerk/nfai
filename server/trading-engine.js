@@ -542,13 +542,26 @@ export class TradingEngine extends EventEmitter {
               position.lastMcapWarnAt = now;
               this.log('warn', `Using last known mcap for ${position.symbol || mint.slice(0, 6)} (fetch failed)`);
             }
-          } else {
-            // No fallback available - skip this cycle but don't exit
+          } else if (position.entryMcap && Number.isFinite(position.entryMcap) && position.entryMcap > 0) {
+            // Fallback 3: Use entry mcap as last resort (at least we can detect dead tokens)
+            finalMcap = position.entryMcap;
             if (now - (position.lastMcapWarnAt || 0) > 60000) {
               position.lastMcapWarnAt = now;
-              this.log('warn', `No realtime mcap for ${position.symbol || mint.slice(0, 6)} - retrying (no fallback available)`);
+              this.log('warn', `Using entry mcap for ${position.symbol || mint.slice(0, 6)} (all fetches failed)`);
             }
-            continue; // Skip only if absolutely no data available
+          } else {
+            // No fallback available — track how long we've been blind
+            if (!position.blindSince) position.blindSince = now;
+            const blindMs = now - position.blindSince;
+            if (now - (position.lastMcapWarnAt || 0) > 10000) {
+              position.lastMcapWarnAt = now;
+              this.log('warn', `No realtime mcap for ${position.symbol || mint.slice(0, 6)} - retrying (blind for ${(blindMs / 1000).toFixed(0)}s)`);
+            }
+            // Exit blind positions after 60 seconds — can't monitor what we can't see
+            if (blindMs >= 60000 && position.remainingPct > 0) {
+              await this.executeSell(position, 100, `Blind exit: no mcap data for 60s. Cannot monitor — exiting to protect capital.`);
+            }
+            continue;
           }
         }
       }
@@ -758,6 +771,14 @@ export class TradingEngine extends EventEmitter {
 
     if (!Number.isFinite(entryMcap) || entryMcap <= 4000) {
       this.log('warn', `Analysis incomplete: Market cap too low ($${(entryMcap || 0).toFixed(0)} <= $4k) for ${token.symbol || mint.slice(0, 6)}. Skipping acquisition.`);
+      this.positions.delete(mint);
+      return;
+    }
+
+    // Max mcap ceiling — don't buy tokens that have already pumped past $500K
+    const MAX_ENTRY_MCAP = 500000;
+    if (entryMcap > MAX_ENTRY_MCAP) {
+      this.log('warn', `Market cap too high ($${entryMcap.toFixed(0)} > $500k) for ${token.symbol || mint.slice(0, 6)}. Already pumped — skipping.`);
       this.positions.delete(mint);
       return;
     }
