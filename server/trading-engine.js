@@ -1166,21 +1166,20 @@ export class TradingEngine extends EventEmitter {
         }
       }
 
-      // Take profit — partial sell at target, let remainder ride with trailing stop
-      if (pnlPct >= this.takeProfitPct && position.remainingPct === 100) {
-        await this.executeSell(position, this.takeProfitSellPct, `Take profit target reached (${pnlPct.toFixed(1)}%). Securing ${this.takeProfitSellPct}% — remainder rides with trailing stop.`);
-      }
+      // Take profit disabled — graduated trailing stop handles all exits.
+      // The trail widens as the token proves itself (35% → 40% → 50% → 35% lock),
+      // which is strictly better than a hard partial sell at a fixed target.
     }
   }
 
   async executeSell(position, pctToSell, reason) {
     const mint = position.mint;
 
+    // Universal guard — prevents duplicate sell from overlapping monitoring cycles
+    if (position.sellInProgress) return;
+    position.sellInProgress = true;
+
     if (this.tradingMode !== 'live' || !this.keypair) {
-      // ── Industrial Paper Sell Simulation ──
-      // Guard against concurrent sells (mirrors live sellInProgress flag)
-      if (position.sellInProgress) return;
-      position.sellInProgress = true;
 
       this.log('trade', `Exiting ${pctToSell}% of ${position.symbol || mint.slice(0, 6)}. Reason: ${reason}`, {
         mint,
@@ -1206,9 +1205,10 @@ export class TradingEngine extends EventEmitter {
 
     try {
       const now = Date.now();
-      if (position.sellInProgress) return;
-      if (position.nextSellAttemptAt && now < position.nextSellAttemptAt) return;
-      position.sellInProgress = true;
+      if (position.nextSellAttemptAt && now < position.nextSellAttemptAt) {
+        position.sellInProgress = false;
+        return;
+      }
 
       const tokenRecord = this.getTokenRecord(mint);
       const migrationState =
@@ -1307,16 +1307,27 @@ export class TradingEngine extends EventEmitter {
   async recordLiveProfit(position, pctToSell, reason) {
     if (this.tradingMode !== 'live') return;
 
-    // Measure actual SOL balance change (before/after sell)
+    // Wait for SOL to settle before checking balance
+    await new Promise(r => setTimeout(r, 2000));
+
     const balanceBefore = this.balanceSol;
     await this.refreshBalance();
     const balanceAfter = this.balanceSol;
     const solReceived = balanceAfter - balanceBefore;
 
-    // Calculate profit: SOL received - SOL originally invested in this portion
+    // Calculate profit using P&L percentage if balance delta looks wrong
+    // (balance delta can be unreliable if multiple sells overlap or SOL hasn't settled)
     const pct = pctToSell / 100;
     const solInvested = position.amountSol * pct;
-    const profit = solReceived - solInvested;
+    let profit;
+    if (solReceived > 0) {
+      profit = solReceived - solInvested;
+    } else {
+      // Fallback: estimate from tracked P&L (more reliable than balance delta)
+      const pnl = position.pnlPct || 0;
+      const exitValue = solInvested * (1 + pnl / 100);
+      profit = exitValue - solInvested;
+    }
 
     this.realizedProfitSol += profit;
 
