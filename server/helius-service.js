@@ -13,6 +13,7 @@ export class HeliusService {
     this.solPriceCache = { value: null, ts: 0 };
     this.dexScreenerCache = new Map(); // mint -> { mcap, price, ts }
     this.dexScreenerTtlMs = 3000; // 3 seconds for faster updates
+    this.dexScreenerStaleFallbackMs = Number.parseInt(process.env.DEX_SCREENER_STALE_FALLBACK_MS || '10000', 10);
   }
 
   async getSolBalance(address) {
@@ -181,15 +182,15 @@ export class HeliusService {
     try {
       const res = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${mintAddress}`);
       if (!res.ok) {
-        // On error, return stale cache if available (up to 60s old)
-        if (cached && now - cached.ts < 60000) return cached.mcap;
+        // On error, return stale cache if available (short window only)
+        if (cached && now - cached.ts < this.dexScreenerStaleFallbackMs) return cached.mcap;
         return null;
       }
       const json = await res.json();
       const pairs = json?.pairs;
       if (!Array.isArray(pairs) || pairs.length === 0) {
         // No pairs found, return stale cache if available
-        if (cached && now - cached.ts < 60000) return cached.mcap;
+        if (cached && now - cached.ts < this.dexScreenerStaleFallbackMs) return cached.mcap;
         return null;
       }
       // Use the pair with highest liquidity
@@ -198,19 +199,19 @@ export class HeliusService {
         .sort((a, b) => (b.liquidity?.usd || 0) - (a.liquidity?.usd || 0));
       const best = sorted[0];
       if (!best) {
-        if (cached && now - cached.ts < 60000) return cached.mcap;
+        if (cached && now - cached.ts < this.dexScreenerStaleFallbackMs) return cached.mcap;
         return null;
       }
       const mcap = best.marketCap || best.fdv;
       if (!Number.isFinite(mcap) || mcap <= 0) {
-        if (cached && now - cached.ts < 60000) return cached.mcap;
+        if (cached && now - cached.ts < this.dexScreenerStaleFallbackMs) return cached.mcap;
         return null;
       }
       this.dexScreenerCache.set(mintAddress, { mcap, price: parseFloat(best.priceUsd), ts: now });
       return mcap;
     } catch {
-      // On error, return stale cache if available (up to 60s old)
-      if (cached && now - cached.ts < 60000) return cached.mcap;
+      // On error, return stale cache if available (short window only)
+      if (cached && now - cached.ts < this.dexScreenerStaleFallbackMs) return cached.mcap;
       return null;
     }
   }

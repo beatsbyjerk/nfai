@@ -169,7 +169,29 @@ export class StalkFunWebSocket extends EventEmitter {
         ? `Array[${data.length}]`
         : `Object{${Object.keys(data).slice(0, 10).join(', ')}}`;
       console.log(`[StalkFunWS] First "${eventName}" payload shape: ${shape}`);
+      // For analysis events, log the type field and nested data keys
+      if (eventName === 'analysis' && data.type) {
+        const nestedShape = data.data && typeof data.data === 'object'
+          ? `{${Object.keys(data.data).slice(0, 15).join(', ')}}`
+          : typeof data.data;
+        console.log(`[StalkFunWS] Analysis envelope: type="${data.type}", data shape: ${nestedShape}`);
+      }
     }
+
+    // Log unique analysis types as they're discovered
+    if (eventName === 'analysis' && data.type) {
+      if (!this._discoveredAnalysisTypes) this._discoveredAnalysisTypes = new Set();
+      if (!this._discoveredAnalysisTypes.has(data.type)) {
+        this._discoveredAnalysisTypes.add(data.type);
+        const nestedKeys = data.data && typeof data.data === 'object'
+          ? Object.keys(data.data).slice(0, 20).join(', ')
+          : 'N/A';
+        console.log(`[StalkFunWS] New analysis type discovered: "${data.type}" (data keys: ${nestedKeys})`);
+      }
+    }
+
+    // Extract the envelope-level source hint (e.g. analysis event's "type" field)
+    const envelopeType = data.type || data.source || data.category || null;
 
     const tokens = this._extractTokens(data);
     if (tokens.length === 0) return;
@@ -178,7 +200,7 @@ export class StalkFunWebSocket extends EventEmitter {
       const mint = token.token_address || token.mint || token.address || token.mintAddress;
       if (!mint) continue;
 
-      const source = this._inferSource(eventName, token);
+      const source = this._inferSource(eventName, token, envelopeType);
       const symbol = token.token_symbol || token.symbol || token.name || mint.slice(0, 8);
       this._stats.tokensDetected++;
       this._stats.lastTokenSymbol = symbol;
@@ -187,7 +209,7 @@ export class StalkFunWebSocket extends EventEmitter {
       // Log signal-source tokens (print_scan/meme_radar) individually
       if (source === 'print_scan' || source === 'meme_radar') {
         this._stats.signalSourceTokens++;
-        console.log(`[StalkFunWS] Signal token: ${symbol} (${source}) via "${eventName}" | mint: ${mint.slice(0, 12)}...`);
+        console.log(`[StalkFunWS] SIGNAL TOKEN: ${symbol} (${source}) via "${eventName}:${envelopeType || '?'}" | mint: ${mint.slice(0, 12)}...`);
       }
 
       this.emit('token', { token, source, eventName, mint });
@@ -214,16 +236,61 @@ export class StalkFunWebSocket extends EventEmitter {
     if (data.data && Array.isArray(data.data.data)) return data.data.data.filter(t => t && typeof t === 'object');
     // Single token wrapped: { data: { token_address: ... } }
     if (data.data && (data.data.token_address || data.data.mint)) return [data.data];
+    // Common wrappers used by some analysis payloads
+    if (data.token && (data.token.token_address || data.token.mint || data.token.address)) return [data.token];
+    if (data.payload && (data.payload.token_address || data.payload.mint || data.payload.address)) return [data.payload];
+    if (data.data?.token && (data.data.token.token_address || data.data.token.mint || data.data.token.address)) return [data.data.token];
+    if (Array.isArray(data.data?.tokens)) return data.data.tokens.filter(t => t && typeof t === 'object');
+    if (Array.isArray(data.payload?.tokens)) return data.payload.tokens.filter(t => t && typeof t === 'object');
     return [];
   }
 
-  _inferSource(eventName, token) {
-    // Explicit source field in payload
-    if (token.source) return token.source;
-    if (token.message_type) return token.message_type;
-    if (token.detection_source) return token.detection_source;
+  _normalizeSource(raw) {
+    if (!raw) return null;
+    const value = String(raw).trim().toLowerCase();
+    if (!value) return null;
 
-    // Infer from event name
+    if (value.includes('printscan') || value.includes('print_scan') || value.includes('print-scan') || value === 'ps') {
+      return 'print_scan';
+    }
+    if (value.includes('memeradar') || value.includes('meme_radar') || value.includes('meme-radar') || value === 'mr') {
+      return 'meme_radar';
+    }
+    if (value.includes('smartpump') || value.includes('smart_pump') || value.includes('smart-pump')) return 'smart_pump';
+    if (value.includes('live_scan') || value.includes('livescan') || value.includes('live-scan')) return 'live_scan';
+    if (value.includes('tokenupdate') || value.includes('token_update') || value.includes('token-update')) return 'token_update';
+    if (value.includes('dexpaid') || value.includes('dex_paid') || value.includes('dex-paid')) return 'dex_paid';
+    return value.replace(/-/g, '_');
+  }
+
+  _inferSource(eventName, token, envelopeType = null) {
+    // Priority 1: Envelope type (from analysis event's "type" field)
+    // stalk.fun wraps data in {data, signature, timestamp, type} — "type" is the source
+    if (envelopeType) {
+      const t = this._normalizeSource(envelopeType);
+      if (!t) return 'stream';
+      if (t.includes('printscan') || t.includes('print_scan') || t.includes('print-scan') || t === 'ps') return 'print_scan';
+      if (t.includes('memeradar') || t.includes('meme_radar') || t.includes('meme-radar') || t === 'mr') return 'meme_radar';
+      if (t.includes('koth') || t === 'king_of_the_hill') return 'koth';
+      if (t.includes('smartpump') || t.includes('smart_pump') || t.includes('smart-pump')) return 'smart_pump';
+      if (t.includes('live_scan') || t.includes('livescan') || t.includes('live-scan')) return 'live_scan';
+      if (t.includes('trending')) return 'trending';
+      if (t.includes('dex') || t.includes('dexpaid')) return 'dex_paid';
+      if (t.includes('movers')) return 'movers';
+    }
+
+    // Priority 2: Explicit source field in token payload
+    if (token.source) return this._normalizeSource(token.source);
+    if (token.message_type) return this._normalizeSource(token.message_type);
+    if (token.detection_source) return this._normalizeSource(token.detection_source);
+    if (token.type) {
+      const tt = this._normalizeSource(token.type);
+      if (!tt) return 'stream';
+      if (tt.includes('printscan') || tt.includes('print_scan') || tt.includes('print-scan')) return 'print_scan';
+      if (tt.includes('memeradar') || tt.includes('meme_radar') || tt.includes('meme-radar')) return 'meme_radar';
+    }
+
+    // Priority 3: Infer from event name
     const lower = eventName.toLowerCase();
     if (lower.includes('printscan') || lower.includes('print_scan')) return 'print_scan';
     if (lower.includes('memeradar') || lower.includes('meme_radar')) return 'meme_radar';
@@ -232,9 +299,12 @@ export class StalkFunWebSocket extends EventEmitter {
     if (lower.includes('live_scan')) return 'live_scan';
     if (lower.includes('trending')) return 'trending';
 
-    // Infer from token data fields
+    // Priority 4: Infer from token data shape
     if (token.initial_mcap && token.latest_mcap && token.highest_multiplier) return 'print_scan';
     if (token.initial_mc && token.current_mc) return 'meme_radar';
+
+    // Fallback: use envelope type verbatim if present (for unknown types we want to log)
+    if (envelopeType) return this._normalizeSource(envelopeType);
 
     return 'stream';
   }
@@ -245,6 +315,7 @@ export class StalkFunWebSocket extends EventEmitter {
       connected: this.connected,
       uptimeMs: this._stats.connectAt ? Date.now() - this._stats.connectAt : 0,
       discoveredEvents: Array.from(this.discoveredEvents),
+      discoveredAnalysisTypes: this._discoveredAnalysisTypes ? Array.from(this._discoveredAnalysisTypes) : [],
       loggedEventShapes: this._loggedEventShapes ? Array.from(this._loggedEventShapes) : [],
       reconnectAttempts: this.reconnectAttempts,
       socketId: this.socket?.id || null,

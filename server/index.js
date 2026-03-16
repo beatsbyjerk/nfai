@@ -212,6 +212,7 @@ if (existsSync(clientDist)) {
 // Initialize API and store
 const api = new StalkFunAPI();
 let printScanAuthWarningAt = 0;
+let memeRadarShapeWarningAt = 0;
 const tokenStore = new TokenStore();
 const backfilled = tokenStore.backfillMissingMetrics(5000);
 if (backfilled > 0) {
@@ -368,6 +369,24 @@ const extractMemeRadarTokens = (memeRadar) => {
 
 const extractPrintScanTokens = (printScan) => {
   return printScan?.tokens || printScan?.data || printScan?.items || [];
+};
+
+const extractTokenArray = (data) => {
+  if (!data) return [];
+  if (Array.isArray(data)) return data;
+
+  const list =
+    (Array.isArray(data?.data) ? data.data : null) ||
+    (Array.isArray(data?.data?.data) ? data.data.data : null) ||
+    (Array.isArray(data?.data?.tokens) ? data.data.tokens : null) ||
+    (Array.isArray(data?.data?.items) ? data.data.items : null) ||
+    (Array.isArray(data?.tokens) ? data.tokens : null) ||
+    (Array.isArray(data?.items) ? data.items : null) ||
+    (Array.isArray(data?.results) ? data.results : null) ||
+    (Array.isArray(data?.payload?.data) ? data.payload.data : null) ||
+    [];
+
+  return Array.isArray(list) ? list : [];
 };
 
 // Ingest helper — extract tokens from any stalk.fun API response shape
@@ -894,7 +913,7 @@ async function pollStalkFun() {
   // Sources that are allowed to generate auto-trading signals.
   // EXCLUSIVE: Only Print Scan and Meme Radar from stalk.fun VIP APIs.
   // These are the only proven high-signal feeds (80% and 66% success rates).
-  const SIGNAL_SOURCES = new Set(['print_scan', 'meme_radar']);
+  const SIGNAL_SOURCES = new Set(['print_scan', 'meme_radar', 'printscan', 'memeradar', 'meme-radar', 'print-scan']);
 
   // Generic ingestion — returns { new: Token[], updated: Token[], tradeSignals: Token[] }
   const ingestTokenList = (data, source) => {
@@ -933,12 +952,7 @@ async function pollStalkFun() {
     }
 
     // Standard shape: { data: [...] } or { tokens: [...] } or array
-    const memeData = data?.data;
-    const list =
-      (Array.isArray(memeData) ? memeData : null) ||
-      (Array.isArray(memeData?.data) ? memeData.data : null) ||
-      data?.tokens || data?.items || data?.results ||
-      (Array.isArray(data) ? data : []);
+    const list = extractTokenArray(data);
 
     if (!Array.isArray(list)) return result;
     const seenAddresses = new Set();
@@ -1007,6 +1021,14 @@ async function pollStalkFun() {
         api.fetchTokenTracker('combined', 50).catch(() => null),
       ]);
 
+      const memeRadarCount = extractTokenArray(memeRadar).length;
+      if (memeRadar && memeRadarCount === 0 && Date.now() - memeRadarShapeWarningAt > 30000) {
+        memeRadarShapeWarningAt = Date.now();
+        const topKeys = Object.keys(memeRadar || {}).slice(0, 12).join(', ') || 'none';
+        const nestedKeys = Object.keys(memeRadar?.data || {}).slice(0, 12).join(', ') || 'none';
+        console.warn(`[Layer2] Meme Radar returned 0 extractable tokens. keys={${topKeys}} data.keys={${nestedKeys}}`);
+      }
+
       for (const [data, source] of [
         [memeRadar, 'meme_radar'], [printScan, 'print_scan'],
         [smartPump, 'smart_pump'], [tokenTracker, 'token_tracker'],
@@ -1024,8 +1046,7 @@ async function pollStalkFun() {
       if (Date.now() - SERVER_STARTED_AT > STARTUP_COOLDOWN_MS) {
         const extractMints = (data) => {
           if (!data) return new Set();
-          const list = data?.tokens || data?.data || (Array.isArray(data) ? data : []);
-          const arr = Array.isArray(list) ? list : (Array.isArray(list?.data) ? list.data : []);
+          const arr = extractTokenArray(data);
           return new Set(arr.map(t => t?.token_address || t?.mint || t?.address).filter(Boolean));
         };
 
@@ -1244,7 +1265,7 @@ setTimeout(() => {
 // ── Layer 1: StalkFun Socket.IO WebSocket (real-time push, ~0ms latency) ─────
 // Connects to stalk.fun's own real-time system — same one their frontend uses.
 // Tokens arrive the instant stalk.fun's backend detects them, not on next poll.
-const SIGNAL_SOURCES_WS = new Set(['print_scan', 'meme_radar']);
+const SIGNAL_SOURCES_WS = new Set(['print_scan', 'meme_radar', 'printscan', 'memeradar', 'meme-radar', 'print-scan']);
 
 const stalkFunWs = new StalkFunWebSocket({
   cookies: api.cookies,
