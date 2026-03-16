@@ -584,9 +584,9 @@ export class TradingEngine extends EventEmitter {
       position.blindSince = null;
       if (finalMcap && Number.isFinite(finalMcap) && finalMcap > 0) {
         position.lastKnownMcap = finalMcap;
+        position.currentMcap = finalMcap;
         realtimeTokens.push({ mint, latest_mcap: finalMcap });
 
-        // Log position P&L every 3s (same as monitoring interval)
         if (now - (position.lastMonitorLogAt || 0) > 3000) {
           position.lastMonitorLogAt = now;
           const entryMcapSafe = position.entryMcap || 0;
@@ -598,6 +598,11 @@ export class TradingEngine extends EventEmitter {
 
     if (realtimeTokens.length > 0) {
       await this.updatePositions(realtimeTokens, 'realtime');
+    }
+
+    // Push updated positions to frontend so table reflects live mcap/P&L
+    if (this.positions.size > 0) {
+      this.emitPositions();
     }
   }
 
@@ -999,14 +1004,14 @@ export class TradingEngine extends EventEmitter {
       if (!currentMcap) continue;
 
 
-      // Update max
+      // Update current + max mcap on position so frontend can display live values
+      position.currentMcap = currentMcap;
       if (currentMcap > position.maxMcap) position.maxMcap = currentMcap;
 
       const entryMcap = position.entryMcap;
-      if (!entryMcap || entryMcap <= 0) continue; // Skip positions with no valid entry mcap
+      if (!entryMcap || entryMcap <= 0) continue;
       let pnlPct = ((currentMcap - entryMcap) / entryMcap) * 100;
 
-      // Hard cap P&L at 10,000% (100x) to prevent dirty data or extreme anomalies from destroying paper balance
       if (pnlPct > 10000) pnlPct = 10000;
 
       // Stale position detection: exit if P&L doesn't move enough
