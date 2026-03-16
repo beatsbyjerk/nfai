@@ -576,9 +576,36 @@ export class TradingEngine extends EventEmitter {
           position.lastMcapWarnAt = now;
           this.log('warn', `No WS mcap for ${position.symbol || mint.slice(0, 6)} - retrying (blind for ${(blindMs / 1000).toFixed(0)}s)`);
         }
-        // Exit blind positions after 60 seconds — cannot manage risk without trusted live mcap.
+
         if (blindMs >= 60000 && position.remainingPct > 0) {
-          await this.executeSell(position, 100, `Blind exit: no WS mcap data for 60s. Cannot monitor — exiting to protect capital.`);
+          // Before panic-selling, try fallback mcap lookup (DexScreener/Jupiter/cache)
+          let rescueMcap = null;
+          try {
+            rescueMcap = await this.getRealtimeMcap(mint, true);
+          } catch { /* no rescue available */ }
+
+          if (Number.isFinite(rescueMcap) && rescueMcap > 0) {
+            const entryM = position.entryMcap || 0;
+            const pnl = entryM > 0 ? ((rescueMcap - entryM) / entryM) * 100 : 0;
+
+            // Profitable or break-even: trust fallback, reset blind, keep riding
+            if (pnl >= -5) {
+              position.blindSince = now; // reset blind timer
+              position.lastKnownMcap = rescueMcap;
+              if (rescueMcap > (position.maxMcap || 0)) position.maxMcap = rescueMcap;
+              realtimeTokens.push({ mint, latest_mcap: rescueMcap });
+              this.log('info', `Blind rescue via fallback for ${position.symbol || mint.slice(0, 6)}: $${rescueMcap.toFixed(0)} mcap [fallback], ${pnl >= 0 ? '+' : ''}${pnl.toFixed(1)}% P&L — continuing`);
+              continue;
+            }
+
+            // In significant loss with no WS: exit using the fallback price
+            position.lastKnownMcap = rescueMcap;
+            realtimeTokens.push({ mint, latest_mcap: rescueMcap });
+            await this.executeSell(position, 100, `Blind exit (fallback mcap $${rescueMcap.toFixed(0)}): WS dark for 60s+, position at ${pnl.toFixed(1)}% — exiting.`);
+          } else {
+            // No data from any source — true blind exit
+            await this.executeSell(position, 100, `Blind exit: no mcap data from any source for 60s+. Cannot monitor — exiting to protect capital.`);
+          }
         }
         continue;
       }
@@ -1100,11 +1127,13 @@ export class TradingEngine extends EventEmitter {
       }
 
       // ── SMART TWO-TIER TRAILING STOP ─────────────────────────────────────────
+      // Armed immediately on entry — no activation threshold.
+      //
       // Micro-cap entries (entry mcap < $15K, common from Meme Radar):
-      //   Instant 5% trail — no activation threshold. Protects from micro-cap dumps.
-      //   Once mcap crosses $15K, graduates to the standard trailing stop.
+      //   Instant 5% trail. Once mcap crosses $15K, graduates to standard trail.
       // Standard entries (entry mcap >= $15K or graduated):
-      //   activate=1.2x, trail=10% base + KOL/dual signal adjustments.
+      //   15% base trail + KOL/dual signal adjustments. Handles common pattern of
+      //   pump 10-25% → retrace up to 40% → leg up without getting stopped out.
       
       if (position.remainingPct > 0 && entryMcap > 0) {
         const peakMultiplier = position.maxMcap / entryMcap;
@@ -1112,14 +1141,13 @@ export class TradingEngine extends EventEmitter {
         const isMicroCapEntry = entryMcap < 15000;
         const hasGraduated = isMicroCapEntry && currentMcap >= 15000;
         
-        // Track graduation: once a micro-cap crosses $15K, it stays graduated
         if (hasGraduated && !position._graduated) {
           position._graduated = true;
           this.log('signal', `GRADUATED: ${position.symbol || position.mint.slice(0,6)} crossed $15K mcap ($${currentMcap.toFixed(0)}). Switching to standard trailing stop.`, { mint: position.mint });
         }
         
         if (isMicroCapEntry && !position._graduated) {
-          // ── MICRO-CAP MODE: instant 5% trail, no activation threshold ──
+          // ── MICRO-CAP MODE: instant 5% trail ──
           const microTrailPct = 5;
           const trailingFloor = position.maxMcap * (1 - microTrailPct / 100);
           
@@ -1130,22 +1158,20 @@ export class TradingEngine extends EventEmitter {
             continue;
           }
         } else {
-          // ── STANDARD MODE: 1.2x activation, dynamic trail ──
-          if (peakMultiplier >= 1.2) {
-            let trailPct = 10; // base: optimal from 215-token simulation
-            if (position.dualSignal) trailPct += 5;        // dual signal = wider room
-            if (position.kolHolding) trailPct += 5;         // KOLs still in = confidence
-            if (position.kolExited) trailPct = Math.max(trailPct - 2, 8); // KOLs dumped = tighten
-            
-            const trailingFloor = position.maxMcap * (1 - trailPct / 100);
-            
-            if (currentMcap < trailingFloor) {
-              const drawdownPct = ((position.maxMcap - currentMcap) / position.maxMcap * 100).toFixed(1);
-              const signals = [position._graduated ? 'graduated' : null, position.dualSignal ? 'dual' : null, position.kolHolding ? 'KOL' : null, position.kolExited ? 'KOL-exit' : null].filter(Boolean).join('+') || 'base';
-              await this.executeSell(position, position.remainingPct, 
-                `Trailing stop [${trailPct}%, ${signals}]: ${drawdownPct}% drawdown from ${peakMultiplier.toFixed(1)}x peak ($${position.maxMcap.toFixed(0)} → $${currentMcap.toFixed(0)}). Locking in ${currentMultiplier.toFixed(1)}x.`);
-              continue;
-            }
+          // ── STANDARD MODE: armed immediately, 15% base dynamic trail ──
+          let trailPct = 15;
+          if (position.dualSignal) trailPct += 5;        // dual signal = wider room
+          if (position.kolHolding) trailPct += 5;         // KOLs still in = confidence
+          if (position.kolExited) trailPct = Math.max(trailPct - 3, 12); // KOLs dumped = tighten
+          
+          const trailingFloor = position.maxMcap * (1 - trailPct / 100);
+          
+          if (currentMcap < trailingFloor) {
+            const drawdownPct = ((position.maxMcap - currentMcap) / position.maxMcap * 100).toFixed(1);
+            const signals = [position._graduated ? 'graduated' : null, position.dualSignal ? 'dual' : null, position.kolHolding ? 'KOL' : null, position.kolExited ? 'KOL-exit' : null].filter(Boolean).join('+') || 'base';
+            await this.executeSell(position, position.remainingPct, 
+              `Trailing stop [${trailPct}%, ${signals}]: ${drawdownPct}% drawdown from ${peakMultiplier.toFixed(1)}x peak ($${position.maxMcap.toFixed(0)} → $${currentMcap.toFixed(0)}). Locking in ${currentMultiplier.toFixed(1)}x.`);
+            continue;
           }
         }
       }
