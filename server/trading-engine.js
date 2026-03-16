@@ -932,6 +932,9 @@ export class TradingEngine extends EventEmitter {
     if (reservedPosition?.nextBuyAttemptAt && Date.now() < reservedPosition.nextBuyAttemptAt) return;
 
     try {
+      // Snapshot balance BEFORE buy to measure actual SOL spent
+      const balBefore = this.balanceSol;
+
       const buyResult = await this.swapForMint({
         inputMint: 'So11111111111111111111111111111111111111112',
         outputMint: mint,
@@ -940,26 +943,54 @@ export class TradingEngine extends EventEmitter {
         migrationState,
       });
 
-      // Wait for transaction confirmation before fetching balance
       if (buyResult?.txid) {
         await this.waitForConfirmation(buyResult.txid);
       }
 
+      // Measure actual SOL spent (includes slippage + fees)
+      await this.refreshBalance();
+      const actualSolSpent = balBefore - this.balanceSol;
+
       const tokenBalance = await this.getTokenBalance(mint);
       if (tokenBalance.amount <= 0) {
-        // Remove the temporary position if buy failed
         this.positions.delete(mint);
         this.log('error', `Buy tx confirmed but token balance is 0 for ${token.symbol || mint.slice(0, 6)}. Position not opened.`);
         return;
       }
 
-      // Update position with actual token balance and remove buyInProgress flag
+      // Fetch CONFIRMED entry mcap (post-execution, not pre-tx estimate)
+      let confirmedEntryMcap = entryMcap;
+      try {
+        // Try PumpPortal WS first (freshest after our own buy tx)
+        if (this.pumpPortalWs) {
+          const wsUsd = this.pumpPortalWs.getMarketCapUsd(mint);
+          if (Number.isFinite(wsUsd) && wsUsd > 0) {
+            confirmedEntryMcap = wsUsd;
+          } else {
+            const wsSol = this.pumpPortalWs.getMarketCapSol(mint);
+            if (Number.isFinite(wsSol) && wsSol > 0) {
+              const solUsd = await this.helius.getSolUsdPrice();
+              if (Number.isFinite(solUsd) && solUsd > 0) confirmedEntryMcap = wsSol * solUsd;
+            }
+          }
+        }
+        // Fallback to DexScreener if WS doesn't have it yet
+        if (confirmedEntryMcap === entryMcap) {
+          const dexMcap = await this.getRealtimeMcap(mint, true);
+          if (Number.isFinite(dexMcap) && dexMcap > 0) confirmedEntryMcap = dexMcap;
+        }
+      } catch { /* use pre-tx estimate if post-tx fetch fails */ }
+
+      const actualAmountSol = actualSolSpent > 0 ? actualSolSpent : effectiveTradeAmount;
+
       this.positions.set(mint, {
         mint,
         symbol: token.symbol,
-        entryMcap,
-        maxMcap: entryMcap,
-        amountSol: effectiveTradeAmount,
+        entryMcap: confirmedEntryMcap,
+        preSignalMcap: entryMcap,
+        maxMcap: confirmedEntryMcap,
+        currentMcap: confirmedEntryMcap,
+        amountSol: actualAmountSol,
         openAt: Date.now(),
         remainingPct: 100,
         tokenAmount: tokenBalance.amount,
@@ -968,12 +999,16 @@ export class TradingEngine extends EventEmitter {
         isMigrating: migrationState,
       });
 
+      const slippage = entryMcap > 0 ? ((confirmedEntryMcap - entryMcap) / entryMcap * 100) : 0;
       this.tradeCount += 1;
-      this.log('trade', `Acquisition executed for ${token.symbol || mint.slice(0, 6)}. Awaiting market response.`, {
+      this.log('trade', `Acquisition executed for ${token.symbol || mint.slice(0, 6)}. Entry: $${confirmedEntryMcap.toFixed(0)} mcap (signal: $${entryMcap.toFixed(0)}, slippage: ${slippage.toFixed(1)}%, SOL: ${actualAmountSol.toFixed(4)}).`, {
         mint,
         txid: buyResult?.txid,
-        amountSol: effectiveTradeAmount,
+        amountSol: actualAmountSol,
         tokenAmount: tokenBalance.amount,
+        confirmedEntryMcap,
+        preSignalMcap: entryMcap,
+        slippagePct: slippage,
       });
       this.emitPositions();
       await this.maybeDistribute();
