@@ -92,38 +92,64 @@ export class HeliusService {
 
   async getSolUsdPrice() {
     const now = Date.now();
-    if (this.solPriceCache.value && now - this.solPriceCache.ts < 30000) {
+    if (this.solPriceCache.value && now - this.solPriceCache.ts < 10000) {
       return this.solPriceCache.value;
     }
-    // Use CoinGecko for reliable SOL/USD price
+
+    // PRIORITY 1: Binance — fastest, most reliable real-time SOL/USD
     try {
-      const res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd');
+      const res = await fetch('https://api.binance.com/api/v3/ticker/price?symbol=SOLUSDT', {
+        signal: AbortSignal.timeout(3000),
+      });
       if (res.ok) {
         const json = await res.json();
-        const price = json?.solana?.usd;
-        if (Number.isFinite(price)) {
+        const price = parseFloat(json?.price);
+        if (Number.isFinite(price) && price > 0) {
           this.solPriceCache = { value: price, ts: now };
           return price;
         }
       }
-    } catch {
-      // Fall through to Helius fallback
+    } catch { /* fall through */ }
+
+    // PRIORITY 2: CoinGecko — reliable, slightly slower
+    try {
+      const res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd', {
+        signal: AbortSignal.timeout(3000),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        const price = json?.solana?.usd;
+        if (Number.isFinite(price) && price > 0) {
+          this.solPriceCache = { value: price, ts: now };
+          return price;
+        }
+      }
+    } catch { /* fall through */ }
+
+    // PRIORITY 3: Helius getAsset — last resort
+    try {
+      const asset = await this.getAsset(SOL_MINT);
+      const priceInfo = asset?.token_info?.price_info;
+      const directUsd = this.pickFirstFinite([
+        priceInfo?.price_per_token,
+        priceInfo?.pricePerToken,
+        priceInfo?.price,
+        priceInfo?.usd_price,
+        priceInfo?.usdPrice,
+        priceInfo?.price_usd,
+        priceInfo?.pricePerTokenUsd,
+      ]);
+      if (Number.isFinite(directUsd) && directUsd > 0) {
+        this.solPriceCache = { value: directUsd, ts: now };
+        return directUsd;
+      }
+    } catch { /* all sources failed */ }
+
+    // If all fail, return stale cache (up to 60s) rather than null
+    if (this.solPriceCache.value && now - this.solPriceCache.ts < 60000) {
+      return this.solPriceCache.value;
     }
-    // Fallback to Helius getAsset
-    const asset = await this.getAsset(SOL_MINT);
-    const priceInfo = asset?.token_info?.price_info;
-    const directUsd = this.pickFirstFinite([
-      priceInfo?.price_per_token,
-      priceInfo?.pricePerToken,
-      priceInfo?.price,
-      priceInfo?.usd_price,
-      priceInfo?.usdPrice,
-      priceInfo?.price_usd,
-      priceInfo?.pricePerTokenUsd,
-    ]);
-    if (!Number.isFinite(directUsd)) return null;
-    this.solPriceCache = { value: directUsd, ts: now };
-    return directUsd;
+    return null;
   }
 
   async getTokenPrice(mintAddress) {
@@ -173,44 +199,77 @@ export class HeliusService {
     if (!mintAddress) return null;
     const now = Date.now();
     const cached = this.dexScreenerCache.get(mintAddress);
-    
-    // Return fresh cache
+
     if (cached && now - cached.ts < this.dexScreenerTtlMs) {
       return cached.mcap;
     }
-    
+
     try {
-      const res = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${mintAddress}`);
+      const res = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${mintAddress}`, {
+        signal: AbortSignal.timeout(5000),
+      });
       if (!res.ok) {
-        // On error, return stale cache if available (short window only)
         if (cached && now - cached.ts < this.dexScreenerStaleFallbackMs) return cached.mcap;
         return null;
       }
       const json = await res.json();
       const pairs = json?.pairs;
       if (!Array.isArray(pairs) || pairs.length === 0) {
-        // No pairs found, return stale cache if available
         if (cached && now - cached.ts < this.dexScreenerStaleFallbackMs) return cached.mcap;
         return null;
       }
-      // Use the pair with highest liquidity
-      const sorted = pairs
-        .filter(p => p.chainId === 'solana' && Number.isFinite(p.marketCap))
-        .sort((a, b) => (b.liquidity?.usd || 0) - (a.liquidity?.usd || 0));
-      const best = sorted[0];
-      if (!best) {
+
+      const mintLower = mintAddress.toLowerCase();
+      const scored = pairs
+        .filter(p => {
+          if (p.chainId !== 'solana') return false;
+          // Must have our token as the base token (not quote) to get correct mcap
+          const baseAddr = (p.baseToken?.address || '').toLowerCase();
+          if (baseAddr !== mintLower) return false;
+          const mc = p.marketCap ?? p.fdv;
+          if (!Number.isFinite(mc) || mc <= 0) return false;
+          return true;
+        })
+        .map(p => {
+          const liq = p.liquidity?.usd || 0;
+          const vol24h = p.volume?.h24 || 0;
+          const txns24h = (p.txns?.h24?.buys || 0) + (p.txns?.h24?.sells || 0);
+          // Prefer pairs with real activity: liquidity + volume + txns
+          const score = liq + vol24h * 0.5 + txns24h * 10;
+          return { pair: p, score, liq };
+        })
+        .sort((a, b) => b.score - a.score);
+
+      if (scored.length === 0) {
+        // No valid base-token pair — try any Solana pair as loose fallback
+        const looseFallback = pairs.find(p =>
+          p.chainId === 'solana' && Number.isFinite(p.marketCap) && p.marketCap > 0
+        );
+        if (looseFallback) {
+          const mc = looseFallback.marketCap || looseFallback.fdv;
+          if (Number.isFinite(mc) && mc > 0) {
+            this.dexScreenerCache.set(mintAddress, { mcap: mc, price: parseFloat(looseFallback.priceUsd) || 0, ts: now });
+            return mc;
+          }
+        }
         if (cached && now - cached.ts < this.dexScreenerStaleFallbackMs) return cached.mcap;
         return null;
       }
+
+      const best = scored[0].pair;
       const mcap = best.marketCap || best.fdv;
-      if (!Number.isFinite(mcap) || mcap <= 0) {
+
+      // Sanity: reject mcap values that look impossibly high for a meme token with no liquidity
+      const bestLiq = scored[0].liq;
+      if (bestLiq > 0 && mcap > bestLiq * 200) {
+        // mcap-to-liquidity ratio > 200x is almost certainly wrong data
         if (cached && now - cached.ts < this.dexScreenerStaleFallbackMs) return cached.mcap;
         return null;
       }
-      this.dexScreenerCache.set(mintAddress, { mcap, price: parseFloat(best.priceUsd), ts: now });
+
+      this.dexScreenerCache.set(mintAddress, { mcap, price: parseFloat(best.priceUsd) || 0, ts: now });
       return mcap;
     } catch {
-      // On error, return stale cache if available (short window only)
       if (cached && now - cached.ts < this.dexScreenerStaleFallbackMs) return cached.mcap;
       return null;
     }
