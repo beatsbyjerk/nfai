@@ -5,6 +5,7 @@ import { createServer } from 'http';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync, statSync, createReadStream } from 'fs';
+import { randomBytes } from 'crypto';
 import { StalkFunAPI } from './stalkfun-api.js';
 import { TokenStore } from './token-store.js';
 import { TradingEngine } from './trading-engine.js';
@@ -842,6 +843,47 @@ app.post('/api/refresh', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
+});
+
+// ========== HOT AUTH RELOAD (no restart) ==========
+const AUTH_RELOAD_KEY_FILE = join(__dirname, '..', '.auth-reload-key');
+let authReloadKey = process.env.AUTH_RELOAD_KEY || '';
+if (!authReloadKey) {
+  if (existsSync(AUTH_RELOAD_KEY_FILE)) {
+    authReloadKey = readFileSync(AUTH_RELOAD_KEY_FILE, 'utf-8').trim();
+  } else {
+    authReloadKey = randomBytes(24).toString('hex');
+    writeFileSync(AUTH_RELOAD_KEY_FILE, authReloadKey, 'utf-8');
+    console.log(`[Auth Reload] Generated API key → .auth-reload-key (use in extension)`);
+  }
+}
+
+app.post('/api/admin/auth-reload', (req, res) => {
+  const key = req.headers['x-auth-reload-key'] || req.body?.key;
+  if (key !== authReloadKey) {
+    return res.status(403).json({ ok: false, error: 'Invalid reload key' });
+  }
+
+  const { cookies } = req.body || {};
+  if (!cookies || typeof cookies !== 'string') {
+    return res.status(400).json({ ok: false, error: 'Missing cookies string' });
+  }
+
+  const result = api.hotSwapAuth(cookies);
+  if (!result.ok) {
+    return res.status(400).json(result);
+  }
+
+  // Hot-swap the WS connection with fresh auth
+  stalkFunWs.cookies = api.cookies;
+  stalkFunWs.bearer = api.bearer;
+  if (stalkFunWs.connected) {
+    console.log('[Auth Reload] Reconnecting WS with fresh tokens...');
+    stalkFunWs.start();
+  }
+
+  console.log(`[Auth Reload] Hot-swapped auth. Mode: ${api.authMode}, expires: ${result.expiresAt}`);
+  return res.json({ ok: true, authMode: api.authMode, expiresAt: result.expiresAt });
 });
 
 // ========== USER WALLET API ENDPOINTS ==========

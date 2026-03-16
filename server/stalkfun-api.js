@@ -32,8 +32,37 @@ export class StalkFunAPI {
     }
   }
 
+  hotSwapAuth(rawCookies) {
+    this.cookies = rawCookies;
+    this.bearer = null;
+    this.tokenExpiry = null;
+    this.authMode = 'public';
+
+    if (this.cookies && this.cookies.includes('privy-token=')) {
+      const tokenMatch = this.cookies.match(/privy-token=([^;]+)/);
+      if (tokenMatch) {
+        const token = tokenMatch[1];
+        this.bearer = token;
+        try {
+          const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
+          this.tokenExpiry = payload.exp * 1000;
+          if (Date.now() < this.tokenExpiry) {
+            this.authMode = 'privy';
+            return { ok: true, expiresAt: new Date(this.tokenExpiry).toISOString(), authMode: 'privy' };
+          }
+          this.cookies = null;
+          this.bearer = null;
+          return { ok: false, error: 'Token already expired' };
+        } catch (e) {
+          return { ok: false, error: `Token parse error: ${e.message}` };
+        }
+      }
+    }
+    return { ok: false, error: 'No privy-token found in cookies' };
+  }
+
   isAuthenticated() {
-    if (this.authMode === 'public') return true; // Public mode always "works"
+    if (this.authMode === 'public') return true;
     if (!this.cookies) return false;
     if (this.tokenExpiry && Date.now() > this.tokenExpiry - 60000) return false;
     return true;

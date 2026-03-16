@@ -9,3 +9,4 @@ do-app.secrets.yaml
 *.MP4
 *.mp4
 agent-zero/
+.auth-reload-key

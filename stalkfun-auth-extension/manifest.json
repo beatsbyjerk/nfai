@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "StalkFun Auth Sync",
+  "version": "1.0.0",
+  "description": "One-click auth token refresh for your ClaudeCash server — no restart needed.",
+  "permissions": [
+    "cookies",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://stalk.fun/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "48": "icon48.png",
+      "128": "icon128.png"
+    }
+  },
+  "icons": {
+    "48": "icon48.png",
+    "128": "icon128.png"
+  }
+}
