@@ -1559,21 +1559,26 @@ setInterval(broadcastRealtimeMcaps, REALTIME_MCAP_BROADCAST_INTERVAL_MS);
 // Initial poll
 setTimeout(pollStalkFun, 1000);
 
-// Check auth expiry (console only - not broadcast to public)
+// Auth expiry monitor — warns in console + frontend activity feed
 setInterval(() => {
   if (api.authMode === 'privy' && api.tokenExpiry) {
     const timeLeft = api.tokenExpiry - Date.now();
+    const minsLeft = Math.floor(timeLeft / 60000);
 
-    // Warn in console 10 minutes before expiry
     if (timeLeft > 0 && timeLeft < 600000) {
-      console.log(`⚠️  Auth expires in ${Math.floor(timeLeft / 60000)} minutes! Refresh token soon.`);
+      const msg = `⚠️ Auth expires in ${minsLeft} minutes! Refresh token soon.`;
+      console.log(msg);
+      if (tradingEngine) tradingEngine.log('warn', msg);
     }
 
-    // Switch to public mode when expired
     if (timeLeft <= 0) {
-      console.log('❌ Auth tokens expired, falling back to public mode');
+      const msg = '❌ Auth tokens EXPIRED — falling back to public mode. No new signals until refreshed.';
+      console.log(msg);
+      if (tradingEngine) tradingEngine.log('error', msg);
       api.authMode = 'public';
     }
+  } else if (api.authMode === 'public') {
+    console.log('⚠️ Running in PUBLIC mode — no VIP signals (print_scan/meme_radar). Push auth from extension.');
   }
 }, 60000); // Check every minute
 
