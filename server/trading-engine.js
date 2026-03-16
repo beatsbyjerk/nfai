@@ -465,16 +465,8 @@ export class TradingEngine extends EventEmitter {
         // Fall through to Jupiter
       }
 
-      // PRIORITY 3: Stalk.fun fallback (Token Store)
-      // This relies heavily on stalk.fun apis before hammering Helius/Jupiter, preventing 429 rate limits
-      const tokenRecord = this.getTokenRecord(mint);
-      const stalkMcap = parseFloat(tokenRecord?.latest_mcap || tokenRecord?.realtime_mcap || 0);
-      if (Number.isFinite(stalkMcap) && stalkMcap > 0) {
-        this.mcapCache.set(mint, { value: stalkMcap, ts: Date.now() });
-        return stalkMcap;
-      }
-
-      // PRIORITY 4: Jupiter quote (accurate for bonding curve tokens)
+      // PRIORITY 3: Jupiter quote (accurate for bonding curve tokens)
+      // Token store fallback REMOVED — stalk.fun mcap data is unreliable for active position monitoring
       try {
         const supply = await this.helius.getTokenSupply(mint);
         if (supply?.uiAmount && supply.uiAmount > 0) {
@@ -583,6 +575,17 @@ export class TradingEngine extends EventEmitter {
       // Got data (from WS or fallback) — reset blind
       position.blindSince = null;
       if (finalMcap && Number.isFinite(finalMcap) && finalMcap > 0) {
+        // Sanity check: reject mcap readings that spike >5x from last known value
+        // (protects against stale token store data, wrong DexScreener pair, or PumpPortal ghost data)
+        const lastKnown = position.lastKnownMcap || position.entryMcap;
+        if (lastKnown && lastKnown > 0 && finalMcap > lastKnown * 5) {
+          if (now - (position.lastMcapWarnAt || 0) > 10000) {
+            position.lastMcapWarnAt = now;
+            this.log('warn', `Rejected suspicious mcap for ${position.symbol || mint.slice(0, 6)}: $${finalMcap.toFixed(0)} is ${(finalMcap/lastKnown).toFixed(1)}x last known $${lastKnown.toFixed(0)} [${finalSource}]. Keeping last known.`);
+          }
+          continue;
+        }
+
         position.lastKnownMcap = finalMcap;
         position.currentMcap = finalMcap;
         realtimeTokens.push({ mint, latest_mcap: finalMcap });
