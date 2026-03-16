@@ -510,7 +510,7 @@ const ingestApiTokens = (data, source) => {
         transactions_24h: token.transactions_24h,
       };
       const isNew = tokenStore.upsertToken(token, source);
-      if (isNew && tradingEngine && (source === 'print_scan' || source === 'meme_radar') && canFireSignals()) {
+      if (isNew && tradingEngine && source === 'print_scan' && canFireSignals()) {
         tradingEngine.handleNewSignal(token, source).catch(e => console.error(e));
       }
       count++;
@@ -527,7 +527,7 @@ const ingestApiTokens = (data, source) => {
     // Only ingest pump.fun tokens (mint ends with "pump") — matches trading engine filter
     if (!mint.endsWith('pump')) continue;
     const isNew = tokenStore.upsertToken(token, source);
-    if (isNew && tradingEngine && (source === 'print_scan' || source === 'meme_radar') && canFireSignals()) {
+    if (isNew && tradingEngine && source === 'print_scan' && canFireSignals()) {
       tradingEngine.handleNewSignal(token, source).catch(e => console.error(e));
     }
     count++;
@@ -1069,9 +1069,8 @@ async function pollStalkFun() {
   const updatedTokens = [];
 
   // Sources that are allowed to generate auto-trading signals.
-  // EXCLUSIVE: Only Print Scan and Meme Radar from stalk.fun VIP APIs.
-  // These are the only proven high-signal feeds (80% and 66% success rates).
-  const SIGNAL_SOURCES = new Set(['print_scan', 'meme_radar', 'printscan', 'memeradar', 'meme-radar', 'print-scan']);
+  // EXCLUSIVE: Only Print Scan from stalk.fun VIP APIs (Meme Radar ignored for buys).
+  const SIGNAL_SOURCES = new Set(['print_scan', 'printscan', 'print-scan']);
 
   // Generic ingestion — returns { new: Token[], updated: Token[], tradeSignals: Token[] }
   const ingestTokenList = (data, source) => {
@@ -1205,7 +1204,7 @@ async function pollStalkFun() {
         console.warn(`[Layer2] Meme Radar fallback active: serving last-good snapshot (${ageSec}s old).`);
       }
 
-      for (const [data, source] of [
+  for (const [data, source] of [
         [memeRadar, 'meme_radar'], [printScan, 'print_scan'],
         [smartPump, 'smart_pump'], [tokenTracker, 'token_tracker'],
       ]) {
@@ -1461,7 +1460,7 @@ setTimeout(() => {
 // ── Layer 1: StalkFun Socket.IO WebSocket (real-time push, ~0ms latency) ─────
 // Connects to stalk.fun's own real-time system — same one their frontend uses.
 // Tokens arrive the instant stalk.fun's backend detects them, not on next poll.
-const SIGNAL_SOURCES_WS = new Set(['print_scan', 'meme_radar', 'printscan', 'memeradar', 'meme-radar', 'print-scan']);
+const SIGNAL_SOURCES_WS = new Set(['print_scan', 'printscan', 'print-scan']);
 
 const stalkFunWs = new StalkFunWebSocket({
   cookies: api.cookies,
@@ -1470,7 +1469,7 @@ const stalkFunWs = new StalkFunWebSocket({
     if (!mint) return;
 
     if (!canFireSignals()) {
-      if (source === 'print_scan' || source === 'meme_radar') {
+      if (source === 'print_scan') {
         console.log(`[Layer1-WS] Signals locked (${api.authMode === 'public' ? 'public mode' : 'cooldown'}), suppressing: ${token.token_symbol || token.symbol || mint.slice(0, 8)} (${source})`);
       }
       return;
