@@ -1125,22 +1125,8 @@ export class TradingEngine extends EventEmitter {
         continue;
       }
 
-      // Profit stall protection — anti-rug: if P&L is 10%+ but below take-profit for 10+ min, exit
-      // Extended from 2min to 10min — Print Scan tokens often plateau before spiking further
-      const PROFIT_STALL_FLOOR = 10;
-      const PROFIT_STALL_MS = 10 * 60 * 1000; // 10 minutes (was 2 minutes)
-      if (pnlPct >= PROFIT_STALL_FLOOR && pnlPct < this.takeProfitPct && position.remainingPct > 0) {
-        if (!position.profitStallSince) {
-          position.profitStallSince = Date.now();
-        }
-        if (Date.now() - position.profitStallSince >= PROFIT_STALL_MS) {
-          await this.executeSell(position, position.remainingPct, `Profit stall: P&L at ${pnlPct.toFixed(1)}% for 10+ min without hitting take-profit (${this.takeProfitPct}%). Anti-rug exit.`);
-          continue;
-        }
-      } else {
-        // Reset timer if P&L drops below 10% or exceeds take-profit
-        position.profitStallSince = null;
-      }
+      // Profit stall DISABLED — trailing stop manages all exits.
+      // Meme coins consolidate at profit levels before running higher; forced exit kills runners.
 
       // ── SMART TWO-TIER TRAILING STOP ─────────────────────────────────────────
       // Armed immediately on entry — no activation threshold.

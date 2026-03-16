@@ -223,9 +223,9 @@ export class HeliusService {
       const scored = pairs
         .filter(p => {
           if (p.chainId !== 'solana') return false;
-          // Must have our token as the base token (not quote) to get correct mcap
           const baseAddr = (p.baseToken?.address || '').toLowerCase();
-          if (baseAddr !== mintLower) return false;
+          const quoteAddr = (p.quoteToken?.address || '').toLowerCase();
+          if (baseAddr !== mintLower && quoteAddr !== mintLower) return false;
           const mc = p.marketCap ?? p.fdv;
           if (!Number.isFinite(mc) || mc <= 0) return false;
           return true;
