@@ -1123,8 +1123,8 @@ export class TradingEngine extends EventEmitter {
         }
         
         if (isMicroCapEntry && !position._graduated) {
-          // ── MICRO-CAP MODE: 30% trail — meme coins retrace 20-40% before running ──
-          const microTrailPct = 30;
+          // ── MICRO-CAP MODE: 45% trail — meme coins routinely retrace 40-50% before running ──
+          const microTrailPct = 45;
           const trailingFloor = position.maxMcap * (1 - microTrailPct / 100);
           
           if (currentMcap < trailingFloor) {
@@ -1139,13 +1139,13 @@ export class TradingEngine extends EventEmitter {
           let trailPct;
           let trailLabel;
           if (peakMultiplier >= 3) {
-            trailPct = 35; trailLabel = '3x+lock';
+            trailPct = 45; trailLabel = '3x+lock';
           } else if (peakMultiplier >= 2) {
-            trailPct = 50; trailLabel = '2x+run';
+            trailPct = 60; trailLabel = '2x+run';
           } else if (peakMultiplier >= 1.5) {
-            trailPct = 40; trailLabel = '1.5x+grow';
+            trailPct = 55; trailLabel = '1.5x+grow';
           } else {
-            trailPct = 35; trailLabel = 'base';
+            trailPct = 50; trailLabel = 'base';
           }
 
           if (position.dualSignal) trailPct += 5;
