@@ -173,8 +173,8 @@ app.post('/api/admin/reset-paper-state', async (req, res) => {
     tradingEngine.balanceSol = Number.isFinite(startingBalance) ? startingBalance : 10;
     tradingEngine.emit('balance', tradingEngine.balanceSol);
     tradingEngine.emitPositions();
-    tradingEngine.log('info', 'Paper trading state has been manually reset by admin.');
-    return res.json({ ok: true, message: 'Paper state reset. Engine running fresh.', balanceSol: tradingEngine.balanceSol });
+    tradingEngine.log('info', 'Trading state has been manually reset by admin.');
+    return res.json({ ok: true, message: 'State reset. Engine running fresh.', balanceSol: tradingEngine.balanceSol });
   } catch (error) {
     return res.status(500).json({ error: error.message || 'Reset failed' });
   }

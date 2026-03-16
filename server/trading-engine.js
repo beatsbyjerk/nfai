@@ -93,11 +93,11 @@ export class TradingEngine extends EventEmitter {
     } else {
       if (restored) {
         // Paper mode: restore everything including balance
-        console.log(`[TradingEngine] Paper state restored: ${this.balanceSol.toFixed(4)} SOL, ${this.positions.size} positions, ${this.tradeCount} trades`);
+        console.log(`[TradingEngine] State restored: ${this.balanceSol.toFixed(4)} SOL, ${this.positions.size} positions, ${this.tradeCount} trades`);
       } else {
         const startingBalance = parseFloat(process.env.PAPER_STARTING_BALANCE);
         this.balanceSol = Number.isFinite(startingBalance) ? startingBalance : 10;
-        console.log(`[TradingEngine] Paper fresh start: ${this.balanceSol} SOL`);
+        console.log(`[TradingEngine] Fresh start: ${this.balanceSol} SOL`);
       }
       this.emit('balance', this.balanceSol);
     }
@@ -901,7 +901,7 @@ export class TradingEngine extends EventEmitter {
       // Simulate buy failure (routing/liquidity failures happen on-chain)
       const failChance = entryMcap < 10000 ? 0.08 : entryMcap < 50000 ? 0.03 : 0;
       if (Math.random() < failChance) {
-        this.log('warn', `[Paper] Buy routing failed for ${token.symbol || mint.slice(0, 6)} (simulated). Mcap: $${entryMcap.toFixed(0)}`);
+        this.log('warn', `Simulated buy routing failed for ${token.symbol || mint.slice(0, 6)}. Mcap: $${entryMcap.toFixed(0)}`);
         this.positions.delete(mint);
         return;
       }
