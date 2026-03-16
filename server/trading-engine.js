@@ -1125,12 +1125,13 @@ export class TradingEngine extends EventEmitter {
         if (isMicroCapEntry && !position._graduated) {
           // ── MICRO-CAP MODE: 45% trail — meme coins routinely retrace 40-50% before running ──
           const microTrailPct = 45;
-          const trailingFloor = position.maxMcap * (1 - microTrailPct / 100);
+          const rawFloor = position.maxMcap * (1 - microTrailPct / 100);
+          const trailingFloor = peakMultiplier > 1 ? Math.max(rawFloor, entryMcap * 0.9) : rawFloor;
           
           if (currentMcap < trailingFloor) {
             const drawdownPct = ((position.maxMcap - currentMcap) / position.maxMcap * 100).toFixed(1);
             await this.executeSell(position, position.remainingPct, 
-              `Trailing stop [${microTrailPct}%, micro-cap]: ${drawdownPct}% drawdown from peak $${position.maxMcap.toFixed(0)} → $${currentMcap.toFixed(0)}. Entry was $${entryMcap.toFixed(0)}.`);
+              `Trailing stop [${microTrailPct}%, micro-cap]: ${drawdownPct}% drawdown from peak $${position.maxMcap.toFixed(0)} → $${currentMcap.toFixed(0)}. Floor $${trailingFloor.toFixed(0)} (entry $${entryMcap.toFixed(0)}).`);
             continue;
           }
         } else {
@@ -1152,13 +1153,14 @@ export class TradingEngine extends EventEmitter {
           if (position.kolHolding) trailPct += 5;
           if (position.kolExited) trailPct = Math.max(trailPct - 5, trailPct - 10);
 
-          const trailingFloor = position.maxMcap * (1 - trailPct / 100);
+          const rawFloor = position.maxMcap * (1 - trailPct / 100);
+          const trailingFloor = peakMultiplier > 1 ? Math.max(rawFloor, entryMcap * 0.9) : rawFloor;
 
           if (currentMcap < trailingFloor) {
             const drawdownPct = ((position.maxMcap - currentMcap) / position.maxMcap * 100).toFixed(1);
             const signals = [position._graduated ? 'graduated' : null, trailLabel, position.dualSignal ? 'dual' : null, position.kolHolding ? 'KOL' : null, position.kolExited ? 'KOL-exit' : null].filter(Boolean).join('+');
             await this.executeSell(position, position.remainingPct, 
-              `Trailing stop [${trailPct}%, ${signals}]: ${drawdownPct}% drawdown from ${peakMultiplier.toFixed(1)}x peak ($${position.maxMcap.toFixed(0)} → $${currentMcap.toFixed(0)}). Locking in ${currentMultiplier.toFixed(1)}x.`);
+              `Trailing stop [${trailPct}%, ${signals}]: ${drawdownPct}% drawdown from ${peakMultiplier.toFixed(1)}x peak ($${position.maxMcap.toFixed(0)} → $${currentMcap.toFixed(0)}). Floor $${trailingFloor.toFixed(0)} (entry $${entryMcap.toFixed(0)}).`);
             continue;
           }
         }
