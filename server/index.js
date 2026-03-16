@@ -874,15 +874,12 @@ app.post('/api/admin/auth-reload', (req, res) => {
     return res.status(400).json(result);
   }
 
-  // Hot-swap the WS connection with fresh auth
+  // Hot-swap the WS connection with fresh auth — always reconnect
   stalkFunWs.cookies = api.cookies;
   stalkFunWs.bearer = api.bearer;
-  if (stalkFunWs.connected) {
-    console.log('[Auth Reload] Reconnecting WS with fresh tokens...');
-    stalkFunWs.start();
-  }
-
   console.log(`[Auth Reload] Hot-swapped auth. Mode: ${api.authMode}, expires: ${result.expiresAt}`);
+  console.log(`[Auth Reload] Reconnecting WS with fresh tokens (was ${stalkFunWs.connected ? 'connected' : 'OFFLINE'})...`);
+  stalkFunWs.start();
   return res.json({ ok: true, authMode: api.authMode, expiresAt: result.expiresAt });
 });
 
