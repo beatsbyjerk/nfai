@@ -213,6 +213,9 @@ if (existsSync(clientDist)) {
 const api = new StalkFunAPI();
 let printScanAuthWarningAt = 0;
 let memeRadarShapeWarningAt = 0;
+let memeRadarFailureWarningAt = 0;
+let lastGoodMemeRadarPayload = null;
+let lastGoodMemeRadarAt = 0;
 const tokenStore = new TokenStore();
 const backfilled = tokenStore.backfillMissingMetrics(5000);
 if (backfilled > 0) {
@@ -371,22 +374,91 @@ const extractPrintScanTokens = (printScan) => {
   return printScan?.tokens || printScan?.data || printScan?.items || [];
 };
 
+const tryParseJson = (value) => {
+  if (typeof value !== 'string') return null;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+};
+
+const tryDecodeBase64Json = (value) => {
+  if (typeof value !== 'string' || value.length < 16) return null;
+  // Fast gate: skip obvious non-base64 strings
+  if (!/^[A-Za-z0-9+/=]+$/.test(value)) return null;
+  try {
+    const decoded = Buffer.from(value, 'base64').toString('utf8');
+    const parsed = tryParseJson(decoded);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+};
+
+const normalizeApiPayload = (data) => {
+  if (!data) return data;
+
+  // Entire response encoded as JSON string/base64 string
+  if (typeof data === 'string') {
+    return tryParseJson(data) || tryDecodeBase64Json(data) || data;
+  }
+
+  // Common stalk.fun VIP shape: { data: "<base64-json>", userTier, userId }
+  if (data && typeof data === 'object' && typeof data.data === 'string') {
+    const parsedData = tryParseJson(data.data) || tryDecodeBase64Json(data.data);
+    if (parsedData && typeof parsedData === 'object') {
+      return { ...data, data: parsedData.data ?? parsedData.tokens ?? parsedData.items ?? parsedData.results ?? parsedData };
+    }
+  }
+
+  return data;
+};
+
 const extractTokenArray = (data) => {
-  if (!data) return [];
-  if (Array.isArray(data)) return data;
+  const normalized = normalizeApiPayload(data);
+  if (!normalized) return [];
+  if (Array.isArray(normalized)) return normalized;
 
   const list =
-    (Array.isArray(data?.data) ? data.data : null) ||
-    (Array.isArray(data?.data?.data) ? data.data.data : null) ||
-    (Array.isArray(data?.data?.tokens) ? data.data.tokens : null) ||
-    (Array.isArray(data?.data?.items) ? data.data.items : null) ||
-    (Array.isArray(data?.tokens) ? data.tokens : null) ||
-    (Array.isArray(data?.items) ? data.items : null) ||
-    (Array.isArray(data?.results) ? data.results : null) ||
-    (Array.isArray(data?.payload?.data) ? data.payload.data : null) ||
+    (Array.isArray(normalized?.data) ? normalized.data : null) ||
+    (Array.isArray(normalized?.data?.data) ? normalized.data.data : null) ||
+    (Array.isArray(normalized?.data?.tokens) ? normalized.data.tokens : null) ||
+    (Array.isArray(normalized?.data?.items) ? normalized.data.items : null) ||
+    (Array.isArray(normalized?.tokens) ? normalized.tokens : null) ||
+    (Array.isArray(normalized?.items) ? normalized.items : null) ||
+    (Array.isArray(normalized?.results) ? normalized.results : null) ||
+    (Array.isArray(normalized?.payload?.data) ? normalized.payload.data : null) ||
     [];
 
   return Array.isArray(list) ? list : [];
+};
+
+const resolveMemeRadarPayload = ({ payload, fetchError = null }) => {
+  const extracted = extractTokenArray(payload);
+  if (extracted.length > 0) {
+    lastGoodMemeRadarPayload = payload;
+    lastGoodMemeRadarAt = Date.now();
+    return { payload, count: extracted.length, fallbackUsed: false };
+  }
+
+  const now = Date.now();
+  const hasCached = !!lastGoodMemeRadarPayload;
+  if (hasCached) {
+    const ageSec = Math.floor((now - lastGoodMemeRadarAt) / 1000);
+    if (now - memeRadarFailureWarningAt > 15000) {
+      memeRadarFailureWarningAt = now;
+      const reason = fetchError?.message || 'empty payload';
+      console.warn(`[MemeRadar] Using last-good snapshot (${ageSec}s old) due to: ${reason}`);
+    }
+    return {
+      payload: lastGoodMemeRadarPayload,
+      count: extractTokenArray(lastGoodMemeRadarPayload).length,
+      fallbackUsed: true,
+    };
+  }
+
+  return { payload, count: 0, fallbackUsed: false };
 };
 
 // Ingest helper — extract tokens from any stalk.fun API response shape
@@ -460,13 +532,16 @@ const refreshVisibleTokens = async () => {
   // AUTH-REQUIRED ENDPOINTS (VIP)
   if (api.isAuthenticated()) {
     try {
-      const [memeRadar, printScan, smartPump, tokenTracker] = await Promise.all([
-        api.fetchMemeRadar('recency', 200).catch(() => null),
+      const [memeRadarResult, printScan, smartPump, tokenTracker] = await Promise.all([
+        api.fetchMemeRadar('recency', 200)
+          .then((data) => ({ data, error: null }))
+          .catch((error) => ({ data: null, error })),
         api.fetchLeaderboard(200, 0, true).catch(() => null),
         api.fetchSmartPump(500).catch(() => null),
         api.fetchTokenTracker('combined', 50).catch(() => null),
       ]);
-      if (memeRadar) ingestApiTokens(memeRadar, 'meme_radar');
+      const resolvedMR = resolveMemeRadarPayload({ payload: memeRadarResult.data, fetchError: memeRadarResult.error });
+      if (resolvedMR.payload && resolvedMR.count > 0) ingestApiTokens(resolvedMR.payload, 'meme_radar');
       if (printScan) ingestApiTokens(printScan, 'print_scan');
       if (smartPump) ingestApiTokens(smartPump, 'smart_pump');
       if (tokenTracker) ingestApiTokens(tokenTracker, 'token_tracker');
@@ -918,12 +993,13 @@ async function pollStalkFun() {
   // Generic ingestion — returns { new: Token[], updated: Token[], tradeSignals: Token[] }
   const ingestTokenList = (data, source) => {
     const result = { new: [], updated: [], tradeSignals: [] };
-    if (!data) return result;
+    const normalizedData = normalizeApiPayload(data);
+    if (!normalizedData) return result;
 
     // Handle trending's nested structure
-    if (source === 'trending' && data?.data) {
-      const swaps1m = data.data.swaps_1m || [];
-      const swaps5m = data.data.swaps_5m || [];
+    if (source === 'trending' && normalizedData?.data) {
+      const swaps1m = normalizedData.data.swaps_1m || [];
+      const swaps5m = normalizedData.data.swaps_5m || [];
       const VIP_SOURCES = new Set(['print_scan', 'meme_radar', 'smart_pump', 'token_tracker']);
       for (const token of [...swaps5m, ...swaps1m]) {
         if (!token || typeof token !== 'object') continue;
@@ -952,7 +1028,7 @@ async function pollStalkFun() {
     }
 
     // Standard shape: { data: [...] } or { tokens: [...] } or array
-    const list = extractTokenArray(data);
+    const list = extractTokenArray(normalizedData);
 
     if (!Array.isArray(list)) return result;
     const seenAddresses = new Set();
@@ -1014,19 +1090,32 @@ async function pollStalkFun() {
 
     // ── AUTH-REQUIRED ENDPOINTS (VIP) ──
     if (api.isAuthenticated()) {
-      const [memeRadar, printScan, smartPump, tokenTracker] = await Promise.all([
-        api.fetchMemeRadar('recency', 200).catch(() => null),
+      const [memeRadarResult, printScan, smartPump, tokenTracker] = await Promise.all([
+        api.fetchMemeRadar('recency', 200)
+          .then((data) => ({ data, error: null }))
+          .catch((error) => ({ data: null, error })),
         api.fetchLeaderboard(200, 0, true).catch(() => null),
         api.fetchSmartPump(500).catch(() => null),
         api.fetchTokenTracker('combined', 50).catch(() => null),
       ]);
 
-      const memeRadarCount = extractTokenArray(memeRadar).length;
-      if (memeRadar && memeRadarCount === 0 && Date.now() - memeRadarShapeWarningAt > 30000) {
+      const resolvedMR = resolveMemeRadarPayload({ payload: memeRadarResult.data, fetchError: memeRadarResult.error });
+      const memeRadar = resolvedMR.payload;
+      const memeRadarCount = resolvedMR.count;
+      if (memeRadarResult.data && memeRadarCount === 0 && Date.now() - memeRadarShapeWarningAt > 30000) {
         memeRadarShapeWarningAt = Date.now();
-        const topKeys = Object.keys(memeRadar || {}).slice(0, 12).join(', ') || 'none';
-        const nestedKeys = Object.keys(memeRadar?.data || {}).slice(0, 12).join(', ') || 'none';
+        const topKeys = Object.keys(memeRadarResult.data || {}).slice(0, 12).join(', ') || 'none';
+        const nestedKeys = Object.keys(memeRadarResult.data?.data || {}).slice(0, 12).join(', ') || 'none';
         console.warn(`[Layer2] Meme Radar returned 0 extractable tokens. keys={${topKeys}} data.keys={${nestedKeys}}`);
+      }
+      if (memeRadarResult.error && Date.now() - memeRadarFailureWarningAt > 15000) {
+        memeRadarFailureWarningAt = Date.now();
+        console.warn(`[Layer2] Meme Radar fetch failed: ${memeRadarResult.error?.message || memeRadarResult.error}`);
+      }
+      if (resolvedMR.fallbackUsed && Date.now() - memeRadarFailureWarningAt > 15000) {
+        memeRadarFailureWarningAt = Date.now();
+        const ageSec = Math.floor((Date.now() - lastGoodMemeRadarAt) / 1000);
+        console.warn(`[Layer2] Meme Radar fallback active: serving last-good snapshot (${ageSec}s old).`);
       }
 
       for (const [data, source] of [
