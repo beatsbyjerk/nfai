@@ -877,7 +877,14 @@ app.post('/api/admin/auth-reload', (req, res) => {
   // Hot-swap the WS connection with fresh auth — always reconnect
   stalkFunWs.cookies = api.cookies;
   stalkFunWs.bearer = api.bearer;
+
+  // CRITICAL: Reset baseline so expanded VIP data (200 vs 5 public) doesn't mass-fire signals.
+  // The next poll cycle will rebuild the baseline with authenticated results before any signals fire.
+  baselinePopulated = false;
+  _prevSnapshot.print_scan.clear();
+  _prevSnapshot.meme_radar.clear();
   console.log(`[Auth Reload] Hot-swapped auth. Mode: ${api.authMode}, expires: ${result.expiresAt}`);
+  console.log(`[Auth Reload] Reset baseline — next poll will rebuild before signals fire.`);
   console.log(`[Auth Reload] Reconnecting WS with fresh tokens (was ${stalkFunWs.connected ? 'connected' : 'OFFLINE'})...`);
   stalkFunWs.start();
   return res.json({ ok: true, authMode: api.authMode, expiresAt: result.expiresAt });
