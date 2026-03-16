@@ -1131,11 +1131,11 @@ export class TradingEngine extends EventEmitter {
             continue;
           }
         } else {
-          // ── STANDARD MODE: armed immediately, 15% base dynamic trail ──
-          let trailPct = 15;
+          // ── STANDARD MODE: armed immediately, 30% base dynamic trail ──
+          let trailPct = 30;
           if (position.dualSignal) trailPct += 5;        // dual signal = wider room
           if (position.kolHolding) trailPct += 5;         // KOLs still in = confidence
-          if (position.kolExited) trailPct = Math.max(trailPct - 3, 12); // KOLs dumped = tighten
+          if (position.kolExited) trailPct = Math.max(trailPct - 5, 25); // KOLs dumped = tighten
           
           const trailingFloor = position.maxMcap * (1 - trailPct / 100);
           
