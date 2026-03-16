@@ -510,7 +510,7 @@ const ingestApiTokens = (data, source) => {
         transactions_24h: token.transactions_24h,
       };
       const isNew = tokenStore.upsertToken(token, source);
-      if (isNew && tradingEngine && (source === 'print_scan' || source === 'meme_radar') && Date.now() - SERVER_STARTED_AT > STARTUP_COOLDOWN_MS) {
+      if (isNew && tradingEngine && baselinePopulated && (source === 'print_scan' || source === 'meme_radar') && Date.now() - SERVER_STARTED_AT > STARTUP_COOLDOWN_MS) {
         tradingEngine.handleNewSignal(token, source).catch(e => console.error(e));
       }
       count++;
@@ -527,7 +527,7 @@ const ingestApiTokens = (data, source) => {
     // Only ingest pump.fun tokens (mint ends with "pump") — matches trading engine filter
     if (!mint.endsWith('pump')) continue;
     const isNew = tokenStore.upsertToken(token, source);
-    if (isNew && tradingEngine && (source === 'print_scan' || source === 'meme_radar') && Date.now() - SERVER_STARTED_AT > STARTUP_COOLDOWN_MS) {
+    if (isNew && tradingEngine && baselinePopulated && (source === 'print_scan' || source === 'meme_radar') && Date.now() - SERVER_STARTED_AT > STARTUP_COOLDOWN_MS) {
       tradingEngine.handleNewSignal(token, source).catch(e => console.error(e));
     }
     count++;
@@ -1040,6 +1040,7 @@ app.post('/api/user/logout', async (req, res) => {
 // Polling function to fetch new data
 let initialized = false;
 let pollInFlight = false;
+let baselinePopulated = false; // true after first full poll cycle completes (baseline loaded)
 const SERVER_STARTED_AT = Date.now();
 const STARTUP_COOLDOWN_MS = 30000; // 30s — suppress trade signals while initial API dump loads
 
@@ -1088,8 +1089,8 @@ async function pollStalkFun() {
         if (isNew && record) result.new.push({ ...record, isNew: true });
         else if (record) result.updated.push(record);
 
-        // Signal source detected — trigger trade only after startup cooldown expires
-        if (SIGNAL_SOURCES.has(source) && isNew && record && Date.now() - SERVER_STARTED_AT > STARTUP_COOLDOWN_MS) {
+        // Signal source detected — only fire after baseline is populated (prevents mass-buy on restart)
+        if (SIGNAL_SOURCES.has(source) && isNew && record && baselinePopulated && Date.now() - SERVER_STARTED_AT > STARTUP_COOLDOWN_MS) {
           result.tradeSignals.push(record);
         }
       }
@@ -1123,8 +1124,8 @@ async function pollStalkFun() {
         result.updated.push(record);
       }
 
-      // Signal source detected for first time on this token — trigger trade only after startup cooldown
-      if (SIGNAL_SOURCES.has(source) && !hadSource && record && Date.now() - SERVER_STARTED_AT > STARTUP_COOLDOWN_MS) {
+      // Signal source detected for first time on this token — only fire after baseline is populated
+      if (SIGNAL_SOURCES.has(source) && !hadSource && record && baselinePopulated && Date.now() - SERVER_STARTED_AT > STARTUP_COOLDOWN_MS) {
         result.tradeSignals.push(record);
       }
     }
@@ -1302,6 +1303,10 @@ async function pollStalkFun() {
       broadcast(initPayload);
       broadcastToPublic(initPayload);
       initialized = true;
+      if (!baselinePopulated) {
+        baselinePopulated = true;
+        console.log(`[Startup] Baseline populated: PS=${_prevSnapshot.print_scan.size} MR=${_prevSnapshot.meme_radar.size} tokens=${tokenStore.getStats().total}. Signals now armed.`);
+      }
       return;
     }
 
@@ -1454,10 +1459,10 @@ const stalkFunWs = new StalkFunWebSocket({
   onToken: ({ token, source, eventName, mint }) => {
     if (!mint) return;
 
-    // Respect startup cooldown — log suppressed signals during cooldown
-    if (Date.now() - SERVER_STARTED_AT <= STARTUP_COOLDOWN_MS) {
+    // Suppress signals until baseline is populated (prevents mass-buy on restart)
+    if (!baselinePopulated || Date.now() - SERVER_STARTED_AT <= STARTUP_COOLDOWN_MS) {
       if (source === 'print_scan' || source === 'meme_radar') {
-        console.log(`[Layer1-WS] Cooldown active, suppressing: ${token.token_symbol || token.symbol || mint.slice(0, 8)} (${source})`);
+        console.log(`[Layer1-WS] Baseline not ready, suppressing: ${token.token_symbol || token.symbol || mint.slice(0, 8)} (${source})`);
       }
       return;
     }
