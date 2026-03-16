@@ -216,6 +216,9 @@ let memeRadarShapeWarningAt = 0;
 let memeRadarFailureWarningAt = 0;
 let lastGoodMemeRadarPayload = null;
 let lastGoodMemeRadarAt = 0;
+let vipRateLimitedUntil = 0;
+let lastVipFetchAt = 0;
+let vipBackoffWarningAt = 0;
 const tokenStore = new TokenStore();
 const backfilled = tokenStore.backfillMissingMetrics(5000);
 if (backfilled > 0) {
@@ -461,6 +464,27 @@ const resolveMemeRadarPayload = ({ payload, fetchError = null }) => {
   return { payload, count: 0, fallbackUsed: false };
 };
 
+const isRateLimitError = (error) => {
+  const msg = (error?.message || '').toLowerCase();
+  return msg.includes('429') || msg.includes('too many requests');
+};
+
+const withVipRateLimitGuard = async (fetchFn, endpointLabel) => {
+  try {
+    return { data: await fetchFn(), error: null };
+  } catch (error) {
+    if (isRateLimitError(error)) {
+      const backoffMs = Number.parseInt(process.env.STALKFUN_VIP_RATE_LIMIT_BACKOFF_MS || '20000', 10);
+      vipRateLimitedUntil = Date.now() + Math.max(5000, backoffMs);
+      if (Date.now() - vipBackoffWarningAt > 5000) {
+        vipBackoffWarningAt = Date.now();
+        console.warn(`[Layer2] VIP rate-limited on ${endpointLabel}. Backing off all VIP fetches for ${Math.round((vipRateLimitedUntil - Date.now()) / 1000)}s.`);
+      }
+    }
+    return { data: null, error };
+  }
+};
+
 // Ingest helper — extract tokens from any stalk.fun API response shape
 const ingestApiTokens = (data, source) => {
   if (!data) return 0;
@@ -532,14 +556,19 @@ const refreshVisibleTokens = async () => {
   // AUTH-REQUIRED ENDPOINTS (VIP)
   if (api.isAuthenticated()) {
     try {
-      const [memeRadarResult, printScan, smartPump, tokenTracker] = await Promise.all([
-        api.fetchMemeRadar('recency', 200)
-          .then((data) => ({ data, error: null }))
-          .catch((error) => ({ data: null, error })),
-        api.fetchLeaderboard(200, 0, true).catch(() => null),
-        api.fetchSmartPump(500).catch(() => null),
-        api.fetchTokenTracker('combined', 50).catch(() => null),
+      const now = Date.now();
+      if (vipRateLimitedUntil > now) {
+        return;
+      }
+      const [memeRadarResult, printScanResult, smartPumpResult, tokenTrackerResult] = await Promise.all([
+        withVipRateLimitGuard(() => api.fetchMemeRadar('recency', 200), 'meme-radar'),
+        withVipRateLimitGuard(() => api.fetchLeaderboard(200, 0, true), 'print-scan'),
+        withVipRateLimitGuard(() => api.fetchSmartPump(500), 'smart-pump'),
+        withVipRateLimitGuard(() => api.fetchTokenTracker('combined', 50), 'token-tracker'),
       ]);
+      const printScan = printScanResult.data;
+      const smartPump = smartPumpResult.data;
+      const tokenTracker = tokenTrackerResult.data;
       const resolvedMR = resolveMemeRadarPayload({ payload: memeRadarResult.data, fetchError: memeRadarResult.error });
       if (resolvedMR.payload && resolvedMR.count > 0) ingestApiTokens(resolvedMR.payload, 'meme_radar');
       if (printScan) ingestApiTokens(printScan, 'print_scan');
@@ -1089,15 +1118,21 @@ async function pollStalkFun() {
     }
 
     // ── AUTH-REQUIRED ENDPOINTS (VIP) ──
-    if (api.isAuthenticated()) {
-      const [memeRadarResult, printScan, smartPump, tokenTracker] = await Promise.all([
-        api.fetchMemeRadar('recency', 200)
-          .then((data) => ({ data, error: null }))
-          .catch((error) => ({ data: null, error })),
-        api.fetchLeaderboard(200, 0, true).catch(() => null),
-        api.fetchSmartPump(500).catch(() => null),
-        api.fetchTokenTracker('combined', 50).catch(() => null),
+    const VIP_FETCH_INTERVAL_MS = Number.parseInt(process.env.VIP_FETCH_INTERVAL_MS || '6000', 10);
+    const now = Date.now();
+    const vipBackoffActive = vipRateLimitedUntil > now;
+    const vipIntervalReady = now - lastVipFetchAt >= Math.max(2000, VIP_FETCH_INTERVAL_MS);
+    if (api.isAuthenticated() && !vipBackoffActive && vipIntervalReady) {
+      lastVipFetchAt = now;
+      const [memeRadarResult, printScanResult, smartPumpResult, tokenTrackerResult] = await Promise.all([
+        withVipRateLimitGuard(() => api.fetchMemeRadar('recency', 200), 'meme-radar'),
+        withVipRateLimitGuard(() => api.fetchLeaderboard(200, 0, true), 'print-scan'),
+        withVipRateLimitGuard(() => api.fetchSmartPump(500), 'smart-pump'),
+        withVipRateLimitGuard(() => api.fetchTokenTracker('combined', 50), 'token-tracker'),
       ]);
+      const printScan = printScanResult.data;
+      const smartPump = smartPumpResult.data;
+      const tokenTracker = tokenTrackerResult.data;
 
       const resolvedMR = resolveMemeRadarPayload({ payload: memeRadarResult.data, fetchError: memeRadarResult.error });
       const memeRadar = resolvedMR.payload;
@@ -1186,6 +1221,9 @@ async function pollStalkFun() {
           tradingEngine.updatePositionsFromSmartPump(spList);
         }
       }
+    } else if (api.isAuthenticated() && vipBackoffActive && Date.now() - vipBackoffWarningAt > 5000) {
+      vipBackoffWarningAt = Date.now();
+      console.warn(`[Layer2] VIP fetches paused due to rate limit. Resuming in ${Math.max(1, Math.ceil((vipRateLimitedUntil - Date.now()) / 1000))}s.`);
     }
 
     // Fire trade signals from all quality sources (Layer 2 polling + Layer 3 diff)
