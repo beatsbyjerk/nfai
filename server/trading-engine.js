@@ -1141,7 +1141,7 @@ export class TradingEngine extends EventEmitter {
           if (peakMultiplier >= 3) {
             trailPct = 45; trailLabel = '3x+lock';
           } else if (peakMultiplier >= 2) {
-            trailPct = 60; trailLabel = '2x+run';
+            trailPct = 45; trailLabel = '2x+run';
           } else if (peakMultiplier >= 1.5) {
             trailPct = 55; trailLabel = '1.5x+grow';
           } else {
