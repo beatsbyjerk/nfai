@@ -1075,14 +1075,8 @@ export class TradingEngine extends EventEmitter {
       }
       const staleMs = Date.now() - position.lastPnlChangedAt;
 
-      // EXTENDED TIMEOUTS for Print Scan / Meme Radar signal resilience:
-      // Sub-$15K: 10 minutes (these tokens oscillate heavily at low mcap)
-      // $15K+: 15 minutes (give mid-cap tokens full room — Memehouse went 19K→700K after looking dead)
-      const FAST_STALE_MS = currentMcap < 15000 ? 10 * 60 * 1000 : 15 * 60 * 1000;
-      const isFlatLowMcap = currentMcap < 40000 && pnlPct >= -5 && pnlPct <= 3;
-
-      // GENERAL STALE EXIT: 20 minutes — only exit truly abandoned positions
-      const STALE_TIMEOUT_MS = 20 * 60 * 1000;
+      // Stale/flat exits REMOVED — trailing stop + stop-loss handle all exits.
+      // Meme coins consolidate for extended periods before running; forced time-based exits kill runners.
 
       position.pnlPct = pnlPct;
 
@@ -1098,39 +1092,10 @@ export class TradingEngine extends EventEmitter {
         continue;
       }
 
-      // Low mcap exit — Meme Radar tokens often start very low
-      // If stuck under $3K for 2+ minutes, cut losses and free capital
-      if (currentMcap < 3000 && position.remainingPct > 0) {
-        if (!position._lowMcapSince) {
-          position._lowMcapSince = Date.now();
-        }
-        const lowMcapDuration = Date.now() - position._lowMcapSince;
-        if (lowMcapDuration >= 2 * 60 * 1000) { // 2 minutes
-          await this.executeSell(position, 100, `Low mcap exit: stuck under $3K for ${(lowMcapDuration/60000).toFixed(1)}min (mcap $${currentMcap.toFixed(0)}, P&L ${pnlPct.toFixed(1)}%). Freeing capital.`);
-          continue;
-        }
-      } else {
-        // Reset timer if mcap goes above $3K
-        position._lowMcapSince = null;
-      }
-
-      // Dead token protection — only truly dead tokens (mcap cratered below $2K AND no movement)
-      const isDeadToken = currentMcap < 2000 && pnlPct <= -80 && staleMs > 5 * 60 * 1000;
+      // Dead token — only truly dead (mcap cratered below $1K AND massive loss AND no movement for 10min)
+      const isDeadToken = currentMcap < 1000 && pnlPct <= -90 && staleMs > 10 * 60 * 1000;
       if (isDeadToken && position.remainingPct > 0) {
-        await this.executeSell(position, 100, `Dead token confirmed (mcap $${currentMcap.toFixed(0)} < $2k, P&L ${pnlPct.toFixed(1)}%, stale ${(staleMs/60000).toFixed(1)}min). Freeing capital.`);
-        continue;
-      }
-
-      // Fast stale exit — flat P&L at low mcap (extended from 30s/60s to 10min/15min)
-      const fastStaleLabel = currentMcap < 15000 ? '10min' : '15min';
-      if (isFlatLowMcap && staleMs >= FAST_STALE_MS && position.remainingPct > 0) {
-        await this.executeSell(position, position.remainingPct, `Low mcap ($${currentMcap.toFixed(0)}) with no movement for ${fastStaleLabel} (${pnlPct.toFixed(1)}%). Freeing capital.`);
-        continue;
-      }
-
-      // General stale exit — any position frozen 20+ minutes
-      if (staleMs >= STALE_TIMEOUT_MS && position.remainingPct > 0) {
-        await this.executeSell(position, position.remainingPct, `No significant price movement for 20 minutes (P&L stuck at ${pnlPct.toFixed(1)}%). Freeing capital.`);
+        await this.executeSell(position, 100, `Dead token confirmed (mcap $${currentMcap.toFixed(0)} < $1k, P&L ${pnlPct.toFixed(1)}%, stale ${(staleMs/60000).toFixed(1)}min). Freeing capital.`);
         continue;
       }
 
@@ -1158,8 +1123,8 @@ export class TradingEngine extends EventEmitter {
         }
         
         if (isMicroCapEntry && !position._graduated) {
-          // ── MICRO-CAP MODE: instant 15% trail ──
-          const microTrailPct = 15;
+          // ── MICRO-CAP MODE: 30% trail — meme coins retrace 20-40% before running ──
+          const microTrailPct = 30;
           const trailingFloor = position.maxMcap * (1 - microTrailPct / 100);
           
           if (currentMcap < trailingFloor) {
