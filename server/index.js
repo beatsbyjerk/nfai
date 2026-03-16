@@ -234,6 +234,7 @@ const REALTIME_MCAP_BROADCAST_INTERVAL_MS = Number.parseInt(process.env.REALTIME
 const REALTIME_MCAP_BROADCAST_LIMIT = Number.parseInt(process.env.REALTIME_MCAP_BROADCAST_LIMIT || '60', 10);
 const REALTIME_MCAP_BROADCAST_CONCURRENCY = Number.parseInt(process.env.REALTIME_MCAP_BROADCAST_CONCURRENCY || '5', 10); // Higher concurrency
 const REALTIME_MCAP_BROADCAST_MIN_PCT_CHANGE = Number.parseFloat(process.env.REALTIME_MCAP_BROADCAST_MIN_PCT_CHANGE || '0'); // 0% - always update for real-time accuracy
+const REALTIME_MCAP_UPDATE_LOOKUPS_PER_CYCLE = Number.parseInt(process.env.REALTIME_MCAP_UPDATE_LOOKUPS_PER_CYCLE || '20', 10);
 
 const pumpPortalWs = new PumpPortalWebSocket({
   url: process.env.PUMP_PORTAL_WS_URL || 'wss://pumpportal.fun/api/data',
@@ -1264,9 +1265,19 @@ async function pollStalkFun() {
     // ── INSTANT UPDATES ──
     if (updatedTokens.length > 0) {
       await tradingEngine.updatePositions(updatedTokens, 'poll');
+      let realtimeLookupBudgetUsed = 0;
       for (const token of updatedTokens.filter(Boolean)) {
         const mint = token?.address || token?.mint;
-        if (mint && tradingEngine?.getRealtimeMcap) {
+        const sourcesText = String(token?.sources || token?.source || '').toLowerCase();
+        const isSignalSource = sourcesText.includes('print_scan') || sourcesText.includes('meme_radar');
+        const isOpenPosition = mint ? tradingEngine?.positions?.has(mint) : false;
+        const canLookupRealtime =
+          mint &&
+          tradingEngine?.getRealtimeMcap &&
+          realtimeLookupBudgetUsed < Math.max(0, REALTIME_MCAP_UPDATE_LOOKUPS_PER_CYCLE) &&
+          (isOpenPosition || isSignalSource);
+        if (canLookupRealtime) {
+          realtimeLookupBudgetUsed++;
           try {
             const mcap = await tradingEngine.getRealtimeMcap(mint);
             if (Number.isFinite(mcap) && mcap > 0) {
