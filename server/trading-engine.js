@@ -55,8 +55,8 @@ export class TradingEngine extends EventEmitter {
     this.realtimePausedUntil = 0;
     this.lastRealtimeErrorAt = 0;
 
-    // State persistence
-    this._stateDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'data');
+    // State persistence — use STATE_DIR env var if set (for persistent storage on cloud platforms)
+    this._stateDir = process.env.STATE_DIR || path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'data');
     this._stateFile = path.join(this._stateDir, 'engine-state.json');
     this._saveDebounce = null;
     this._lastSaveHash = '';
@@ -112,6 +112,15 @@ export class TradingEngine extends EventEmitter {
 
     // Auto-save state every 30s as safety net
     setInterval(() => this._saveState(), 30000);
+
+    // Save state on process exit (deploy/restart) so positions survive
+    const gracefulSave = () => {
+      console.log('[TradingEngine] Saving state before shutdown...');
+      this._saveState();
+    };
+    process.on('SIGTERM', gracefulSave);
+    process.on('SIGINT', gracefulSave);
+    process.on('beforeExit', gracefulSave);
   }
 
   log(type, message, payload = {}) {
@@ -1658,6 +1667,8 @@ export class TradingEngine extends EventEmitter {
           mint,
           symbol: pos.symbol,
           entryMcap: pos.entryMcap,
+          currentMcap: pos.currentMcap,
+          lastKnownMcap: pos.lastKnownMcap,
           maxMcap: pos.maxMcap,
           amountSol: pos.amountSol,
           openAt: pos.openAt,
@@ -1721,6 +1732,8 @@ export class TradingEngine extends EventEmitter {
             mint: pos.mint,
             symbol: pos.symbol,
             entryMcap: pos.entryMcap,
+            currentMcap: pos.currentMcap || pos.lastKnownMcap || pos.entryMcap,
+            lastKnownMcap: pos.lastKnownMcap || pos.currentMcap || pos.entryMcap,
             maxMcap: pos.maxMcap || pos.entryMcap,
             amountSol: pos.amountSol,
             openAt: pos.openAt,
