@@ -878,13 +878,10 @@ app.post('/api/admin/auth-reload', (req, res) => {
   stalkFunWs.cookies = api.cookies;
   stalkFunWs.bearer = api.bearer;
 
-  // CRITICAL: Reset baseline + enforce 30s cooldown (same as server restart).
-  baselinePopulated = false;
+  // 30s cooldown after auth reload to let snapshots refresh with VIP data before firing signals
   lastAuthReloadAt = Date.now();
-  _prevSnapshot.print_scan.clear();
-  _prevSnapshot.meme_radar.clear();
   console.log(`[Auth Reload] Hot-swapped auth. Mode: ${api.authMode}, expires: ${result.expiresAt}`);
-  console.log(`[Auth Reload] Reset baseline + 30s cooldown — no signals until ${new Date(lastAuthReloadAt + STARTUP_COOLDOWN_MS).toLocaleTimeString()}.`);
+  console.log(`[Auth Reload] 30s cooldown — no new buys until ${new Date(lastAuthReloadAt + STARTUP_COOLDOWN_MS).toLocaleTimeString()}.`);
   console.log(`[Auth Reload] Reconnecting WS with fresh tokens (was ${stalkFunWs.connected ? 'connected' : 'OFFLINE'})...`);
   stalkFunWs.start();
   return res.json({ ok: true, authMode: api.authMode, expiresAt: result.expiresAt });
@@ -1047,18 +1044,16 @@ app.post('/api/user/logout', async (req, res) => {
 // Polling function to fetch new data
 let initialized = false;
 let pollInFlight = false;
-let baselinePopulated = false; // true after first full poll cycle completes (baseline loaded)
 const SERVER_STARTED_AT = Date.now();
-const STARTUP_COOLDOWN_MS = 30000; // 30s — suppress trade signals while initial API dump loads
-let lastAuthReloadAt = 0; // reset on auth reload — enforces same 30s cooldown as startup
+const STARTUP_COOLDOWN_MS = 30000; // 30s — suppress trade signals while initial snapshot loads
+let lastAuthReloadAt = 0; // reset on auth reload — enforces same 30s cooldown
 
-// Central signal gate — ALL signal sources must pass this before firing trades
+// Central signal gate — blocks new BUYS only. Snapshots always update independently.
 const canFireSignals = () => {
-  if (!baselinePopulated) return false;
-  if (api.authMode === 'public') return false; // NO trades in public mode
+  if (api.authMode === 'public') return false;
   const now = Date.now();
   if (now - SERVER_STARTED_AT <= STARTUP_COOLDOWN_MS) return false;
-  if (now - lastAuthReloadAt <= STARTUP_COOLDOWN_MS) return false;
+  if (lastAuthReloadAt > 0 && now - lastAuthReloadAt <= STARTUP_COOLDOWN_MS) return false;
   return true;
 };
 
@@ -1322,10 +1317,6 @@ async function pollStalkFun() {
       broadcast(initPayload);
       broadcastToPublic(initPayload);
       initialized = true;
-      if (!baselinePopulated) {
-        baselinePopulated = true;
-        console.log(`[Startup] Baseline populated: PS=${_prevSnapshot.print_scan.size} MR=${_prevSnapshot.meme_radar.size} tokens=${tokenStore.getStats().total}. Signals now armed.`);
-      }
       return;
     }
 
@@ -1462,9 +1453,9 @@ async function broadcastRealtimeMcaps() {
 // Start polling
 const POLL_INTERVAL = 2000; // 2 seconds for instant token detection
 
-console.log(`[Startup] Cooldown active: suppressing trade signals for ${STARTUP_COOLDOWN_MS / 1000}s while baseline populates...`);
+console.log(`[Startup] 30s cooldown — snapshots will populate, then signals go live.`);
 setTimeout(() => {
-  console.log(`[Startup] Cooldown expired. Trade signals from print_scan/meme_radar are now LIVE.`);
+  console.log(`[Startup] Cooldown expired. Trade signals are now LIVE.`);
 }, STARTUP_COOLDOWN_MS);
 
 // ── Layer 1: StalkFun Socket.IO WebSocket (real-time push, ~0ms latency) ─────
@@ -1580,15 +1571,10 @@ setInterval(() => {
     }
 
     if (timeLeft <= 0) {
-      const msg = '❌ Auth tokens EXPIRED — falling back to public mode. No new signals until refreshed.';
+      const msg = '❌ Auth tokens EXPIRED — falling back to public mode. No new buys until auth refreshed.';
       console.log(msg);
       if (tradingEngine) tradingEngine.log('error', msg);
       api.authMode = 'public';
-      // Kill baseline so no signals fire from stale public-mode data
-      baselinePopulated = false;
-      _prevSnapshot.print_scan.clear();
-      _prevSnapshot.meme_radar.clear();
-      console.log('[Auth Expiry] Baseline cleared — signals locked until auth refreshed.');
     }
   } else if (api.authMode === 'public') {
     console.log('⚠️ Running in PUBLIC mode — no VIP signals (print_scan/meme_radar). Push auth from extension.');
