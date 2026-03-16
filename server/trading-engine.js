@@ -22,7 +22,7 @@ export class TradingEngine extends EventEmitter {
     this.trailingStopPct = parseFloat(process.env.TRAILING_STOP_PCT || '25');
     this.autoExecutionEnabled = process.env.AUTO_EXECUTION_ENABLED !== 'false'; // Default: enabled
     this.realtimeMcapEnabled = process.env.REALTIME_MCAP !== 'false';
-    this.realtimeMcapTtlMs = parseInt(process.env.REALTIME_MCAP_TTL_MS || '2000', 10); // 2s cache - unified with pumpPortalWs
+    this.realtimeMcapTtlMs = parseInt(process.env.REALTIME_MCAP_TTL_MS || '30000', 10); // 30s — last trade price is valid until next trade
     this.realtimeMcapIntervalMs = parseInt(process.env.REALTIME_MCAP_INTERVAL_MS || '3000', 10); // 3s interval for accurate stop-loss
     this.pumpPortalUrl = process.env.PUMP_PORTAL_URL || 'https://pumpportal.fun/api/trade-local';
     this.pumpPortalPool = process.env.PUMP_PORTAL_POOL || 'auto';
@@ -802,6 +802,9 @@ export class TradingEngine extends EventEmitter {
       symbol: token.symbol,
       name: token.name,
     });
+
+    // Subscribe PumpPortal WS immediately so mcap data flows before buy completes
+    this.emitPositions();
 
     await this.executeBuy(token, sourceLabel);
   }
