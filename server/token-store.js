@@ -240,10 +240,25 @@ export class TokenStore {
         : ((Number.isFinite(parsedInitialMcap) && parsedInitialMcap > 0) ? parsedInitialMcap : null);
     }
 
+    // Prefer explicit token_symbol/token_name, then existing DB values, then fallbacks from address
+    const fallbackSymbol = existing?.symbol || (address ? address.slice(0, 4).toUpperCase() : null);
+    const displaySymbol =
+      tokenData.token_symbol ||
+      tokenData.symbol ||
+      fallbackSymbol ||
+      null;
+
+    const fallbackName = existing?.name || displaySymbol || address || null;
+    const displayName =
+      tokenData.token_name ||
+      tokenData.name ||
+      fallbackName ||
+      null;
+
     const normalized = {
       address,
-      symbol: tokenData.token_symbol || tokenData.symbol || null,
-      name: tokenData.token_name || tokenData.name || null,
+      symbol: displaySymbol,
+      name: displayName,
       image: tokenData.image || tokenData.image_uri ||
              tokenData.metadata?.image || tokenData.metadata?.image_uri ||
              tokenData.metadata?.token?.image ||
