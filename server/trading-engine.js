@@ -1125,8 +1125,8 @@ export class TradingEngine extends EventEmitter {
         }
         
         if (isMicroCapEntry && !position._graduated) {
-          // ── MICRO-CAP MODE: instant 25% trail ──
-          const microTrailPct = 25;
+          // ── MICRO-CAP MODE: instant 15% trail ──
+          const microTrailPct = 15;
           const trailingFloor = position.maxMcap * (1 - microTrailPct / 100);
           
           if (currentMcap < trailingFloor) {
