@@ -510,8 +510,7 @@ const ingestApiTokens = (data, source) => {
         transactions_24h: token.transactions_24h,
       };
       const isNew = tokenStore.upsertToken(token, source);
-      const cooldownOk = Date.now() - SERVER_STARTED_AT > STARTUP_COOLDOWN_MS && Date.now() - lastAuthReloadAt > STARTUP_COOLDOWN_MS;
-      if (isNew && tradingEngine && baselinePopulated && (source === 'print_scan' || source === 'meme_radar') && cooldownOk) {
+      if (isNew && tradingEngine && (source === 'print_scan' || source === 'meme_radar') && canFireSignals()) {
         tradingEngine.handleNewSignal(token, source).catch(e => console.error(e));
       }
       count++;
@@ -528,8 +527,7 @@ const ingestApiTokens = (data, source) => {
     // Only ingest pump.fun tokens (mint ends with "pump") — matches trading engine filter
     if (!mint.endsWith('pump')) continue;
     const isNew = tokenStore.upsertToken(token, source);
-    const cooldownOk2 = Date.now() - SERVER_STARTED_AT > STARTUP_COOLDOWN_MS && Date.now() - lastAuthReloadAt > STARTUP_COOLDOWN_MS;
-    if (isNew && tradingEngine && baselinePopulated && (source === 'print_scan' || source === 'meme_radar') && cooldownOk2) {
+    if (isNew && tradingEngine && (source === 'print_scan' || source === 'meme_radar') && canFireSignals()) {
       tradingEngine.handleNewSignal(token, source).catch(e => console.error(e));
     }
     count++;
@@ -1054,6 +1052,16 @@ const SERVER_STARTED_AT = Date.now();
 const STARTUP_COOLDOWN_MS = 30000; // 30s — suppress trade signals while initial API dump loads
 let lastAuthReloadAt = 0; // reset on auth reload — enforces same 30s cooldown as startup
 
+// Central signal gate — ALL signal sources must pass this before firing trades
+const canFireSignals = () => {
+  if (!baselinePopulated) return false;
+  if (api.authMode === 'public') return false; // NO trades in public mode
+  const now = Date.now();
+  if (now - SERVER_STARTED_AT <= STARTUP_COOLDOWN_MS) return false;
+  if (now - lastAuthReloadAt <= STARTUP_COOLDOWN_MS) return false;
+  return true;
+};
+
 // ── Layer 3: Differential Snapshot Comparison ────────────────────────────────
 // Track previous poll mint sets so we can detect genuinely new emits even if
 // token store already has the token from another source (e.g. movers).
@@ -1099,8 +1107,7 @@ async function pollStalkFun() {
         if (isNew && record) result.new.push({ ...record, isNew: true });
         else if (record) result.updated.push(record);
 
-        const now_ = Date.now();
-        if (SIGNAL_SOURCES.has(source) && isNew && record && baselinePopulated && now_ - SERVER_STARTED_AT > STARTUP_COOLDOWN_MS && now_ - lastAuthReloadAt > STARTUP_COOLDOWN_MS) {
+        if (SIGNAL_SOURCES.has(source) && isNew && record && canFireSignals()) {
           result.tradeSignals.push(record);
         }
       }
@@ -1134,8 +1141,7 @@ async function pollStalkFun() {
         result.updated.push(record);
       }
 
-      const now__ = Date.now();
-      if (SIGNAL_SOURCES.has(source) && !hadSource && record && baselinePopulated && now__ - SERVER_STARTED_AT > STARTUP_COOLDOWN_MS && now__ - lastAuthReloadAt > STARTUP_COOLDOWN_MS) {
+      if (SIGNAL_SOURCES.has(source) && !hadSource && record && canFireSignals()) {
         result.tradeSignals.push(record);
       }
     }
@@ -1218,7 +1224,7 @@ async function pollStalkFun() {
       // Compare current poll mints to previous poll mints. Tokens that appear
       // in this response but NOT the previous one are genuinely new emits —
       // even if the token store already had them from movers/trending.
-      if (Date.now() - SERVER_STARTED_AT > STARTUP_COOLDOWN_MS && Date.now() - lastAuthReloadAt > STARTUP_COOLDOWN_MS) {
+      if (canFireSignals()) {
         const extractMints = (data) => {
           if (!data) return new Set();
           const arr = extractTokenArray(data);
@@ -1469,10 +1475,9 @@ const stalkFunWs = new StalkFunWebSocket({
   onToken: ({ token, source, eventName, mint }) => {
     if (!mint) return;
 
-    // Suppress signals until baseline is populated + cooldown expired (startup or auth reload)
-    if (!baselinePopulated || Date.now() - SERVER_STARTED_AT <= STARTUP_COOLDOWN_MS || Date.now() - lastAuthReloadAt <= STARTUP_COOLDOWN_MS) {
+    if (!canFireSignals()) {
       if (source === 'print_scan' || source === 'meme_radar') {
-        console.log(`[Layer1-WS] Cooldown active, suppressing: ${token.token_symbol || token.symbol || mint.slice(0, 8)} (${source})`);
+        console.log(`[Layer1-WS] Signals locked (${api.authMode === 'public' ? 'public mode' : 'cooldown'}), suppressing: ${token.token_symbol || token.symbol || mint.slice(0, 8)} (${source})`);
       }
       return;
     }
@@ -1576,6 +1581,11 @@ setInterval(() => {
       console.log(msg);
       if (tradingEngine) tradingEngine.log('error', msg);
       api.authMode = 'public';
+      // Kill baseline so no signals fire from stale public-mode data
+      baselinePopulated = false;
+      _prevSnapshot.print_scan.clear();
+      _prevSnapshot.meme_radar.clear();
+      console.log('[Auth Expiry] Baseline cleared — signals locked until auth refreshed.');
     }
   } else if (api.authMode === 'public') {
     console.log('⚠️ Running in PUBLIC mode — no VIP signals (print_scan/meme_radar). Push auth from extension.');
