@@ -517,100 +517,70 @@ export class TradingEngine extends EventEmitter {
   async updatePositionsRealtime() {
     if (this.positions.size === 0) return;
 
-    // Strict active-monitor mode:
-    // Use ONLY PumpPortal WS-derived market cap for live position monitoring/exits.
-    // This prevents cross-source racing (stalk.fun store / DexScreener / Jupiter) from
-    // creating conflicting prices that can misfire trailing stop and exit logic.
+    // Parallel multi-source monitoring: PumpPortal WS (primary) + DexScreener/Jupiter (secondary)
+    // Both run simultaneously every cycle. WS wins when available; fallback fills the gaps.
     const entries = Array.from(this.positions.entries());
     const mcapResults = await Promise.all(
       entries.map(async ([mint, position]) => {
-        try {
-          let mcap = null;
-          let source = null;
-
-          if (this.pumpPortalWs) {
-            const wsMcapUsd = this.pumpPortalWs.getMarketCapUsd(mint);
-            if (Number.isFinite(wsMcapUsd) && wsMcapUsd > 0) {
-              mcap = wsMcapUsd;
-              source = 'pumpportal_ws_usd';
-            } else {
-              // Try SOL market cap and convert to USD from current SOL price.
-              const wsMcapSol = this.pumpPortalWs.getMarketCapSol(mint);
-              if (Number.isFinite(wsMcapSol) && wsMcapSol > 0) {
-                try {
-                  const solUsd = await this.helius.getSolUsdPrice();
-                  if (Number.isFinite(solUsd) && solUsd > 0) {
-                    mcap = wsMcapSol * solUsd;
-                    source = 'pumpportal_ws_sol';
-                  }
-                } catch {
-                  // Strict mode: no secondary source fallback for active monitoring.
-                }
-              }
-            }
+        // Run WS and fallback in parallel
+        const wsPromise = (async () => {
+          if (!this.pumpPortalWs) return null;
+          const usd = this.pumpPortalWs.getMarketCapUsd(mint);
+          if (Number.isFinite(usd) && usd > 0) return { mcap: usd, source: 'pumpportal_ws_usd' };
+          const sol = this.pumpPortalWs.getMarketCapSol(mint);
+          if (Number.isFinite(sol) && sol > 0) {
+            try {
+              const solUsd = await this.helius.getSolUsdPrice();
+              if (Number.isFinite(solUsd) && solUsd > 0) return { mcap: sol * solUsd, source: 'pumpportal_ws_sol' };
+            } catch { /* no sol price */ }
           }
+          return null;
+        })();
 
-          return { mint, position, mcap, source, error: null };
-        } catch (e) {
-          return { mint, position, mcap: null, source: null, error: e };
-        }
+        const fallbackPromise = (async () => {
+          try {
+            const mcap = await this.getRealtimeMcap(mint, false);
+            if (Number.isFinite(mcap) && mcap > 0) return { mcap, source: 'fallback' };
+          } catch { /* fallback unavailable */ }
+          return null;
+        })();
+
+        const [wsResult, fallbackResult] = await Promise.all([wsPromise, fallbackPromise]);
+
+        // WS wins when available (real-time, trusted). Fallback fills gaps.
+        const best = wsResult || fallbackResult;
+        return {
+          mint, position,
+          mcap: best?.mcap ?? null,
+          source: best?.source ?? null,
+          error: null,
+        };
       })
     );
 
     const realtimeTokens = [];
     const now = Date.now();
 
-    for (const { mint, position, mcap, source, error } of mcapResults) {
-      let finalMcap = mcap;
+    for (const { mint, position, mcap, source } of mcapResults) {
+      const finalMcap = mcap;
+      const finalSource = source;
 
-      // Strict mode: if WS fetch failed or returned null, do NOT use any stale/secondary fallback.
-      if (error || !finalMcap) {
-        if (error && now - (position.lastMcapWarnAt || 0) > 60000) {
-          position.lastMcapWarnAt = now;
-          this.log('error', `Mcap fetch failed for ${position.symbol || mint.slice(0, 6)}: ${error?.message || 'null result'}`);
-        }
-
+      if (!finalMcap) {
         if (!position.blindSince) position.blindSince = now;
         const blindMs = now - position.blindSince;
         if (now - (position.lastMcapWarnAt || 0) > 10000) {
           position.lastMcapWarnAt = now;
-          this.log('warn', `No WS mcap for ${position.symbol || mint.slice(0, 6)} - retrying (blind for ${(blindMs / 1000).toFixed(0)}s)`);
+          this.log('warn', `No mcap for ${position.symbol || mint.slice(0, 6)} from any source - blind for ${(blindMs / 1000).toFixed(0)}s`);
         }
 
-        if (blindMs >= 60000 && position.remainingPct > 0) {
-          // Before panic-selling, try fallback mcap lookup (DexScreener/Jupiter/cache)
-          let rescueMcap = null;
-          try {
-            rescueMcap = await this.getRealtimeMcap(mint, true);
-          } catch { /* no rescue available */ }
-
-          if (Number.isFinite(rescueMcap) && rescueMcap > 0) {
-            const entryM = position.entryMcap || 0;
-            const pnl = entryM > 0 ? ((rescueMcap - entryM) / entryM) * 100 : 0;
-
-            // Profitable or break-even: trust fallback, reset blind, keep riding
-            if (pnl >= -5) {
-              position.blindSince = now; // reset blind timer
-              position.lastKnownMcap = rescueMcap;
-              if (rescueMcap > (position.maxMcap || 0)) position.maxMcap = rescueMcap;
-              realtimeTokens.push({ mint, latest_mcap: rescueMcap });
-              this.log('info', `Blind rescue via fallback for ${position.symbol || mint.slice(0, 6)}: $${rescueMcap.toFixed(0)} mcap [fallback], ${pnl >= 0 ? '+' : ''}${pnl.toFixed(1)}% P&L — continuing`);
-              continue;
-            }
-
-            // In significant loss with no WS: exit using the fallback price
-            position.lastKnownMcap = rescueMcap;
-            realtimeTokens.push({ mint, latest_mcap: rescueMcap });
-            await this.executeSell(position, 100, `Blind exit (fallback mcap $${rescueMcap.toFixed(0)}): WS dark for 60s+, position at ${pnl.toFixed(1)}% — exiting.`);
-          } else {
-            // No data from any source — true blind exit
-            await this.executeSell(position, 100, `Blind exit: no mcap data from any source for 60s+. Cannot monitor — exiting to protect capital.`);
-          }
+        // True blind: no data from WS or fallback for 90s — exit
+        if (blindMs >= 90000 && position.remainingPct > 0) {
+          await this.executeSell(position, 100, `Blind exit: no mcap data from any source for 90s+. Cannot monitor — exiting to protect capital.`);
         }
         continue;
       }
 
-      // Fresh trusted WS update received
+      // Got data (from WS or fallback) — reset blind
       position.blindSince = null;
       if (finalMcap && Number.isFinite(finalMcap) && finalMcap > 0) {
         position.lastKnownMcap = finalMcap;
@@ -621,7 +591,7 @@ export class TradingEngine extends EventEmitter {
           position.lastMonitorLogAt = now;
           const entryMcapSafe = position.entryMcap || 0;
           const pnlPct = entryMcapSafe > 0 ? ((finalMcap - entryMcapSafe) / entryMcapSafe) * 100 : 0;
-          this.log('info', `Monitoring ${position.symbol || mint.slice(0, 6)}: $${finalMcap.toFixed(0)} mcap [${source || 'ws'}], ${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(1)}% P&L`);
+          this.log('info', `Monitoring ${position.symbol || mint.slice(0, 6)}: $${finalMcap.toFixed(0)} mcap [${finalSource || 'ws'}], ${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(1)}% P&L`);
         }
       }
     }
