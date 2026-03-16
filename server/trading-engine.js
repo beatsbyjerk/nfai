@@ -1136,17 +1136,29 @@ export class TradingEngine extends EventEmitter {
             continue;
           }
         } else {
-          // ── STANDARD MODE: armed immediately, 30% base dynamic trail ──
-          let trailPct = 30;
-          if (position.dualSignal) trailPct += 5;        // dual signal = wider room
-          if (position.kolHolding) trailPct += 5;         // KOLs still in = confidence
-          if (position.kolExited) trailPct = Math.max(trailPct - 5, 25); // KOLs dumped = tighten
-          
+          // ── STANDARD MODE: graduated dynamic trail ──
+          // Widens as the token proves itself, tightens once you're deep in profit
+          let trailPct;
+          let trailLabel;
+          if (peakMultiplier >= 3) {
+            trailPct = 35; trailLabel = '3x+lock';
+          } else if (peakMultiplier >= 2) {
+            trailPct = 50; trailLabel = '2x+run';
+          } else if (peakMultiplier >= 1.5) {
+            trailPct = 40; trailLabel = '1.5x+grow';
+          } else {
+            trailPct = 35; trailLabel = 'base';
+          }
+
+          if (position.dualSignal) trailPct += 5;
+          if (position.kolHolding) trailPct += 5;
+          if (position.kolExited) trailPct = Math.max(trailPct - 5, trailPct - 10);
+
           const trailingFloor = position.maxMcap * (1 - trailPct / 100);
-          
+
           if (currentMcap < trailingFloor) {
             const drawdownPct = ((position.maxMcap - currentMcap) / position.maxMcap * 100).toFixed(1);
-            const signals = [position._graduated ? 'graduated' : null, position.dualSignal ? 'dual' : null, position.kolHolding ? 'KOL' : null, position.kolExited ? 'KOL-exit' : null].filter(Boolean).join('+') || 'base';
+            const signals = [position._graduated ? 'graduated' : null, trailLabel, position.dualSignal ? 'dual' : null, position.kolHolding ? 'KOL' : null, position.kolExited ? 'KOL-exit' : null].filter(Boolean).join('+');
             await this.executeSell(position, position.remainingPct, 
               `Trailing stop [${trailPct}%, ${signals}]: ${drawdownPct}% drawdown from ${peakMultiplier.toFixed(1)}x peak ($${position.maxMcap.toFixed(0)} → $${currentMcap.toFixed(0)}). Locking in ${currentMultiplier.toFixed(1)}x.`);
             continue;

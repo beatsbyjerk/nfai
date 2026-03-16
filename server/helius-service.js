@@ -12,7 +12,7 @@ export class HeliusService {
     this.rpcUrl = apiKey ? `https://mainnet.helius-rpc.com/?api-key=${apiKey}` : null;
     this.solPriceCache = { value: null, ts: 0 };
     this.dexScreenerCache = new Map(); // mint -> { mcap, price, ts }
-    this.dexScreenerTtlMs = 3000; // 3 seconds for faster updates
+    this.dexScreenerTtlMs = 1500; // 1.5s — tighter polling for migrated token accuracy
     this.dexScreenerStaleFallbackMs = Number.parseInt(process.env.DEX_SCREENER_STALE_FALLBACK_MS || '10000', 10);
   }
 
