@@ -133,8 +133,15 @@ export class StalkFunAPI {
     return this.fetchAPI(`/api/print-scan-leaderboard?limit=${limit}&offset=${offset}${refreshParam}`, {}, true);
   }
 
-  async fetchMemeRadar(sortBy = 'recency', limit = 200) {
-    return this.fetchAPI(`/api/meme-radar?sortBy=${sortBy}&limit=${limit}&refresh=true`, {}, true);
+  async fetchMemeRadar(sortBy = 'recency', limit = 50) {
+    const safeLimit = Math.max(1, Math.min(50, Number.parseInt(limit, 10) || 50));
+    // Match website behavior first: non-refresh request is more stable and less rate-limit prone.
+    const primary = await this.fetchAPI(`/api/meme-radar?sortBy=${sortBy}&limit=${safeLimit}`, {}, true);
+    if (Array.isArray(primary?.data) && primary.data.length > 0) {
+      return primary;
+    }
+    // Fallback to refresh=true only when primary comes back empty.
+    return this.fetchAPI(`/api/meme-radar?sortBy=${sortBy}&limit=${safeLimit}&refresh=true`, {}, true);
   }
 
   async fetchSmartPump(limit = 500) {

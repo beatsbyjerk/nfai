@@ -561,7 +561,7 @@ const refreshVisibleTokens = async () => {
         return;
       }
       const [memeRadarResult, printScanResult, smartPumpResult, tokenTrackerResult] = await Promise.all([
-        withVipRateLimitGuard(() => api.fetchMemeRadar('recency', 200), 'meme-radar'),
+        withVipRateLimitGuard(() => api.fetchMemeRadar('recency', 50), 'meme-radar'),
         withVipRateLimitGuard(() => api.fetchLeaderboard(200, 0, true), 'print-scan'),
         withVipRateLimitGuard(() => api.fetchSmartPump(500), 'smart-pump'),
         withVipRateLimitGuard(() => api.fetchTokenTracker('combined', 50), 'token-tracker'),
@@ -1125,7 +1125,7 @@ async function pollStalkFun() {
     if (api.isAuthenticated() && !vipBackoffActive && vipIntervalReady) {
       lastVipFetchAt = now;
       const [memeRadarResult, printScanResult, smartPumpResult, tokenTrackerResult] = await Promise.all([
-        withVipRateLimitGuard(() => api.fetchMemeRadar('recency', 200), 'meme-radar'),
+        withVipRateLimitGuard(() => api.fetchMemeRadar('recency', 50), 'meme-radar'),
         withVipRateLimitGuard(() => api.fetchLeaderboard(200, 0, true), 'print-scan'),
         withVipRateLimitGuard(() => api.fetchSmartPump(500), 'smart-pump'),
         withVipRateLimitGuard(() => api.fetchTokenTracker('combined', 50), 'token-tracker'),
