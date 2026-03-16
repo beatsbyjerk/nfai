@@ -1119,7 +1119,7 @@ async function pollStalkFun() {
     }
 
     // ── AUTH-REQUIRED ENDPOINTS (VIP) ──
-    const VIP_FETCH_INTERVAL_MS = Number.parseInt(process.env.VIP_FETCH_INTERVAL_MS || '6000', 10);
+    const VIP_FETCH_INTERVAL_MS = Number.parseInt(process.env.VIP_FETCH_INTERVAL_MS || '4000', 10);
     const now = Date.now();
     const vipBackoffActive = vipRateLimitedUntil > now;
     const vipIntervalReady = now - lastVipFetchAt >= Math.max(2000, VIP_FETCH_INTERVAL_MS);
@@ -1190,13 +1190,13 @@ async function pollStalkFun() {
               console.log(`[Layer3-Diff] ${source}: ${newMints.length} new, ${removedMints.length} removed (prev: ${prevSet.size}, curr: ${currentSet.size})`);
             }
             for (const mint of newMints) {
-              const alreadySignaled = allTradeSignals.some(s => (s.address || s.mint) === mint);
+              const alreadySignaled = allTradeSignals.some(s => (s.address || s.mint || s.token_address) === mint);
               if (!alreadySignaled) {
                 const record = tokenStore.getToken(mint);
                 if (record && !tradingEngine.positions.has(mint)) {
                   layer3Hits++;
                   console.log(`[Layer3-Diff] CATCH: ${record.symbol || mint.slice(0, 8)} (${source}) — missed by Layer 1+2, caught by diff!`);
-                  allTradeSignals.push(record);
+                  allTradeSignals.push({ ...record, _signal_source: source });
                 } else if (record && tradingEngine.positions.has(mint)) {
                   console.log(`[Layer3-Diff] ${record.symbol || mint.slice(0, 8)} (${source}) — new in diff but already in position.`);
                 }
@@ -1232,10 +1232,14 @@ async function pollStalkFun() {
       const unique = [];
       const seen = new Set();
       for (const s of allTradeSignals) {
-        if (s?.address && !seen.has(s.address)) { seen.add(s.address); unique.push(s); }
+        const signalKey = s?.address || s?.mint || s?.token_address;
+        if (signalKey && !seen.has(signalKey)) {
+          seen.add(signalKey);
+          unique.push(s);
+        }
       }
       if (unique.length > 0) {
-        console.log(`[Layer2+3] Firing ${unique.length} trade signal(s) from poll cycle: ${unique.map(s => s.symbol || s.address?.slice(0, 8)).join(', ')}`);
+        console.log(`[Layer2+3] Firing ${unique.length} trade signal(s) from poll cycle: ${unique.map(s => s.symbol || (s.address || s.mint || s.token_address || '').slice(0, 8)).join(', ')}`);
         await tradingEngine.handleSignals(unique, 'Signal Detected');
       }
     }
