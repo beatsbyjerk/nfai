@@ -1221,30 +1221,30 @@ async function pollStalkFun() {
       }
 
       // ── Layer 3: Differential Snapshot Comparison ──────────────────────────
-      // Compare current poll mints to previous poll mints. Tokens that appear
-      // in this response but NOT the previous one are genuinely new emits —
-      // even if the token store already had them from movers/trending.
-      if (canFireSignals()) {
-        const extractMints = (data) => {
-          if (!data) return new Set();
-          const arr = extractTokenArray(data);
-          return new Set(arr.map(t => t?.token_address || t?.mint || t?.address).filter(Boolean));
-        };
+      // ALWAYS update snapshots so the baseline stays current, even during cooldown.
+      // Only fire trade signals when canFireSignals() allows.
+      const extractMints = (data) => {
+        if (!data) return new Set();
+        const arr = extractTokenArray(data);
+        return new Set(arr.map(t => t?.token_address || t?.mint || t?.address).filter(Boolean));
+      };
 
-        const currentPS = extractMints(printScan);
-        const currentMR = extractMints(memeRadar);
-        let layer3Hits = 0;
+      const currentPS = extractMints(printScan);
+      const currentMR = extractMints(memeRadar);
+      const signalsArmed = canFireSignals();
+      let layer3Hits = 0;
 
-        for (const [currentSet, prevSet, source] of [
-          [currentPS, _prevSnapshot.print_scan, 'print_scan'],
-          [currentMR, _prevSnapshot.meme_radar, 'meme_radar'],
-        ]) {
-          if (prevSet.size > 0) {
-            const newMints = [...currentSet].filter(m => !prevSet.has(m));
-            const removedMints = [...prevSet].filter(m => !currentSet.has(m));
-            if (newMints.length > 0 || removedMints.length > 0) {
-              console.log(`[Layer3-Diff] ${source}: ${newMints.length} new, ${removedMints.length} removed (prev: ${prevSet.size}, curr: ${currentSet.size})`);
-            }
+      for (const [currentSet, prevSet, source] of [
+        [currentPS, _prevSnapshot.print_scan, 'print_scan'],
+        [currentMR, _prevSnapshot.meme_radar, 'meme_radar'],
+      ]) {
+        if (prevSet.size > 0 && currentSet.size > 0) {
+          const newMints = [...currentSet].filter(m => !prevSet.has(m));
+          const removedMints = [...prevSet].filter(m => !currentSet.has(m));
+          if (newMints.length > 0 || removedMints.length > 0) {
+            console.log(`[Layer3-Diff] ${source}: ${newMints.length} new, ${removedMints.length} removed (prev: ${prevSet.size}, curr: ${currentSet.size})`);
+          }
+          if (signalsArmed) {
             for (const mint of newMints) {
               const alreadySignaled = allTradeSignals.some(s => (s.address || s.mint || s.token_address) === mint);
               if (!alreadySignaled) {
@@ -1258,18 +1258,21 @@ async function pollStalkFun() {
                 }
               }
             }
-          } else if (currentSet.size > 0) {
-            console.log(`[Layer3-Diff] ${source}: initial snapshot loaded (${currentSet.size} mints)`);
+          } else if (newMints.length > 0) {
+            console.log(`[Layer3-Diff] ${source}: ${newMints.length} new tokens detected but signals locked (cooldown/auth). Snapshot updated.`);
           }
+        } else if (currentSet.size > 0 && prevSet.size === 0) {
+          console.log(`[Layer3-Diff] ${source}: initial snapshot loaded (${currentSet.size} mints)`);
         }
-
-        if (layer3Hits > 0) {
-          console.log(`[Layer3-Diff] Caught ${layer3Hits} signal(s) that Layer 1+2 missed!`);
-        }
-
-        _prevSnapshot.print_scan = currentPS;
-        _prevSnapshot.meme_radar = currentMR;
       }
+
+      if (layer3Hits > 0) {
+        console.log(`[Layer3-Diff] Caught ${layer3Hits} signal(s) that Layer 1+2 missed!`);
+      }
+
+      // ALWAYS update snapshots — keeps baseline fresh regardless of signal gate
+      if (currentPS.size > 0) _prevSnapshot.print_scan = currentPS;
+      if (currentMR.size > 0) _prevSnapshot.meme_radar = currentMR;
 
       // Cross-reference Smart Pump KOL data with active trading positions
       if (smartPump) {
