@@ -12,8 +12,10 @@ export class HeliusService {
     this.rpcUrl = apiKey ? `https://mainnet.helius-rpc.com/?api-key=${apiKey}` : null;
     this.solPriceCache = { value: null, ts: 0 };
     this.dexScreenerCache = new Map(); // mint -> { mcap, price, ts }
-    this.dexScreenerTtlMs = 1500; // 1.5s — tighter polling for migrated token accuracy
+    this.dexScreenerTtlMs = 500; // 500ms — tighter polling for migrated token accuracy
     this.dexScreenerStaleFallbackMs = Number.parseInt(process.env.DEX_SCREENER_STALE_FALLBACK_MS || '10000', 10);
+    this.geckoTerminalCache = new Map(); // mint -> { fdv, mcap, ts }
+    this.geckoTerminalTtlMs = 500;
   }
 
   async getSolBalance(address) {
@@ -319,6 +321,47 @@ export class HeliusService {
       return mcap;
     } catch {
       if (cached && now - cached.ts < this.dexScreenerStaleFallbackMs) return cached.mcap;
+      return null;
+    }
+  }
+  async getGeckoTerminalMcap(mintAddress) {
+    if (!mintAddress) return null;
+    const now = Date.now();
+    const cached = this.geckoTerminalCache.get(mintAddress);
+
+    if (cached && now - cached.ts < this.geckoTerminalTtlMs) {
+      return cached.fdv || cached.mcap;
+    }
+
+    try {
+      const url = `https://api.geckoterminal.com/api/v2/networks/solana/tokens/${mintAddress}`;
+      const res = await fetch(url, {
+        headers: { 'Accept': 'application/json;version=20230302' },
+        signal: AbortSignal.timeout(5000)
+      });
+      
+      if (!res.ok) {
+        if (cached && now - cached.ts < this.dexScreenerStaleFallbackMs) return cached.fdv || cached.mcap;
+        return null;
+      }
+      
+      const data = await res.json();
+      if (data.data && data.data.attributes) {
+        const fdv = parseFloat(data.data.attributes.fdv_usd);
+        const mcap = parseFloat(data.data.attributes.market_cap_usd);
+        
+        // Use FDV as effective mcap
+        const effectiveMcap = Number.isFinite(fdv) && fdv > 0 ? fdv : (Number.isFinite(mcap) && mcap > 0 ? mcap : null);
+        
+        if (effectiveMcap) {
+          this.geckoTerminalCache.set(mintAddress, { fdv, mcap, ts: now });
+          return effectiveMcap;
+        }
+      }
+      if (cached && now - cached.ts < this.dexScreenerStaleFallbackMs) return cached.fdv || cached.mcap;
+      return null;
+    } catch {
+      if (cached && now - cached.ts < this.dexScreenerStaleFallbackMs) return cached.fdv || cached.mcap;
       return null;
     }
   }

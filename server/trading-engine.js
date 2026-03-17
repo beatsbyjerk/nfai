@@ -23,7 +23,7 @@ export class TradingEngine extends EventEmitter {
     this.autoExecutionEnabled = process.env.AUTO_EXECUTION_ENABLED !== 'false'; // Default: enabled
     this.realtimeMcapEnabled = process.env.REALTIME_MCAP !== 'false';
     this.realtimeMcapTtlMs = parseInt(process.env.REALTIME_MCAP_TTL_MS || '30000', 10); // 30s — last trade price is valid until next trade
-    this.realtimeMcapIntervalMs = parseInt(process.env.REALTIME_MCAP_INTERVAL_MS || '2000', 10); // 2s interval for accurate stop-loss
+    this.realtimeMcapIntervalMs = parseInt(process.env.REALTIME_MCAP_INTERVAL_MS || '500', 10); // 500ms interval for accurate stop-loss
     this.pumpPortalUrl = process.env.PUMP_PORTAL_URL || 'https://pumpportal.fun/api/trade-local';
     this.pumpPortalPool = process.env.PUMP_PORTAL_POOL || 'auto';
     this.pumpPortalPriorityFeeSol = parseFloat(process.env.PUMP_PORTAL_PRIORITY_FEE_SOL || '0.006');
@@ -423,13 +423,24 @@ export class TradingEngine extends EventEmitter {
             const mcapUsd = wsMcapSol * solUsd;
             if (Number.isFinite(mcapUsd) && mcapUsd > 0) {
               // Check if this indicates migration
-              if (mcapUsd > 58000 && migrationState === null) {
+              if (mcapUsd > 35000 && migrationState === null) {
                 this.setMigrationState(mint, false, 'mcap-inference');
                 try {
-                  const dexMcap = await this.helius.getDexScreenerMcap(mint, false);
-                  if (Number.isFinite(dexMcap) && dexMcap > 0) {
-                    this.mcapCache.set(mint, { value: dexMcap, ts: Date.now() });
-                    return dexMcap;
+                  const [geckoResult, dexResult] = await Promise.allSettled([
+                    this.helius.getGeckoTerminalMcap(mint),
+                    this.helius.getDexScreenerMcap(mint, false)
+                  ]);
+                  
+                  let finalMcap = null;
+                  if (geckoResult.status === 'fulfilled' && Number.isFinite(geckoResult.value) && geckoResult.value > 0) {
+                    finalMcap = geckoResult.value;
+                  } else if (dexResult.status === 'fulfilled' && Number.isFinite(dexResult.value) && dexResult.value > 0) {
+                    finalMcap = dexResult.value;
+                  }
+
+                  if (finalMcap !== null) {
+                    this.mcapCache.set(mint, { value: finalMcap, ts: Date.now() });
+                    return finalMcap;
                   }
                 } catch {
                   // Fall back to converted value
@@ -459,16 +470,27 @@ export class TradingEngine extends EventEmitter {
     }
 
     const computePromise = (async () => {
-      // PRIORITY 2: DexScreener first if no WS data (works for both bonding and migrated)
+      // PRIORITY 2: GeckoTerminal (FDV) + DexScreener Fallback (run in parallel)
       try {
-        const dexMcap = await this.helius.getDexScreenerMcap(mint, migrationState);
-        if (Number.isFinite(dexMcap) && dexMcap > 0) {
+        const [geckoResult, dexResult] = await Promise.allSettled([
+          this.helius.getGeckoTerminalMcap(mint),
+          this.helius.getDexScreenerMcap(mint, migrationState)
+        ]);
+        
+        let finalMcap = null;
+        if (geckoResult.status === 'fulfilled' && Number.isFinite(geckoResult.value) && geckoResult.value > 0) {
+          finalMcap = geckoResult.value;
+        } else if (dexResult.status === 'fulfilled' && Number.isFinite(dexResult.value) && dexResult.value > 0) {
+          finalMcap = dexResult.value;
+        }
+
+        if (finalMcap !== null) {
           // Auto-detect migration state from mcap
-          if (dexMcap > 35000 && migrationState === null) {
+          if (finalMcap > 35000 && migrationState === null) {
             this.setMigrationState(mint, false, 'mcap-inference');
           }
-          this.mcapCache.set(mint, { value: dexMcap, ts: Date.now() });
-          return dexMcap;
+          this.mcapCache.set(mint, { value: finalMcap, ts: Date.now() });
+          return finalMcap;
         }
       } catch {
         // Fall through to Jupiter
@@ -1132,18 +1154,18 @@ export class TradingEngine extends EventEmitter {
       // Meme coins consolidate at profit levels before running higher; forced exit kills runners.
 
       // ── SOURCE-AWARE TRAILING STOP ────────────────────────────────────────────
-      // Print Scan: 23% alpha trail (higher conviction, give room to run)
-      // Meme Radar: 23% tight trail (riskier, lock gains quickly)
+      // Print Scan: 10% alpha trail (higher conviction, give room to run)
+      // Meme Radar: 10% tight trail (riskier, lock gains quickly)
       // KOL/dual signal modifiers still apply on top.
       // CRITICAL: Trail only activates AFTER PnL has reached the trail threshold.
-      //   e.g. 23% trail → peak must hit 1.23x before trail engages.
+      //   e.g. 10% trail → peak must hit 1.10x before trail engages.
       //   Below that, only the hard stop loss protects.
 
       if (position.remainingPct > 0 && entryMcap > 0) {
         const peakMultiplier = position.maxMcap / entryMcap;
 
         // Base trail by source
-        let trailPct = isMemeRadar ? 23 : 23;
+        let trailPct = isMemeRadar ? 10 : 10;
         let trailLabel = isMemeRadar ? 'meme_radar' : 'alpha';
 
         // Minor modifiers for high-conviction signals
