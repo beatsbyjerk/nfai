@@ -181,9 +181,9 @@ export class HeliusService {
       if (!Number.isFinite(rawPrice)) return null;
       const currency = String(
         priceInfo?.currency ||
-          priceInfo?.vs_currency ||
-          priceInfo?.denomination ||
-          ''
+        priceInfo?.vs_currency ||
+        priceInfo?.denomination ||
+        ''
       ).toLowerCase();
       if (currency === 'sol' || Number.isFinite(solPrice)) {
         const solUsd = await this.getSolUsdPrice();
@@ -240,24 +240,41 @@ export class HeliusService {
         const url = (p.url || p.pairAddress || '').toLowerCase();
         // "pumpfun" but NOT "pumpswap" — bonding curve only
         return (dex.includes('pumpfun') && !dex.includes('pumpswap')) ||
-               (dex === 'pump.fun') ||
-               (url.includes('pumpfun') && !url.includes('pumpswap'));
+          (dex === 'pump.fun') ||
+          (url.includes('pumpfun') && !url.includes('pumpswap'));
       };
       const isAmmPair = (p) => {
         const dex = (p.dexId || '').toLowerCase();
         return dex.includes('pumpswap') || dex.includes('raydium') ||
-               dex.includes('orca') || dex.includes('meteora');
+          dex.includes('orca') || dex.includes('meteora');
       };
 
       let preferredPairs = validPairs;
-      if (migrationState === true || migrationState === null) {
-        // Still bonding or unknown: prefer pumpfun bonding curve pair
+      if (migrationState === true) {
+        // Still bonding: prefer pumpfun bonding curve pair
         const bondingPairs = validPairs.filter(isPumpfunPair);
         if (bondingPairs.length > 0) preferredPairs = bondingPairs;
       } else if (migrationState === false) {
         // Migrated: prefer pumpswap/raydium AMM pair
         const ammPairs = validPairs.filter(isAmmPair);
-        if (ammPairs.length > 0) preferredPairs = ammPairs;
+        if (ammPairs.length > 0) {
+          preferredPairs = ammPairs;
+        } else {
+          // It's migrated, but DexScreener hasn't indexed the AMM pair yet.
+          // Returning the frozen pumpfun pair is dangerous (stalls trailing stops).
+          // Return null to cascade to Jupiter or trigger temporary blind mode until indexed.
+          return null;
+        }
+      } else {
+        // Unknown state: infer from available pairs
+        const ammPairs = validPairs.filter(isAmmPair);
+        if (ammPairs.length > 0) {
+          // If a Raydium/PumpSwap pair exists, it has definitively migrated.
+          preferredPairs = ammPairs;
+        } else {
+          const bondingPairs = validPairs.filter(isPumpfunPair);
+          if (bondingPairs.length > 0) preferredPairs = bondingPairs;
+        }
       }
 
       const scored = preferredPairs
