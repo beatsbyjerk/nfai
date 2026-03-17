@@ -88,13 +88,20 @@ export function useTokenFeed(options: UseTokenFeedOptions = {}) {
   const handleTokenUpdate = useCallback((msg: WSMessage) => {
     const upd = msg.data;
     if (!upd?.address) return;
-    setAllTokens((prev) =>
-      prev.map((t) =>
-        t.address === upd.address
-          ? { ...t, realtime_mcap: upd.realtime_mcap ?? t.realtime_mcap, latest_mcap: upd.latest_mcap ?? t.latest_mcap }
-          : t
-      )
-    );
+    setAllTokens((prev) => {
+      const idx = prev.findIndex((t) => t.address === upd.address);
+      if (idx === -1) return prev;
+      const next = [...prev];
+      // Merge ALL incoming fields onto existing token (fills in ATH, vol, momentum, image, etc.)
+      const merged = { ...next[idx] };
+      for (const [key, val] of Object.entries(upd)) {
+        if (val != null && val !== '' && val !== 0) {
+          (merged as any)[key] = val;
+        }
+      }
+      next[idx] = merged;
+      return next;
+    });
   }, []);
 
   const handlePositions = useCallback((msg: WSMessage) => {

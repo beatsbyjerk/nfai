@@ -366,7 +366,7 @@ export default function HomePage() {
                       <div key={pos.mint} className="px-4 py-2.5 flex items-center justify-between hover:bg-surface-raised/20 transition-colors">
                         <div>
                           <span
-                            className={`text-xs font-bold ${matchedToken ? "text-accent cursor-pointer hover:underline" : "text-foreground"}`}
+                            className={`text-xs font-bold text-accent ${matchedToken ? "cursor-pointer hover:underline" : ""}`}
                             onClick={() => matchedToken && setSelectedToken(matchedToken)}
                           >{pos.symbol || pos.mint.slice(0, 6)}</span>
                           <span className="text-[10px] text-muted/40 ml-2 font-mono">{pos.amountSol.toFixed(3)} SOL</span>

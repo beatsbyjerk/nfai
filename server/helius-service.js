@@ -195,7 +195,7 @@ export class HeliusService {
     }
   }
 
-  async getDexScreenerMcap(mintAddress) {
+  async getDexScreenerMcap(mintAddress, migrationState = null) {
     if (!mintAddress) return null;
     const now = Date.now();
     const cached = this.dexScreenerCache.get(mintAddress);
@@ -220,16 +220,47 @@ export class HeliusService {
       }
 
       const mintLower = mintAddress.toLowerCase();
-      const scored = pairs
-        .filter(p => {
-          if (p.chainId !== 'solana') return false;
-          const baseAddr = (p.baseToken?.address || '').toLowerCase();
-          const quoteAddr = (p.quoteToken?.address || '').toLowerCase();
-          if (baseAddr !== mintLower && quoteAddr !== mintLower) return false;
-          const mc = p.marketCap ?? p.fdv;
-          if (!Number.isFinite(mc) || mc <= 0) return false;
-          return true;
-        })
+      const validPairs = pairs.filter(p => {
+        if (p.chainId !== 'solana') return false;
+        const baseAddr = (p.baseToken?.address || '').toLowerCase();
+        const quoteAddr = (p.quoteToken?.address || '').toLowerCase();
+        if (baseAddr !== mintLower && quoteAddr !== mintLower) return false;
+        const mc = p.marketCap ?? p.fdv;
+        if (!Number.isFinite(mc) || mc <= 0) return false;
+        return true;
+      });
+
+      // ── MIGRATION-AWARE PAIR SELECTION ─────────────────────────────────────
+      // DexScreener returns different pairs for the same token:
+      //   pumpfun pair  → bonding curve mcap (correct pre-migration)
+      //   pumpswap/raydium pair → AMM mcap (correct post-migration)
+      // Picking the wrong one confuses the monitor with phantom price swings.
+      const isPumpfunPair = (p) => {
+        const dex = (p.dexId || '').toLowerCase();
+        const url = (p.url || p.pairAddress || '').toLowerCase();
+        // "pumpfun" but NOT "pumpswap" — bonding curve only
+        return (dex.includes('pumpfun') && !dex.includes('pumpswap')) ||
+               (dex === 'pump.fun') ||
+               (url.includes('pumpfun') && !url.includes('pumpswap'));
+      };
+      const isAmmPair = (p) => {
+        const dex = (p.dexId || '').toLowerCase();
+        return dex.includes('pumpswap') || dex.includes('raydium') ||
+               dex.includes('orca') || dex.includes('meteora');
+      };
+
+      let preferredPairs = validPairs;
+      if (migrationState === true || migrationState === null) {
+        // Still bonding or unknown: prefer pumpfun bonding curve pair
+        const bondingPairs = validPairs.filter(isPumpfunPair);
+        if (bondingPairs.length > 0) preferredPairs = bondingPairs;
+      } else if (migrationState === false) {
+        // Migrated: prefer pumpswap/raydium AMM pair
+        const ammPairs = validPairs.filter(isAmmPair);
+        if (ammPairs.length > 0) preferredPairs = ammPairs;
+      }
+
+      const scored = preferredPairs
         .map(p => {
           const liq = p.liquidity?.usd || 0;
           const vol24h = p.volume?.h24 || 0;
