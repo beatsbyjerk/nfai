@@ -1124,6 +1124,9 @@ export class TradingEngine extends EventEmitter {
       // Print Scan: 15% alpha trail (higher conviction, give room to run)
       // Meme Radar: 5% tight trail (riskier, lock gains quickly)
       // KOL/dual signal modifiers still apply on top.
+      // CRITICAL: Trail only activates AFTER PnL has reached the trail threshold.
+      //   e.g. 15% trail → peak must hit 1.15x before trail engages.
+      //   Below that, only the hard stop loss protects.
       
       if (position.remainingPct > 0 && entryMcap > 0) {
         const peakMultiplier = position.maxMcap / entryMcap;
@@ -1137,13 +1140,22 @@ export class TradingEngine extends EventEmitter {
         if (position.kolHolding) { trailPct += 2; trailLabel += '+KOL'; }
         if (position.kolExited) { trailPct = Math.max(isMemeRadar ? 3 : 10, trailPct - 3); trailLabel += '+KOL-exit'; }
 
-        const trailingFloor = position.maxMcap * (1 - trailPct / 100);
+        // ── TRAIL ACTIVATION GATE ──────────────────────────────────────────────
+        // Trail only engages after the peak has exceeded the trail % above entry.
+        // This prevents premature exits on tokens that haven't pumped yet.
+        // Before activation, only the hard stop loss (-20% MR / -60% PS) protects.
+        const trailActivationThreshold = 1 + (trailPct / 100); // e.g. 1.15 for 15% trail
+        const trailActive = peakMultiplier >= trailActivationThreshold;
+
+        if (trailActive) {
+          const trailingFloor = position.maxMcap * (1 - trailPct / 100);
           
-        if (currentMcap < trailingFloor) {
-          const drawdownPct = ((position.maxMcap - currentMcap) / position.maxMcap * 100).toFixed(1);
-          await this.executeSell(position, position.remainingPct, 
-            `Trailing stop [${trailPct}%, ${trailLabel}]: ${drawdownPct}% drawdown from ${peakMultiplier.toFixed(1)}x peak ($${position.maxMcap.toFixed(0)} → $${currentMcap.toFixed(0)}). Floor $${trailingFloor.toFixed(0)} (entry $${entryMcap.toFixed(0)}).`);
-          continue;
+          if (currentMcap < trailingFloor) {
+            const drawdownPct = ((position.maxMcap - currentMcap) / position.maxMcap * 100).toFixed(1);
+            await this.executeSell(position, position.remainingPct, 
+              `Trailing stop [${trailPct}%, ${trailLabel}]: ${drawdownPct}% drawdown from ${peakMultiplier.toFixed(1)}x peak ($${position.maxMcap.toFixed(0)} → $${currentMcap.toFixed(0)}). Floor $${trailingFloor.toFixed(0)} (entry $${entryMcap.toFixed(0)}).`);
+            continue;
+          }
         }
       }
 
