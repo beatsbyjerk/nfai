@@ -1110,10 +1110,17 @@ export class TradingEngine extends EventEmitter {
         continue;
       }
 
-      // Dead token — only truly dead (mcap cratered below $1K AND massive loss AND no movement for 10min)
-      const isDeadToken = currentMcap < 1000 && pnlPct <= -90 && staleMs > 10 * 60 * 1000;
+      // Dead/stalled micro-cap — token stuck below $3K mcap for 8+ minutes
+      // These entered at very low mcap and won't hit stop loss, just drain a position slot
+      const microCapStallMs = currentMcap < 3000 ? (Date.now() - (position._belowMicroCapSince || Date.now())) : 0;
+      if (currentMcap < 3000 && !position._belowMicroCapSince) {
+        position._belowMicroCapSince = Date.now();
+      } else if (currentMcap >= 3000) {
+        position._belowMicroCapSince = null; // reset if it pumps above $3K
+      }
+      const isDeadToken = currentMcap < 3000 && microCapStallMs >= 8 * 60 * 1000;
       if (isDeadToken && position.remainingPct > 0) {
-        await this.executeSell(position, 100, `Dead token confirmed (mcap $${currentMcap.toFixed(0)} < $1k, P&L ${pnlPct.toFixed(1)}%, stale ${(staleMs/60000).toFixed(1)}min). Freeing capital.`);
+        await this.executeSell(position, 100, `Micro-cap stall exit (mcap $${currentMcap.toFixed(0)} < $3K for ${(microCapStallMs/60000).toFixed(1)}min). Freeing position slot.`);
         continue;
       }
 

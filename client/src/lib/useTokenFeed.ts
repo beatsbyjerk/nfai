@@ -77,7 +77,20 @@ export function useTokenFeed(options: UseTokenFeedOptions = {}) {
     setAllTokens((prev) => {
       const map = new Map(prev.map((t) => [t.address, t]));
       for (const t of incoming) {
-        map.set(t.address, { ...t, isNew: true });
+        const existing = map.get(t.address);
+        if (existing) {
+          // Merge new fields onto existing data (preserves ATH, images, volume etc.)
+          const merged = { ...existing };
+          for (const [key, val] of Object.entries(t)) {
+            if (val != null && val !== '') {
+              (merged as any)[key] = val;
+            }
+          }
+          merged.isNew = true;
+          map.set(t.address, merged);
+        } else {
+          map.set(t.address, { ...t, isNew: true });
+        }
         flashSet.current.add(t.address);
         setTimeout(() => flashSet.current.delete(t.address), 6000);
       }

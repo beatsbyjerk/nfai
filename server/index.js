@@ -1294,7 +1294,7 @@ async function pollStalkFun() {
       }
       if (unique.length > 0) {
         console.log(`[Layer2+3] Firing ${unique.length} trade signal(s) from poll cycle: ${unique.map(s => s.symbol || (s.address || s.mint || s.token_address || '').slice(0, 8)).join(', ')}`);
-        await tradingEngine.handleSignals(unique, 'Signal Detected');
+        await tradingEngine.handleSignals(unique, 'poll_cycle');
       }
     }
 
@@ -1506,7 +1506,7 @@ const stalkFunWs = new StalkFunWebSocket({
           console.log(`[Layer1-WS] Signal source ${source} confirmed ${symbol} — already in position, skipping buy.`);
         } else {
           console.log(`[Layer1-WS] TRADE SIGNAL: ${symbol} (${source} via "${eventName}") — triggering handleNewSignal`);
-          tradingEngine.handleNewSignal(record, 'Signal Detected').catch(e => {
+          tradingEngine.handleNewSignal(record, source).catch(e => {
             console.error(`[Layer1-WS] Signal execution error for ${symbol}: ${e.message}`);
           });
         }
