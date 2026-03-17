@@ -23,7 +23,7 @@ export class TradingEngine extends EventEmitter {
     this.autoExecutionEnabled = process.env.AUTO_EXECUTION_ENABLED !== 'false'; // Default: enabled
     this.realtimeMcapEnabled = process.env.REALTIME_MCAP !== 'false';
     this.realtimeMcapTtlMs = parseInt(process.env.REALTIME_MCAP_TTL_MS || '30000', 10); // 30s — last trade price is valid until next trade
-    this.realtimeMcapIntervalMs = parseInt(process.env.REALTIME_MCAP_INTERVAL_MS || '3000', 10); // 3s interval for accurate stop-loss
+    this.realtimeMcapIntervalMs = parseInt(process.env.REALTIME_MCAP_INTERVAL_MS || '2000', 10); // 2s interval for accurate stop-loss
     this.pumpPortalUrl = process.env.PUMP_PORTAL_URL || 'https://pumpportal.fun/api/trade-local';
     this.pumpPortalPool = process.env.PUMP_PORTAL_POOL || 'auto';
     this.pumpPortalPriorityFeeSol = parseFloat(process.env.PUMP_PORTAL_PRIORITY_FEE_SOL || '0.006');
@@ -317,10 +317,10 @@ export class TradingEngine extends EventEmitter {
     if (!mint) return null;
     try {
       const mcap = await this.getRealtimeMcap(mint);
-      if (Number.isFinite(mcap) && mcap > 58000) {
+      if (Number.isFinite(mcap) && mcap > 35000) {
         return false; // migrated (false = migration complete)
       }
-      if (Number.isFinite(mcap) && mcap > 0 && mcap <= 58000) {
+      if (Number.isFinite(mcap) && mcap > 0 && mcap <= 35000) {
         return true; // still bonding (true = migration in progress)
       }
     } catch {
@@ -397,7 +397,7 @@ export class TradingEngine extends EventEmitter {
       const wsMcapUsd = this.pumpPortalWs.getMarketCapUsd(mint);
       if (Number.isFinite(wsMcapUsd) && wsMcapUsd > 0) {
         // Check if this indicates migration (mcap > 58K = migrated)
-        if (wsMcapUsd > 58000 && migrationState === null) {
+        if (wsMcapUsd > 35000 && migrationState === null) {
           this.setMigrationState(mint, false, 'mcap-inference');
           // For newly detected migrated tokens, prefer DexScreener
           try {
@@ -464,7 +464,7 @@ export class TradingEngine extends EventEmitter {
         const dexMcap = await this.helius.getDexScreenerMcap(mint, migrationState);
         if (Number.isFinite(dexMcap) && dexMcap > 0) {
           // Auto-detect migration state from mcap
-          if (dexMcap > 58000 && migrationState === null) {
+          if (dexMcap > 35000 && migrationState === null) {
             this.setMigrationState(mint, false, 'mcap-inference');
           }
           this.mcapCache.set(mint, { value: dexMcap, ts: Date.now() });
@@ -490,7 +490,7 @@ export class TradingEngine extends EventEmitter {
                 const tokenPriceUsd = tokenPriceSol * solUsd;
                 const mcap = tokenPriceUsd * supply.uiAmount;
                 if (Number.isFinite(mcap) && mcap > 0) {
-                  if (mcap > 58000 && migrationState === null) {
+                  if (mcap > 35000 && migrationState === null) {
                     this.setMigrationState(mint, false, 'mcap-inference');
                   }
                   this.mcapCache.set(mint, { value: mcap, ts: Date.now() });
@@ -530,8 +530,8 @@ export class TradingEngine extends EventEmitter {
           if (Number.isFinite(usd) && usd > 0) return { mcap: usd, source: 'pumpportal_ws_usd' };
           const sol = this.pumpPortalWs.getMarketCapSol(mint);
           if (Number.isFinite(sol) && sol > 0) {
-                try {
-                  const solUsd = await this.helius.getSolUsdPrice();
+            try {
+              const solUsd = await this.helius.getSolUsdPrice();
               if (Number.isFinite(solUsd) && solUsd > 0) return { mcap: sol * solUsd, source: 'pumpportal_ws_sol' };
             } catch { /* no sol price */ }
           }
@@ -588,12 +588,12 @@ export class TradingEngine extends EventEmitter {
         // (protects against stale token store data, wrong DexScreener pair, or PumpPortal ghost data)
         const lastKnown = position.lastKnownMcap || position.entryMcap;
         if (lastKnown && lastKnown > 0 && finalMcap > lastKnown * 5) {
-            if (now - (position.lastMcapWarnAt || 0) > 10000) {
-              position.lastMcapWarnAt = now;
-            this.log('warn', `Rejected suspicious mcap for ${position.symbol || mint.slice(0, 6)}: $${finalMcap.toFixed(0)} is ${(finalMcap/lastKnown).toFixed(1)}x last known $${lastKnown.toFixed(0)} [${finalSource}]. Keeping last known.`);
-            }
-            continue;
-      }
+          if (now - (position.lastMcapWarnAt || 0) > 10000) {
+            position.lastMcapWarnAt = now;
+            this.log('warn', `Rejected suspicious mcap for ${position.symbol || mint.slice(0, 6)}: $${finalMcap.toFixed(0)} is ${(finalMcap / lastKnown).toFixed(1)}x last known $${lastKnown.toFixed(0)} [${finalSource}]. Keeping last known.`);
+          }
+          continue;
+        }
 
         position.lastKnownMcap = finalMcap;
         position.currentMcap = finalMcap;
@@ -1007,7 +1007,10 @@ export class TradingEngine extends EventEmitter {
 
       const actualAmountSol = actualSolSpent > 0 ? actualSolSpent : effectiveTradeAmount;
 
+      const reserved = this.positions.get(mint) || {};
+      
       this.positions.set(mint, {
+        ...reserved,
         mint,
         symbol: token.symbol,
         entryMcap: confirmedEntryMcap,
@@ -1021,6 +1024,7 @@ export class TradingEngine extends EventEmitter {
         tokenDecimals: tokenBalance.decimals,
         pnlPct: 0,
         isMigrating: migrationState,
+        buyInProgress: false,
       });
 
       const slippage = entryMcap > 0 ? ((confirmedEntryMcap - entryMcap) / entryMcap * 100) : 0;
@@ -1101,7 +1105,7 @@ export class TradingEngine extends EventEmitter {
       // Meme Radar = riskier, tighter leash: -20% stop loss from entry
       // Print Scan = higher conviction: uses STOP_LOSS_PCT from env (-60%)
       const isMemeRadar = (position._entrySource || '').toLowerCase().includes('meme_radar') ||
-                          (position._entrySource || '').toLowerCase().includes('memeradar');
+        (position._entrySource || '').toLowerCase().includes('memeradar');
       const effectiveStopLoss = isMemeRadar ? -20 : this.stopLossPct;
 
       if (pnlPct <= effectiveStopLoss && position.remainingPct > 0) {
@@ -1120,7 +1124,7 @@ export class TradingEngine extends EventEmitter {
       }
       const isDeadToken = currentMcap < 3000 && microCapStallMs >= 8 * 60 * 1000;
       if (isDeadToken && position.remainingPct > 0) {
-        await this.executeSell(position, 100, `Micro-cap stall exit (mcap $${currentMcap.toFixed(0)} < $3K for ${(microCapStallMs/60000).toFixed(1)}min). Freeing position slot.`);
+        await this.executeSell(position, 100, `Micro-cap stall exit (mcap $${currentMcap.toFixed(0)} < $3K for ${(microCapStallMs / 60000).toFixed(1)}min). Freeing position slot.`);
         continue;
       }
 
@@ -1128,18 +1132,18 @@ export class TradingEngine extends EventEmitter {
       // Meme coins consolidate at profit levels before running higher; forced exit kills runners.
 
       // ── SOURCE-AWARE TRAILING STOP ────────────────────────────────────────────
-      // Print Scan: 15% alpha trail (higher conviction, give room to run)
-      // Meme Radar: 5% tight trail (riskier, lock gains quickly)
+      // Print Scan: 23% alpha trail (higher conviction, give room to run)
+      // Meme Radar: 23% tight trail (riskier, lock gains quickly)
       // KOL/dual signal modifiers still apply on top.
       // CRITICAL: Trail only activates AFTER PnL has reached the trail threshold.
-      //   e.g. 15% trail → peak must hit 1.15x before trail engages.
+      //   e.g. 23% trail → peak must hit 1.23x before trail engages.
       //   Below that, only the hard stop loss protects.
-      
+
       if (position.remainingPct > 0 && entryMcap > 0) {
         const peakMultiplier = position.maxMcap / entryMcap;
 
         // Base trail by source
-        let trailPct = isMemeRadar ? 5 : 15;
+        let trailPct = isMemeRadar ? 23 : 23;
         let trailLabel = isMemeRadar ? 'meme_radar' : 'alpha';
 
         // Minor modifiers for high-conviction signals
@@ -1156,10 +1160,10 @@ export class TradingEngine extends EventEmitter {
 
         if (trailActive) {
           const trailingFloor = position.maxMcap * (1 - trailPct / 100);
-          
+
           if (currentMcap < trailingFloor) {
             const drawdownPct = ((position.maxMcap - currentMcap) / position.maxMcap * 100).toFixed(1);
-            await this.executeSell(position, position.remainingPct, 
+            await this.executeSell(position, position.remainingPct,
               `Trailing stop [${trailPct}%, ${trailLabel}]: ${drawdownPct}% drawdown from ${peakMultiplier.toFixed(1)}x peak ($${position.maxMcap.toFixed(0)} → $${currentMcap.toFixed(0)}). Floor $${trailingFloor.toFixed(0)} (entry $${entryMcap.toFixed(0)}).`);
             continue;
           }
@@ -1176,8 +1180,8 @@ export class TradingEngine extends EventEmitter {
     const mint = position.mint;
 
     // Universal guard — prevents duplicate sell from overlapping monitoring cycles
-      if (position.sellInProgress) return;
-      position.sellInProgress = true;
+    if (position.sellInProgress) return;
+    position.sellInProgress = true;
 
     if (this.tradingMode !== 'live' || !this.keypair) {
 
