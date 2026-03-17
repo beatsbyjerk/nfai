@@ -1154,18 +1154,18 @@ export class TradingEngine extends EventEmitter {
       // Meme coins consolidate at profit levels before running higher; forced exit kills runners.
 
       // ── SOURCE-AWARE TRAILING STOP ────────────────────────────────────────────
-      // Print Scan: 10% alpha trail (higher conviction, give room to run)
-      // Meme Radar: 10% tight trail (riskier, lock gains quickly)
+      // Print Scan: 21% alpha trail (higher conviction, give room to run)
+      // Meme Radar: 21% tight trail (riskier, lock gains quickly)
       // KOL/dual signal modifiers still apply on top.
       // CRITICAL: Trail only activates AFTER PnL has reached the trail threshold.
-      //   e.g. 10% trail → peak must hit 1.10x before trail engages.
+      //   e.g. 21% trail → peak must hit 1.21x before trail engages.
       //   Below that, only the hard stop loss protects.
 
       if (position.remainingPct > 0 && entryMcap > 0) {
         const peakMultiplier = position.maxMcap / entryMcap;
 
         // Base trail by source
-        let trailPct = isMemeRadar ? 10 : 10;
+        let trailPct = isMemeRadar ? 21 : 21;
         let trailLabel = isMemeRadar ? 'meme_radar' : 'alpha';
 
         // Minor modifiers for high-conviction signals
