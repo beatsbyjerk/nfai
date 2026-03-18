@@ -510,7 +510,7 @@ const ingestApiTokens = (data, source) => {
         transactions_24h: token.transactions_24h,
       };
       const isNew = tokenStore.upsertToken(token, source);
-      if (isNew && tradingEngine && (source === 'print_scan' || source === 'meme_radar') && canFireSignals()) {
+      if (isNew && tradingEngine && source === 'print_scan' && canFireSignals()) {
         tradingEngine.handleNewSignal(token, source).catch(e => console.error(e));
       }
       count++;
@@ -527,7 +527,7 @@ const ingestApiTokens = (data, source) => {
     // Only ingest pump.fun tokens (mint ends with "pump") — matches trading engine filter
     if (!mint.endsWith('pump')) continue;
     const isNew = tokenStore.upsertToken(token, source);
-    if (isNew && tradingEngine && (source === 'print_scan' || source === 'meme_radar') && canFireSignals()) {
+    if (isNew && tradingEngine && source === 'print_scan' && canFireSignals()) {
       tradingEngine.handleNewSignal(token, source).catch(e => console.error(e));
     }
     count++;
