@@ -1165,7 +1165,7 @@ export class TradingEngine extends EventEmitter {
         const peakMultiplier = position.maxMcap / entryMcap;
 
         // Base trail by source
-        let trailPct = isMemeRadar ? 8 : 8;
+        let trailPct = isMemeRadar ? 13 : 13;
         let trailLabel = isMemeRadar ? 'meme_radar' : 'alpha';
 
         // Minor modifiers for high-conviction signals
