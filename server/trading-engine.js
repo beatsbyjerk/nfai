@@ -1165,7 +1165,7 @@ export class TradingEngine extends EventEmitter {
         const peakMultiplier = position.maxMcap / entryMcap;
 
         // Base trail by source
-        let trailPct = isMemeRadar ? 13 : 13;
+        let trailPct = isMemeRadar ? 4 : 4;
         let trailLabel = isMemeRadar ? 'meme_radar' : 'alpha';
 
         // Minor modifiers for high-conviction signals
@@ -1174,10 +1174,10 @@ export class TradingEngine extends EventEmitter {
         if (position.kolExited) { trailPct = Math.max(isMemeRadar ? 3 : 10, trailPct - 3); trailLabel += '+KOL-exit'; }
 
         // ── TRAIL ACTIVATION GATE ──────────────────────────────────────────────
-        // Trail only engages after the peak has exceeded the trail % above entry.
+        // Trail only engages after the peak has reached 25% profit above entry (1.25x).
         // This prevents premature exits on tokens that haven't pumped yet.
         // Before activation, only the hard stop loss (-20% MR / -60% PS) protects.
-        const trailActivationThreshold = 1 + (trailPct / 100); // e.g. 1.15 for 15% trail
+        const trailActivationThreshold = 1.25; // Hardcoded to activate only after 25% profit
         const trailActive = peakMultiplier >= trailActivationThreshold;
 
         if (trailActive) {
