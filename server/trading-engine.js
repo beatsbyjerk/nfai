@@ -430,7 +430,7 @@ export class TradingEngine extends EventEmitter {
                     this.helius.getGeckoTerminalMcap(mint),
                     this.helius.getDexScreenerMcap(mint, false)
                   ]);
-                  
+
                   let finalMcap = null;
                   if (geckoResult.status === 'fulfilled' && Number.isFinite(geckoResult.value) && geckoResult.value > 0) {
                     finalMcap = geckoResult.value;
@@ -476,7 +476,7 @@ export class TradingEngine extends EventEmitter {
           this.helius.getGeckoTerminalMcap(mint),
           this.helius.getDexScreenerMcap(mint, migrationState)
         ]);
-        
+
         let finalMcap = null;
         if (geckoResult.status === 'fulfilled' && Number.isFinite(geckoResult.value) && geckoResult.value > 0) {
           finalMcap = geckoResult.value;
@@ -1030,7 +1030,7 @@ export class TradingEngine extends EventEmitter {
       const actualAmountSol = actualSolSpent > 0 ? actualSolSpent : effectiveTradeAmount;
 
       const reserved = this.positions.get(mint) || {};
-      
+
       this.positions.set(mint, {
         ...reserved,
         mint,
@@ -1165,7 +1165,7 @@ export class TradingEngine extends EventEmitter {
         const peakMultiplier = position.maxMcap / entryMcap;
 
         // Base trail by source
-        let trailPct = isMemeRadar ? 35 : 35;
+        let trailPct = isMemeRadar ? 8 : 8;
         let trailLabel = isMemeRadar ? 'meme_radar' : 'alpha';
 
         // Minor modifiers for high-conviction signals
